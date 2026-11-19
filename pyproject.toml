@@ -7,10 +7,23 @@ name = "handwriting-grader-skills"
 version = "0.1.0"
 description = "Human-reviewed handwriting grading skill and preflight tools"
 requires-python = ">=3.10"
-dependencies = ["PyYAML>=6,<7", "openpyxl>=3.1,<4", "pypdf>=6.5,<7"]
+dependencies = [
+  "PyYAML>=6,<7",
+  "openpyxl>=3.1,<4",
+  "pypdf>=6.5,<7",
+  "Pillow>=11,<13",
+  "google-genai>=2.30,<3",
+  "pydantic>=2,<3",
+]
+
+[project.optional-dependencies]
+browser-test = ["playwright>=1.55,<2"]
 
 [project.scripts]
 handwriting-grader = "handwriting_grader.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+handwriting_grader = ["editor.html"]

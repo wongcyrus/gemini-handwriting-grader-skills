@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Review answer regions</title>
+<style>
+body { font: 16px system-ui, sans-serif; margin: 1.2rem; color: #172033; }
+button, input { font: inherit; margin: .2rem; padding: .35rem; }
+button { cursor: pointer; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
+#status { padding: .6rem; background: #e9f2fb; white-space: pre-wrap; }
+#canvas { width: min(100%, 1000px); height: auto; border: 1px solid #576b7e; touch-action: none; user-select: none; }
+#list { display: flex; flex-wrap: wrap; gap: .3rem; padding: .5rem 0; }
+.selected { background: #ffdd7a; }
+.hint { max-width: 70rem; }
+</style>
+</head>
+<body>
+<h1>Review answer regions</h1>
+<p class="hint">Click New box, set a label and drag on the image to draw. Select a box to move it;
+drag its bottom-right handle to resize. Save each page as reviewed. Use exact uppercase NAME, ID and CLASS labels,
+and place the ID box on the first page.
+Boxes cover the whole answer area. AI suggestions are optional and must be reviewed.</p>
+<div class="bar">
+<button id="prev">Previous</button><strong id="page"></strong><button id="next">Next</button>
+<label>Box label <input id="label" maxlength="64" placeholder="ID or question number"></label>
+<button id="new">New box</button><button id="delete">Delete selected</button>
+<button id="suggestions">Load AI suggestions</button>
+<button id="save">Save draft</button><button id="review">Save and mark reviewed</button>
+<button id="approve">Approve all regions</button>
+</div>
+<div id="status" role="status">Connecting...</div>
+<div id="list" aria-label="Boxes on this page"></div>
+<svg id="canvas" xmlns="http://www.w3.org/2000/svg" aria-label="Page region editor"></svg>
+<script>
+"use strict";
+const token = location.hash.slice(1);
+history.replaceState(null, "", location.pathname);
+const canvas = document.getElementById("canvas"), status = document.getElementById("status");
+const label = document.getElementById("label"), list = document.getElementById("list");
+const ns = "http://www.w3.org/2000/svg";
+let state, page = 0, boxes = [], selected = -1, dirty = false, gesture = null, imageUrl = null;
+function message(text) { status.textContent = text; }
+async function api(path, body) {
+  const options = {headers: {"Authorization": "Bearer " + token}};
+  if (body !== undefined) {
+    options.method = "POST"; options.headers["Content-Type"] = "application/json";
+    options.body = JSON.stringify(body);
+  }
+  const response = await fetch(path, options);
+  if (!response.ok) {
+    let detail = "Request failed";
+    try { detail = (await response.json()).error || detail; } catch (_) {}
+    throw new Error(detail);
+  }
+  return response;
+}
+function svgElement(name, attrs) {
+  const element = document.createElementNS(ns, name);
+  for (const [key, value] of Object.entries(attrs)) element.setAttribute(key, value);
+  return element;
+}
+function draw() {
+  const dims = state.pages[page];
+  canvas.setAttribute("viewBox", `0 0 ${dims.width} ${dims.height}`);
+  canvas.replaceChildren(svgElement("image", {href: imageUrl, width: dims.width, height: dims.height}));
+  list.replaceChildren();
+  boxes.forEach((box, index) => {
+    const color = index === selected ? "#ff9f00" : "#e22";
+    const rect = svgElement("rect", {x: box.x, y: box.y, width: box.width, height: box.height,
+      fill: "rgba(255,60,30,.12)", stroke: color, "stroke-width": Math.max(2, dims.width / 400),
+      "data-index": index, "data-action": "move"});
+    canvas.append(rect);
+    const text = svgElement("text", {x: box.x + 3, y: box.y + Math.max(20, dims.width / 60),
+      fill: color, "font-size": Math.max(20, dims.width / 60), "pointer-events": "none"});
+    text.textContent = box.label; canvas.append(text);
+    if (index === selected) {
+      const size = Math.max(16, dims.width / 70);
+      canvas.append(svgElement("rect", {x: box.x + box.width - size, y: box.y + box.height - size,
+        width: size, height: size, fill: color, "data-index": index, "data-action": "resize"}));
+    }
+    const item = document.createElement("button");
+    item.textContent = box.label; item.className = index === selected ? "selected" : "";
+    item.addEventListener("click", () => { selected = index; label.value = box.label; draw(); });
+    list.append(item);
+  });
+  document.getElementById("page").textContent =
+    `Page ${page + 1} of ${state.pages.length}${state.draft.reviewed.includes(page) ? " (reviewed)" : ""}${dirty ? " (unsaved)" : ""}`;
+}
+function point(event) {
+  const p = canvas.createSVGPoint(); p.x = event.clientX; p.y = event.clientY;
+  const mapped = p.matrixTransform(canvas.getScreenCTM().inverse());
+  const dims = state.pages[page];
+  return {x: Math.max(0, Math.min(dims.width, Math.round(mapped.x))),
+          y: Math.max(0, Math.min(dims.height, Math.round(mapped.y)))};
+}
+canvas.addEventListener("pointerdown", event => {
+  if (!state || event.button !== 0) return;
+  const action = event.target.dataset.action, pos = point(event);
+  if (action) {
+    selected = Number(event.target.dataset.index);
+    label.value = boxes[selected].label;
+    gesture = {action, pos, original: {...boxes[selected]}};
+  } else {
+    if (!label.value.trim()) { message("Enter a label before drawing a box."); return; }
+    selected = -1; gesture = {action: "draw", pos};
+  }
+  canvas.setPointerCapture(event.pointerId); draw();
+});
+canvas.addEventListener("pointermove", event => {
+  if (!gesture || gesture.action === "draw") return;
+  const pos = point(event), orig = gesture.original, dims = state.pages[page];
+  const dx = pos.x - gesture.pos.x, dy = pos.y - gesture.pos.y;
+  if (gesture.action === "move") {
+    boxes[selected].x = Math.max(0, Math.min(dims.width - orig.width, orig.x + dx));
+    boxes[selected].y = Math.max(0, Math.min(dims.height - orig.height, orig.y + dy));
+  } else {
+    boxes[selected].width = Math.max(1, Math.min(dims.width - orig.x, orig.width + dx));
+    boxes[selected].height = Math.max(1, Math.min(dims.height - orig.y, orig.height + dy));
+  }
+  dirty = true; draw();
+});
+canvas.addEventListener("pointerup", event => {
+  if (!gesture) return;
+  if (gesture.action === "draw") {
+    const p = point(event), x = Math.min(p.x, gesture.pos.x), y = Math.min(p.y, gesture.pos.y);
+    const width = Math.abs(p.x - gesture.pos.x), height = Math.abs(p.y - gesture.pos.y);
+    if (width > 3 && height > 3) {
+      boxes.push({x, y, width, height, label: label.value.trim()});
+      selected = boxes.length - 1; dirty = true;
+    }
+  }
+  gesture = null; draw();
+});
+label.addEventListener("change", () => {
+  if (selected >= 0) { boxes[selected].label = label.value.trim(); dirty = true; draw(); }
+});
+document.getElementById("delete").onclick = () => {
+  if (selected >= 0) { boxes.splice(selected, 1); selected = -1; dirty = true; draw(); }
+};
+document.getElementById("new").onclick = () => {
+  selected = -1; label.value = ""; draw(); label.focus();
+};
+document.getElementById("suggestions").onclick = async () => {
+  try {
+    const data = await (await api("/api/suggestions")).json();
+    if (boxes.length && !confirm("Replace the current page's boxes with AI suggestions? This does not save yet.")) return;
+    boxes = structuredClone(data.annotations[String(page)]);
+    selected = -1; dirty = true; draw();
+    message("Loaded suggestions from " + data.model + ". Review them before saving.");
+  } catch (e) { message(e.message); }
+};
+async function showPage(index) {
+  if (dirty && !confirm("Discard unsaved edits on this page?")) return;
+  page = index; selected = -1; dirty = false;
+  boxes = structuredClone(state.draft.annotations[String(page)]);
+  const response = await api("/api/images/" + page);
+  if (imageUrl) URL.revokeObjectURL(imageUrl);
+  imageUrl = URL.createObjectURL(await response.blob()); draw();
+}
+async function save(reviewed) {
+  if (selected >= 0) boxes[selected].label = label.value.trim();
+  const response = await api("/api/page", {revision: state.draft.revision, page, boxes, reviewed});
+  state.draft = await response.json(); dirty = false; state.approved = false; draw();
+  message(reviewed ? "Page saved and marked reviewed." : "Draft saved; page is not marked reviewed.");
+}
+document.getElementById("prev").onclick = () => showPage(Math.max(0, page - 1)).catch(e => message(e.message));
+document.getElementById("next").onclick = () => showPage(Math.min(state.pages.length - 1, page + 1)).catch(e => message(e.message));
+document.getElementById("save").onclick = () => save(false).catch(e => message(e.message));
+document.getElementById("review").onclick = () => save(true).catch(e => message(e.message));
+document.getElementById("approve").onclick = async () => {
+  if (dirty) { message("Save the current page before approval."); return; }
+  if (!confirm("Approve all saved page layouts for this exam?")) return;
+  try {
+    await api("/api/approve", {revision: state.draft.revision});
+    state.approved = true;
+    message("Regions approved. This does not start grading.");
+  } catch (e) { message(e.message); }
+};
+window.addEventListener("beforeunload", e => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
+(async () => {
+  try {
+    if (!token) throw new Error("Open the full URL printed by the review command.");
+    state = await (await api("/api/state")).json();
+    await showPage(0);
+    message(state.approved ? "A prior approval exists. Editing and saving invalidates it." : "Review and save every page.");
+  } catch (e) { message(e.message); }
+})();
+</script>
+</body>
+</html>

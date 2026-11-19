@@ -1,15 +1,17 @@
 # Planned workflow and human gates
 
-Only preflight exists in this repository. The following is the migration
-contract, not a list of currently available commands.
+Preflight, optional Vertex region suggestions and manual region review exist
+in this repository. The other stages below are the migration contract, not
+currently available commands.
 
 1. **Preflight:** verify inputs and configuration, then obtain confirmation of
    scan order, page layout, output location and intended Vertex target.
 2. **Rubric:** extract the scheme and have a teacher approve questions,
    answers and maximum marks.
-3. **Regions:** suggest boxes, then let the teacher draw, move, resize, delete
-   and label them in a local browser. Save original-image pixel coordinates in
-   the existing `annotations.json` format. Approve all page layouts.
+3. **Regions:** optionally request Vertex suggestions after explicit cost
+   approval. Draw, move, resize, delete and label boxes in a local browser.
+   Save original-image pixel coordinates in `annotations.json` and approve all
+   layouts.
 4. **Grading:** request approval for paid calls before OCR, grading and
    moderation. A teacher reviews IDs, OCR, exceptions, moderation flags and
    mark overrides.

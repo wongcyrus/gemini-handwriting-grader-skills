@@ -13,10 +13,10 @@ version: 1
 
 ## Scope and availability
 
-Use the Python tools in this repository, not notebooks. Only the read-only
-preflight command is currently implemented. Annotation editing, grading,
-approval enforcement, reports and email are not implemented here. Stop and
-tell the user when a requested stage is unavailable; never simulate success,
+Use the Python tools in this repository, not notebooks. Offline preflight and
+manual region editing and optional Vertex box suggestions are implemented. Grading,
+downstream approval enforcement, reports and email are not implemented here.
+Stop and tell the user when a requested stage is unavailable; never simulate success,
 execute a notebook as a workaround, or claim a human approval occurred.
 
 ## Safety
@@ -41,7 +41,10 @@ execute a notebook as a workaround, or claim a human approval occurred.
 4. Fix reported errors with the user's input and rerun. A successful preflight
    does not verify scan order, leading zeroes, rubric contents, credentials,
    model access or approval. Ask the user to confirm the layout and scan order.
-5. If the requested next stage is unimplemented, stop and say so.
+5. To review regions, read `references/regions.md` and obtain confirmation
+   before preparing files or starting the local server. The editor starts with
+   empty boxes; optional Vertex suggestions require separate explicit consent.
+6. If the requested next stage is unimplemented, stop and say so.
 
 For the intended human checkpoints and migration boundaries read
 `references/workflow.md`. Ask for email details only when distribution is

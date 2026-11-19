@@ -1,0 +1,134 @@
+"""Generate optional Vertex AI region proposals without modifying drafts."""
+
+import json
+import os
+import tempfile
+from pathlib import Path
+
+import yaml
+from google import genai
+from google.genai import types
+from pydantic import BaseModel, StrictInt, StrictStr
+
+from .regions import file_hash, validate_annotations, verify_run
+
+
+class SuggestedBox(BaseModel):
+    x: StrictInt
+    y: StrictInt
+    width: StrictInt
+    height: StrictInt
+    label: StrictStr
+
+
+class SuggestedBoxes(BaseModel):
+    boxes: list[SuggestedBox]
+
+
+PROMPT = """Identify answer regions on this scanned exam page.
+Return a box for each complete question answer area and the NAME, ID and CLASS
+fields when present. Label question boxes with their question number. Do not
+include instructions or non-answer areas. Coordinates must use a normalized
+0-to-1000 scale: x and y are the top-left corner, and width and height are
+the box dimensions. Ensure all boxes lie entirely inside the page. Return
+an empty list if no regions can be identified."""
+
+
+def load_model_settings(path):
+    path = Path(path)
+    with path.open(encoding="utf-8") as file:
+        settings = yaml.safe_load(file)
+    if not isinstance(settings, dict):
+        raise ValueError("Model configuration must be a mapping")
+    vertex = settings.get("vertex_ai")
+    models = settings.get("models")
+    if not isinstance(vertex, dict) or vertex.get("use_vertexai") is not True:
+        raise ValueError("Model configuration must enable Vertex AI")
+    model = models.get("annotation") if isinstance(models, dict) else None
+    if not isinstance(model, str) or not model.strip():
+        raise ValueError("Model configuration needs models.annotation")
+    return model.strip()
+
+
+def create_json_once(path, data):
+    """Atomically publish a new suggestions file without replacing an old one."""
+    path = Path(path)
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as file:
+        temp = Path(file.name)
+        try:
+            json.dump(data, file, ensure_ascii=False, indent=2)
+            file.write("\n")
+            file.flush()
+            os.fsync(file.fileno())
+        except BaseException:
+            temp.unlink(missing_ok=True)
+            raise
+    try:
+        os.link(temp, path)
+    except FileExistsError as exc:
+        raise ValueError("AI suggestions already exist; do not overwrite them") from exc
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+def generate_suggestions(config, config_dir, config_path, model_config_path, project, location):
+    """Send layout images to Vertex; caller must already have obtained consent."""
+    model_path = Path(model_config_path).expanduser().resolve()
+    model_config_digest = file_hash(model_path)
+    model = load_model_settings(model_path)
+    if file_hash(model_path) != model_config_digest:
+        raise ValueError("Model configuration changed while loading")
+    root, manifest = verify_run(config, config_dir, config_path)
+    output = root / "ai_suggestions.json"
+    if output.exists():
+        raise ValueError("AI suggestions already exist; do not overwrite them")
+    suggestions = {}
+    options = types.HttpOptions(timeout=120_000, retry_options=types.HttpRetryOptions(attempts=1))
+    with genai.Client(vertexai=True, project=project, location=location, http_options=options) as client:
+        for index, page in enumerate(manifest["pages"]):
+            image = (root / "images" / f"{index}.jpg").read_bytes()
+            response = client.models.generate_content(
+                model=model,
+                contents=[PROMPT, types.Part.from_bytes(data=image, mime_type="image/jpeg")],
+                config=types.GenerateContentConfig(
+                    temperature=0,
+                    max_output_tokens=8192,
+                    response_mime_type="application/json",
+                    response_schema=SuggestedBoxes,
+                ),
+            )
+            if response.parsed is not None:
+                parsed = SuggestedBoxes.model_validate(response.parsed)
+            else:
+                parsed = SuggestedBoxes.model_validate_json(response.text)
+            boxes = []
+            for box in parsed.boxes:
+                if (
+                    box.x < 0 or box.y < 0 or box.width <= 0 or box.height <= 0
+                    or box.x + box.width > 1000 or box.y + box.height > 1000
+                ):
+                    raise ValueError(f"Vertex returned an invalid normalized box on page {index + 1}")
+                left = round(box.x * page["width"] / 1000)
+                top = round(box.y * page["height"] / 1000)
+                right = round((box.x + box.width) * page["width"] / 1000)
+                bottom = round((box.y + box.height) * page["height"] / 1000)
+                boxes.append({
+                    "x": left, "y": top, "width": right - left, "height": bottom - top,
+                    "label": box.label.strip(),
+                })
+            suggestions[str(index)] = boxes
+    validate_annotations(suggestions, manifest["pages"])
+    verify_run(config, config_dir, config_path)
+    if file_hash(model_path) != model_config_digest:
+        raise ValueError("Model configuration changed while generating suggestions")
+    create_json_once(output, {
+        "version": 1,
+        "config_sha256": manifest["config_sha256"],
+        "pdf_sha256": manifest["pdf_sha256"],
+        "model_config_sha256": model_config_digest,
+        "project": project,
+        "location": location,
+        "model": model,
+        "annotations": suggestions,
+    })
+    return output

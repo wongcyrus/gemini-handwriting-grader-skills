@@ -1,6 +1,7 @@
-"""Offline, read-only exam preflight."""
+"""Exam preflight and local region review."""
 
 import argparse
+import subprocess
 import sys
 from pathlib import Path
 
@@ -115,6 +116,17 @@ def main(argv=None):
     commands = parser.add_subparsers(dest="command", required=True)
     preflight = commands.add_parser("preflight", help="Check exam inputs without making changes")
     preflight.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    prepare = commands.add_parser("prepare-regions", help="Render page layouts for manual review")
+    prepare.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    review = commands.add_parser("review-regions", help="Start a local browser-based region editor")
+    review.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    review.add_argument("--port", type=int, default=0, help="Local port (default: automatically selected)")
+    suggest = commands.add_parser("suggest-regions", help="Request optional Vertex AI region proposals")
+    suggest.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    suggest.add_argument("--model-config", required=True, type=Path, help="Path to existing AI config.yaml")
+    suggest.add_argument("--project", required=True, help="Explicit Google Cloud project")
+    suggest.add_argument("--location", required=True, help="Explicit Vertex AI location")
+    suggest.add_argument("--confirm-cost", action="store_true", help="Confirm sending pages to Vertex AI")
     args = parser.parse_args(argv)
     try:
         path = args.exam.expanduser().resolve()
@@ -127,6 +139,74 @@ def main(argv=None):
         print(f"ERROR: {error}", file=sys.stderr)
     if errors:
         return 1
+    if args.command == "prepare-regions":
+        from .regions import prepare_regions
+
+        try:
+            target = prepare_regions(config, path.parent, summary["pages_per_student"])
+        except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+            print(f"Region preparation failed: {exc}", file=sys.stderr)
+            return 1
+        print(f"Prepared {summary['pages_per_student']} page layouts in {target}")
+        print("Review the layouts before grading; no AI suggestions were generated.")
+        return 0
+    if args.command == "review-regions":
+        from .editor import RegionServer
+
+        if not 0 <= args.port <= 65535:
+            print("Port must be between 0 and 65535", file=sys.stderr)
+            return 1
+        try:
+            server = RegionServer(config, path.parent, args.port, config_path=path)
+        except (OSError, ValueError, KeyError) as exc:
+            print(f"Cannot start region editor: {exc}", file=sys.stderr)
+            return 1
+        print(f"Open {server.origin}/#{server.token}", flush=True)
+        print("Press Ctrl+C to stop the local editor.", flush=True)
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            server.server_close()
+        return 0
+    if args.command == "suggest-regions":
+        from .regions import verify_run
+        from .suggestions import generate_suggestions, load_model_settings
+
+        if (
+            not args.project.strip() or not args.location.strip()
+            or any(char.isspace() for char in args.project)
+            or any(char.isspace() for char in args.location)
+        ):
+            print("Vertex project and location must be provided", file=sys.stderr)
+            return 1
+        try:
+            model = load_model_settings(args.model_config)
+            _, manifest = verify_run(config, path.parent, path)
+        except (OSError, ValueError, yaml.YAMLError) as exc:
+            print(f"Cannot prepare Vertex suggestions: {exc}", file=sys.stderr)
+            return 1
+        print(
+            f"Vertex target: project={args.project}, location={args.location}, model={model}. "
+            f"This sends {len(manifest['pages'])} page images and can incur charges; retries may cost more."
+        )
+        if not args.confirm_cost:
+            print("No request sent. Obtain user approval and rerun with --confirm-cost.", file=sys.stderr)
+            return 1
+        try:
+            output = generate_suggestions(
+                config, path.parent, path, args.model_config, args.project.strip(), args.location.strip()
+            )
+        except Exception as exc:
+            print(
+                f"Vertex suggestion generation failed ({type(exc).__name__}); "
+                "requests already sent may have incurred charges.",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"Saved suggestions to {output}; human review is still required.")
+        return 0
     print(
         f"Preflight passed: {summary['students']} students, "
         f"{summary['pdf_pages']} pages, {summary['pages_per_student']} pages per script."

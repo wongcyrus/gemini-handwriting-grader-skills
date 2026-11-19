@@ -16,10 +16,11 @@ local copy outside version control. Relative paths resolve from its directory.
 | `reporting.advanced_analysis` | User decides whether to request AI analysis and accept associated cost. |
 | `email.enabled` | Disabled by default. Distribution is not implemented. |
 
-Use the original project's `config.yaml` as the reference for Vertex mode,
-model selection, logging and cache controls. This repository does not yet load
-or validate that file. Credentials must remain outside configuration and Git.
-Preflight does not contact Vertex AI or confirm model access.
+Use the original project's `config.yaml` for Vertex mode and annotation model
+selection. `suggest-regions` reads `vertex_ai.use_vertexai` and
+`models.annotation`; it does not currently apply its logging or cache
+settings. Credentials must remain outside configuration and Git. Preflight
+does not contact Vertex AI or confirm model access.
 
 Excel may store an ID as a number even when it is displayed with leading
 zeroes. Confirm IDs against the original roster; do not assume the displayed
