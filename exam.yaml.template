@@ -1,0 +1,19 @@
+exam:
+  name: null
+  roster: null
+  roster_sheet: null
+  scanned_pdf: null
+  marking_scheme: null
+  output_dir: null
+
+layout:
+  pages_per_student: null
+  same_layout_for_all: null
+
+reporting:
+  pass_mark: null
+  passing_includes_equal: null
+  advanced_analysis: false
+
+email:
+  enabled: false

@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.env
+exam.yaml
+*.exam.yaml
+data/
+output/
+cache/
+smtp.config
+*-key.json
