@@ -26,6 +26,15 @@ This skill leverages ADK patterns for structured execution, token/cost auditing 
 ### Cross-platform support
 PDF page rendering is powered by pure-Python `pypdfium2` and works out of the box across Windows, macOS, and Linux without external Poppler or `pdftoppm` installs.
 
+### Installation & Execution
+Install the tool into your Python environment:
+```bash
+pip install -e /path/to/gemini-handwriting-grader-skills
+```
+Once installed, `handwriting-grader` is available globally on your `PATH` (or via `.venv/bin/handwriting-grader` on Unix / `.venv\Scripts\handwriting-grader` on Windows).
+
+All `--exam /path/to/exam.yaml` and `--model-config /path/to/config.yaml` paths can be located anywhere on the filesystem; all relative paths declared inside `exam.yaml` resolve relative to `exam.yaml`'s parent folder, not the current working directory.
+
 ## Scope and availability
 
 Use the Python tools in this repository, not notebooks. Answer sheets, preflight, rubric
@@ -55,8 +64,8 @@ execute a notebook as a workaround, or claim a human approval occurred.
    configuration outside version control.
 3. If the user needs printable answer sheets before scans exist, read
    `references/answer-sheets.md` and run that independent stage first.
-4. From the repository root, run
-   `.venv/bin/handwriting-grader preflight --exam /path/to/exam.yaml`.
+4. Run preflight checks:
+   `handwriting-grader preflight --exam /path/to/exam.yaml`.
    It makes no Vertex calls and does not create outputs.
 5. Fix reported errors with the user's input and rerun. A successful preflight
    does not verify scan order, leading zeroes, rubric contents, credentials,
@@ -64,7 +73,7 @@ execute a notebook as a workaround, or claim a human approval occurred.
    If attendance is configured, read `references/attendance.md` and obtain
    explicit review and approval before grading.
 6. For region setup and review, read `references/regions.md`:
-   a. Run `.venv/bin/handwriting-grader prepare-regions --exam /path/to/exam.yaml`
+   a. Run `handwriting-grader prepare-regions --exam /path/to/exam.yaml`
       to render the first script's page images into `output_dir/regions/images/`.
    b. Ask the user if they want Gemini to automatically detect bounding boxes.
       If yes, preview `suggest-regions` (with `--model-config`, `--project`,
@@ -86,7 +95,7 @@ execute a notebook as a workaround, or claim a human approval occurred.
    After grading and reporting are complete, always inform the user that results
    and review history have been preserved, and ask if they would like to clean
    or archive intermediate output using:
-   `.venv/bin/handwriting-grader clean --exam /path/to/exam.yaml`
+   `handwriting-grader clean --exam /path/to/exam.yaml`
    (which creates a cross-platform `.zip` archive backup by default, preserves `reports/`
    and `analytics/`, and requires explicit `--confirm-delete`).
 9. For distribution read `references/email.md`; never send without reviewing
