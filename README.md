@@ -122,8 +122,9 @@ In the editor choose **Load AI suggestions**, review and correct each box,
 then save and explicitly approve. The student data in the page images is sent
 to the specified Vertex project when suggestions are requested.
 
-The skill is in `skills/handwriting-grading/SKILL.md`; install that directory
-using your agent's skill installation conventions.
+The skill is in `skills/handwriting-grading/SKILL.md`; see the
+[testing guide](docs/testing-skills.md) for Copilot CLI, Antigravity CLI and
+Gemini CLI registration and testing.
 
 ## Rubric, grading and reports
 

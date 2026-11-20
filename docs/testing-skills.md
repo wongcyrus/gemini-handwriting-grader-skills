@@ -6,11 +6,18 @@ change the instructions loaded by agents.
 
 ## 1. Register and check the skill
 
-The commands in this section were checked against GitHub Copilot CLI 1.0.113.
-From a terminal, replace the path with your checkout:
+Choose the instructions for your agent below. Run the setup commands from the
+root of this repository, replacing the path with your checkout:
 
 ```sh
 cd /path/to/gemini-handwriting-grader-skills
+```
+
+### GitHub Copilot CLI
+
+The commands in this section were checked against GitHub Copilot CLI 1.0.113.
+
+```sh
 copilot skill add "$PWD/skills"
 copilot skill list
 ```
@@ -26,7 +33,47 @@ Start `copilot` from the repository root. In an existing Copilot session, use
 available or loaded skills. Their presence does not by itself prove the agent
 followed every instruction.
 
-Ask Copilot:
+### Antigravity CLI (`agy`) and Gemini CLI
+
+These agents can discover a workspace skill under `.agents/skills/`. The
+repository stores the original in `skills/`, so copy the **whole directory**
+into that discovery location, including its references. The following
+commands leave an existing destination untouched:
+
+```sh
+mkdir -p .agents/skills
+if [ -e .agents/skills/handwriting-grading ] || [ -L .agents/skills/handwriting-grading ]; then
+  echo "Skill already exists; inspect it rather than overwriting it."
+else
+  cp -R skills/handwriting-grading .agents/skills/handwriting-grading
+fi
+```
+
+This is a workspace-local copy; it does not edit the original skill. It does
+not update automatically when the original changes, so inspect and refresh
+it deliberately. The copy may appear as untracked files in Git; review before
+committing. If another skill with the same name is present, check which path
+the agent loaded.
+
+For Antigravity, start `agy` from the repository root. In its interactive
+session run `/skills` and select `handwriting-grading` to inspect its path.
+If you added it during the session, run `/skills reload` first. The CLI also
+exposes discovered skills as slash commands, including
+`/handwriting-grading`. See the [Antigravity skill documentation](https://antigravity.google/docs/skills)
+and [discovery guide](https://antigravity.google/docs/customization-discovery).
+
+For Gemini CLI, start `gemini` from the repository root, run `/skills list`,
+and check for `handwriting-grading`. If you added it during the session, run
+`/skills reload`. When Gemini asks to activate the skill, inspect the path and
+approve only if it is the intended copy. See the [Gemini CLI skill documentation](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/skills.md).
+
+The discovery locations and commands above were checked against the providers'
+documentation on 2026-11-20; CLI behavior may change. The installed `agy`
+help was checked locally, but an authenticated agent session was not tested.
+
+### Check the selected agent
+
+Ask your agent:
 
 > Use the handwriting-grading skill. Explain how to preflight a synthetic
 > exam and what requires human approval. Do not call Vertex, send email, create
@@ -72,7 +119,7 @@ two pages per student. The sample rubric has five questions, `Q1` through
 `Q5`. All commands below run from the skills repository root.
 
 To test the agent as well as the tools, first register the skill as in step 1,
-start Copilot from this directory, and ask:
+start your chosen agent from this directory, and ask:
 
 > Use the handwriting-grading skill to guide me through testing
 > `examples/notebook-sample/example.yaml`. Start with preflight. Explain each
@@ -80,7 +127,7 @@ start Copilot from this directory, and ask:
 > approving scores or sending email.
 
 You can run the commands below yourself instead. Don't run an output-producing
-command twice if Copilot already ran it: stages refuse to overwrite outputs.
+command twice if your agent already ran it: stages refuse to overwrite outputs.
 
 ### A. Preflight and inspect
 
