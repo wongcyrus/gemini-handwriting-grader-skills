@@ -101,6 +101,13 @@ table.marksheet th, table.marksheet td {
 table.marksheet th {
   background: #f8fafc; font-weight: 600; color: #334155; position: sticky; top: 0; z-index: 5;
 }
+table.marksheet th.sortable {
+  cursor: pointer; user-select: none; white-space: nowrap;
+}
+table.marksheet th.sortable:hover { background: #e2e8f0; }
+table.marksheet th.sortable.sort-active { background: #eff6ff; color: #1d4ed8; }
+.sort-ind { margin-left: 0.3rem; font-size: 0.72rem; opacity: 0.6; }
+table.marksheet th.sort-active .sort-ind { opacity: 1; }
 table.marksheet tr:hover { background-color: #f8fafc; }
 table.marksheet tr.row-flagged { background-color: #fff7ed; }
 table.marksheet tr.row-failed { background-color: #fef2f2; }
@@ -283,15 +290,6 @@ Keep this URL private and close spreadsheet editors while using this interface.<
     <label>Image Size: <input type="range" id="img-size" min="100" max="800" step="20" value="280"> <span id="currentImgSize" style="font-weight: 600; color: #475569;">280px</span></label>
   </div>
   <div class="controls-group">
-    <label>Sort:
-      <select id="marksheet-sort">
-        <option value="group">Similar Answers Grouped</option>
-        <option value="similarity">Similarity (High to Low)</option>
-        <option value="score">Mark (Low to High)</option>
-        <option value="score-desc">Mark (High to Low)</option>
-        <option value="script">Script Order (1 to N)</option>
-      </select>
-    </label>
     <label>Filter:
       <select id="marksheet-filter">
         <option value="all">All Students</option>
@@ -313,13 +311,13 @@ Keep this URL private and close spreadsheet editors while using this interface.<
   <table id="marksheet" class="marksheet">
     <thead>
       <tr>
-        <th style="width: 65px;">Script</th>
+        <th class="sortable" data-col="script" style="width: 75px;" title="Click to sort by script number">Script<span class="sort-ind">⇅</span></th>
         <th class="col-img">Image</th>
-        <th class="col-ans">Answer</th>
-        <th class="col-mark" style="width: 105px;">Mark</th>
-        <th class="col-sim" style="width: 85px;">Similarity</th>
+        <th class="col-ans sortable sort-active" data-col="answer" title="Click to toggle Similar Answers Grouped / A-Z / Z-A">Answer<span class="sort-ind">📌</span></th>
+        <th class="col-mark sortable" data-col="score" style="width: 105px;" title="Click to sort by mark">Mark<span class="sort-ind">⇅</span></th>
+        <th class="col-sim sortable" data-col="similarity" style="width: 95px;" title="Click to sort by similarity">Similarity<span class="sort-ind">⇅</span></th>
         <th class="col-reason">Reasoning</th>
-        <th style="width: 110px;">Status</th>
+        <th class="sortable" data-col="status" style="width: 115px;" title="Click to sort by review status">Status<span class="sort-ind">⇅</span></th>
       </tr>
     </thead>
     <tbody id="marksheet-tbody"></tbody>
@@ -452,6 +450,7 @@ if (token) {
 const byId = id => document.getElementById(id);
 let state, script = 0, section = "id", dirty = false, imageUrl = null, imageGeneration = 0;
 let busy = false, imageReady = false, suggestion = null, bulk = null;
+let marksheetSort = {col: "answer", mode: "group"};
 const tableImageUrls = new Map();
 
 function message(text) { byId("status").textContent = text; }
@@ -462,7 +461,7 @@ function setBusy(value) {
                     "reviewed-id", "answer", "reasoning", "manual", "threshold", "increment", "calculate",
                     "compare-question", "compare-filter", "compare-sort", "refresh-comparison",
                     "bulk-threshold", "bulk-increment", "bulk-preview", "preview-crop",
-                    "minimumSimilarity", "granularity", "fullMark", "marksheet-sort", "marksheet-filter",
+                    "minimumSimilarity", "granularity", "fullMark", "marksheet-filter",
                     "img-size"]) {
     const el = byId(id);
     if (el) el.disabled = busy;
@@ -587,8 +586,28 @@ async function renderMarksheetTable() {
     byId("fullMark").disabled = false;
   }
 
-  const sortMode = byId("marksheet-sort").value;
+  const sortMode = marksheetSort.mode;
   const filterMode = byId("marksheet-filter").value;
+
+  document.querySelectorAll("#marksheet th.sortable").forEach(th => {
+    const col = th.dataset.col;
+    const active = col === marksheetSort.col;
+    th.classList.toggle("sort-active", active);
+    const ind = th.querySelector(".sort-ind");
+    if (!active) {
+      th.removeAttribute("aria-sort");
+      if (ind) ind.textContent = "⇅";
+    } else if (sortMode === "group") {
+      th.setAttribute("aria-sort", "other");
+      if (ind) ind.textContent = "📌";
+    } else if (sortMode.endsWith("-asc")) {
+      th.setAttribute("aria-sort", "ascending");
+      if (ind) ind.textContent = "▲";
+    } else {
+      th.setAttribute("aria-sort", "descending");
+      if (ind) ind.textContent = "▼";
+    }
+  });
 
   let entries = state.scripts.map(s => {
     const mark = isId ? null : state.marks[s.script_index][qIdx];
@@ -688,12 +707,24 @@ async function renderMarksheetTable() {
       }
     }
   } else {
-    if (sortMode === "similarity") {
+    if (sortMode === "similarity-desc") {
       entries.sort((a, b) => b.similarity - a.similarity || a.script.script_index - b.script.script_index);
-    } else if (sortMode === "score") {
+    } else if (sortMode === "similarity-asc") {
+      entries.sort((a, b) => a.similarity - b.similarity || a.script.script_index - b.script.script_index);
+    } else if (sortMode === "score-asc") {
       entries.sort((a, b) => a.score - b.score || a.script.script_index - b.script.script_index);
     } else if (sortMode === "score-desc") {
       entries.sort((a, b) => b.score - a.score || a.script.script_index - b.script.script_index);
+    } else if (sortMode === "answer-asc") {
+      entries.sort((a, b) => a.normAnswer.localeCompare(b.normAnswer) || a.script.script_index - b.script.script_index);
+    } else if (sortMode === "answer-desc") {
+      entries.sort((a, b) => b.normAnswer.localeCompare(a.normAnswer) || a.script.script_index - b.script.script_index);
+    } else if (sortMode === "status-asc") {
+      entries.sort((a, b) => Number(a.reviewed) - Number(b.reviewed) || a.script.script_index - b.script.script_index);
+    } else if (sortMode === "status-desc") {
+      entries.sort((a, b) => Number(b.reviewed) - Number(a.reviewed) || a.script.script_index - b.script.script_index);
+    } else if (sortMode === "script-desc") {
+      entries.sort((a, b) => b.script.script_index - a.script.script_index);
     } else {
       entries.sort((a, b) => a.script.script_index - b.script.script_index);
     }
@@ -958,8 +989,25 @@ byId("granularity").oninput = e => {
 };
 
 byId("fullMark").onchange = refreshMarksBySimilarity;
-byId("marksheet-sort").onchange = renderMarksheetTable;
 byId("marksheet-filter").onchange = renderMarksheetTable;
+
+document.querySelectorAll("#marksheet th.sortable").forEach(th => {
+  th.onclick = () => {
+    const col = th.dataset.col;
+    if (col === "answer") {
+      if (marksheetSort.col !== "answer") marksheetSort = {col: "answer", mode: "group"};
+      else if (marksheetSort.mode === "group") marksheetSort = {col: "answer", mode: "answer-asc"};
+      else if (marksheetSort.mode === "answer-asc") marksheetSort = {col: "answer", mode: "answer-desc"};
+      else marksheetSort = {col: "answer", mode: "group"};
+    } else if (col === "similarity") {
+      marksheetSort = {col, mode: marksheetSort.col === col && marksheetSort.mode === "similarity-desc" ? "similarity-asc" : "similarity-desc"};
+    } else {
+      const asc = `${col}-asc`, desc = `${col}-desc`;
+      marksheetSort = {col, mode: marksheetSort.col === col && marksheetSort.mode === asc ? desc : asc};
+    }
+    renderMarksheetTable();
+  };
+});
 
 function renderComparison() {
   const q = Number(byId("compare-question").value), filter = byId("compare-filter").value;
