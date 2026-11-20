@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Review grades</title>
 <style>
+:root { --img-max-h: 280px; }
 * { box-sizing: border-box; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -16,7 +17,6 @@ header { margin: 0.85rem 0 0.5rem 0; }
 h1 { font-size: 1.3rem; font-weight: 700; margin: 0 0 0.25rem 0; color: #1e293b; }
 p.instructions { font-size: 0.82rem; color: #475569; margin: 0 0 0.6rem 0; line-height: 1.4; }
 
-/* Question Tabs & Global Actions */
 .top-nav-row {
   display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;
   margin-bottom: 0.65rem; padding-bottom: 0.5rem; border-bottom: 2px solid #e2e8f0;
@@ -34,7 +34,6 @@ p.instructions { font-size: 0.82rem; color: #475569; margin: 0 0 0.6rem 0; line-
 
 .global-actions { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
 
-/* Inputs & Buttons */
 input, select, textarea, button { font: inherit; font-size: 0.84rem; }
 input[type="number"], input[type="text"], select {
   padding: 0.28rem 0.5rem; border: 1px solid #cbd5e1; border-radius: 4px; background: #ffffff;
@@ -64,7 +63,6 @@ button.btn-success:hover:not(:disabled) { background: #15803d; }
   margin-bottom: 0.65rem; white-space: pre-wrap;
 }
 
-/* Question Banner */
 .question-banner {
   background: #ffffff; border: 1px solid #cbd5e1; border-left: 4px solid #2563eb;
   padding: 0.65rem 1rem; border-radius: 0 6px 6px 0; margin-bottom: 0.75rem; font-size: 0.85rem;
@@ -74,7 +72,6 @@ button.btn-success:hover:not(:disabled) { background: #15803d; }
   margin: 0.3rem 0 0 0; font-family: inherit; white-space: pre-wrap; color: #475569; font-size: 0.8rem;
 }
 
-/* Compact Controls Bar */
 .controls-bar {
   background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px;
   padding: 0.55rem 0.85rem; margin-bottom: 0.75rem;
@@ -85,12 +82,19 @@ button.btn-success:hover:not(:disabled) { background: #15803d; }
   display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.82rem; font-weight: 600; color: #334155;
 }
 
+/* Identity Matching Inline Box (shown when section === 'id') */
+.identity-panel {
+  background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px;
+  padding: 0.85rem 1rem; margin-bottom: 1rem;
+  display: flex; flex-wrap: wrap; gap: 1rem; align-items: center;
+}
+
 /* Marksheet Table */
 .table-container {
   background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px;
   box-shadow: 0 1px 2px rgba(0,0,0,0.03); overflow-x: auto; margin-bottom: 1.25rem;
 }
-table.marksheet { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+table.marksheet { border-collapse: collapse; width: 100%; font-size: 0.85rem; table-layout: auto; }
 table.marksheet th, table.marksheet td {
   border: 1px solid #e2e8f0; padding: 0.5rem 0.65rem; vertical-align: middle; text-align: left;
 }
@@ -112,12 +116,14 @@ tr.group-divider td {
   padding: 0.1rem 0.45rem; border-radius: 10px; font-size: 0.74rem; margin-right: 0.4rem;
 }
 
+/* Maximizable Answer Crop Image */
+td.col-img { min-width: 260px; }
 .answer-crop-img {
-  max-width: 240px; max-height: 95px; object-fit: contain;
-  background: #ffffff; border: 1px solid #cbd5e1; border-radius: 3px;
+  width: 100%; max-width: 100%; height: auto; max-height: var(--img-max-h);
+  object-fit: contain; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 4px;
   cursor: pointer; display: block;
 }
-.answer-crop-img:hover { border-color: #2563eb; box-shadow: 0 2px 6px rgba(0,0,0,0.15); }
+.answer-crop-img:hover { border-color: #2563eb; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
 
 input.mark-input {
   width: 68px; font-size: 1rem; font-weight: 700; text-align: center;
@@ -136,29 +142,39 @@ input.mark-input.locked { border-color: #ea580c; background-color: #fff7ed; }
 .sim-mid { background: #fef9c3; color: #854d0e; }
 .sim-low { background: #f1f5f9; color: #64748b; }
 
-/* Selected Script Quick-Edit Card (Flat, no nested panels) */
-.quick-edit-card {
-  background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px;
-  padding: 0.85rem 1rem; margin-bottom: 1rem;
-  display: flex; flex-direction: column; gap: 0.6rem;
+/* Floating Non-Blocking Script Detail Modal */
+.editor-modal {
+  display: none;
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  width: min(680px, 94vw);
+  max-height: 82vh;
+  background: #ffffff;
+  border: 2px solid #2563eb;
+  border-radius: 8px;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.28);
+  z-index: 900;
+  flex-direction: column;
+  overflow: hidden;
 }
-.quick-edit-header {
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem;
-  padding-bottom: 0.45rem; border-bottom: 1px solid #e2e8f0;
+.editor-modal.active { display: flex; }
+.editor-modal-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0.6rem 0.9rem; background: #eff6ff; border-bottom: 1px solid #bfdbfe;
+  flex-shrink: 0;
 }
-.quick-edit-grid {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; align-items: start;
+.editor-modal-body {
+  padding: 0.85rem 1rem; overflow-y: auto; display: flex; flex-direction: column; gap: 0.65rem;
 }
-@media (max-width: 900px) { .quick-edit-grid { grid-template-columns: 1fr; } }
 textarea {
   display: block; width: 100%; min-height: 4.5rem;
   padding: 0.35rem 0.5rem; border: 1px solid #cbd5e1; border-radius: 4px;
 }
-#image { max-width: 100%; max-height: 32vh; border: 1px solid #94a3b8; border-radius: 4px; }
+#image { max-width: 100%; max-height: 35vh; border: 1px solid #94a3b8; border-radius: 4px; object-fit: contain; }
 .warning { color: #dc2626; font-weight: 700; }
 .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
 
-/* Accordions (single level only) */
 details {
   background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px;
   margin-bottom: 0.65rem; overflow: hidden;
@@ -176,18 +192,18 @@ table#comparison { border-collapse: collapse; width: 100%; font-size: 0.82rem; }
 table#comparison th, table#comparison td { border: 1px solid #cbd5e1; padding: 0.35rem 0.5rem; text-align: left; }
 table#comparison th { background: #f8fafc; }
 
-/* Image Lightbox Modal */
+/* Full-screen Image Lightbox Modal */
 .modal-overlay {
   display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(15, 23, 42, 0.8); z-index: 1000;
-  align-items: center; justify-content: center; padding: 2rem;
+  background: rgba(15, 23, 42, 0.82); z-index: 1000;
+  align-items: center; justify-content: center; padding: 1.5rem;
 }
 .modal-overlay.active { display: flex; }
 .modal-box {
-  background: #ffffff; padding: 1rem; border-radius: 8px; max-width: 90vw; max-height: 90vh;
+  background: #ffffff; padding: 1rem; border-radius: 8px; max-width: 94vw; max-height: 94vh;
   display: flex; flex-direction: column; gap: 0.5rem; text-align: center; overflow: hidden;
 }
-.modal-box img { max-width: 100%; max-height: 78vh; object-fit: contain; border: 1px solid #cbd5e1; }
+.modal-box img { max-width: 100%; max-height: 82vh; object-fit: contain; border: 1px solid #cbd5e1; }
 </style>
 </head>
 <body>
@@ -202,6 +218,8 @@ Keep this URL private and close spreadsheet editors while using this interface.<
 <div class="top-nav-row">
   <nav class="nav-tabs" id="question-tabs"></nav>
   <div class="global-actions">
+    <label style="font-size:0.8rem;">Script <select id="script"></select></label>
+    <label style="font-size:0.8rem;">Review <select id="section"></select></label>
     <button id="save">Save draft</button>
     <button id="review" class="btn-primary">Save and mark reviewed</button>
     <button id="approve" class="btn-success">Approve all grading</button>
@@ -218,12 +236,25 @@ Keep this URL private and close spreadsheet editors while using this interface.<
   <pre id="q-banner-scheme"></pre>
 </div>
 
+<!-- Identity Matching Section (Only visible on Student Identity tab) -->
+<div class="identity-panel" id="script-fields">
+  <div class="bar">
+    <span id="ocr" style="font-weight: 600;"></span>
+    <label>Reviewed roster ID <select id="reviewed-id"></select></label>
+    <label>Metadata image <select id="metadata-image"><option value="id">ID</option><option value="name">Name</option><option value="class">Class</option></select></label>
+    <span id="review-status-id" style="font-weight: 600; color: #475569;"></span>
+  </div>
+</div>
+
 <!-- Marksheet Controls -->
 <div class="controls-bar" id="marksheet-controls">
   <div class="controls-group">
     <label>Full mark: <input type="number" id="fullMark" min="0" max="100" style="width: 55px;"></label>
     <label>Similarity: <input type="range" id="minimumSimilarity" min="0" max="1" step="0.01" value="0.8"> <span id="currentSimilarity" style="min-width: 32px; font-weight: 700; color: #2563eb;">0.80</span></label>
     <label>Granularity: <input type="range" id="granularity" min="0.1" max="1" step="0.25" value="1"> <span id="currentGranularity" style="min-width: 25px; font-weight: 700; color: #2563eb;">1</span></label>
+    <label>Image Size: <input type="range" id="img-size" min="100" max="800" step="20" value="280"> <span id="currentImgSize" style="font-weight: 600; color: #475569;">280px</span></label>
+  </div>
+  <div class="controls-group">
     <label>Sort:
       <select id="marksheet-sort">
         <option value="group">Similar Answers Grouped</option>
@@ -240,8 +271,6 @@ Keep this URL private and close spreadsheet editors while using this interface.<
         <option value="flagged">Flagged / Failed</option>
       </select>
     </label>
-  </div>
-  <div class="controls-group">
     <span style="font-weight: 600; font-size: 0.8rem; color: #475569;">Show/Hide:</span>
     <button type="button" class="toggle-vis active" data-col="img">Image</button>
     <button type="button" class="toggle-vis active" data-col="ans">Answer</button>
@@ -251,92 +280,25 @@ Keep this URL private and close spreadsheet editors while using this interface.<
   </div>
 </div>
 
-<!-- One-Page Marksheet Table -->
+<!-- One-Page Marksheet Table (Blind Grading: No Student IDs) -->
 <div class="table-container">
   <table id="marksheet" class="marksheet">
     <thead>
       <tr>
-        <th style="width: 85px;">Script</th>
-        <th class="col-img" style="width: 250px;">Image</th>
+        <th style="width: 65px;">Script</th>
+        <th class="col-img">Image</th>
         <th class="col-ans">Answer</th>
-        <th class="col-mark" style="width: 110px;">Mark</th>
-        <th class="col-sim" style="width: 90px;">Similarity</th>
+        <th class="col-mark" style="width: 105px;">Mark</th>
+        <th class="col-sim" style="width: 85px;">Similarity</th>
         <th class="col-reason">Reasoning</th>
-        <th style="width: 115px;">Status</th>
+        <th style="width: 110px;">Status</th>
       </tr>
     </thead>
     <tbody id="marksheet-tbody"></tbody>
   </table>
 </div>
 
-<!-- Flat Selected-Script Editor (Required for ID matching, detailed edits & tests) -->
-<div class="quick-edit-card">
-  <div class="quick-edit-header">
-    <div class="bar">
-      <label>Script <select id="script"></select></label>
-      <label>Review <select id="section"></select></label>
-      <span id="review-status" style="font-weight: 600; color: #475569; margin-left: 0.5rem;"></span>
-    </div>
-    <label><input id="full-page" type="checkbox"> Show entire page instead of crop</label>
-  </div>
-
-  <div class="quick-edit-grid">
-    <div>
-      <img id="image" alt="Selected answer or metadata crop">
-    </div>
-    <div>
-      <div id="script-fields">
-        <p id="ocr" style="margin-top: 0;"></p>
-        <div class="bar">
-          <label>Reviewed roster ID <select id="reviewed-id"></select></label>
-          <label>Metadata image <select id="metadata-image"><option value="id">ID</option><option value="name">Name</option><option value="class">Class</option></select></label>
-        </div>
-      </div>
-
-      <div id="mark-fields">
-        <p id="question" style="margin: 0 0 0.25rem 0; font-weight: 600;"></p>
-        <pre id="scheme" hidden></pre>
-        <p id="scores" style="margin: 0 0 0.25rem 0; font-size: 0.82rem; color: #2563eb; font-weight: 600;"></p>
-        <p id="flags" class="warning" style="margin: 0 0 0.4rem 0;"></p>
-        <label style="display:block; margin-bottom:0.4rem; font-weight:600;">Reviewed answer <textarea id="answer"></textarea></label>
-        <label style="display:block; margin-bottom:0.4rem; font-weight:600;">Reviewed reasoning <textarea id="reasoning"></textarea></label>
-        <label style="display:inline-flex; align-items:center; gap:0.4rem; font-weight:600;">Manual mark (optional unless required) <input id="manual" inputmode="decimal" style="width: 90px;"></label>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Single-level collapsed accordions (No nested panels!) -->
-<details id="similarity-details">
-  <summary>Similarity-based mark suggestion</summary>
-  <div class="details-content">
-    <p style="margin-top:0;">Uses the original OCR answer and ignores moderation. Enter your chosen threshold (0–1) and mark increment.
-A suggestion is made only when a reviewed student with equal or higher similarity has a manual mark,
-and all such students share that same manual mark.</p>
-    <div class="bar">
-      <label>Similarity threshold <input id="threshold" inputmode="decimal" style="width: 80px;"></label>
-      <label>Mark increment <input id="increment" inputmode="decimal" style="width: 80px;"></label>
-      <button id="calculate">Calculate suggestion</button> <span id="suggestion" style="font-weight:600;"></span>
-      <button id="apply-suggestion" disabled>Use suggestion as manual mark</button>
-    </div>
-  </div>
-</details>
-
-<details>
-  <summary>Adjust crop for visual inspection</summary>
-  <div class="details-content">
-    <p style="margin-top:0;">Coordinates are pixels on the approved question page. This preview is temporary;
-it does not change model inputs, review data, region approvals or reports.</p>
-    <div class="bar">
-      <label>X <input id="crop-x" type="number" min="0" step="1" style="width: 75px;"></label>
-      <label>Y <input id="crop-y" type="number" min="0" step="1" style="width: 75px;"></label>
-      <label>Width <input id="crop-width" type="number" min="1" step="1" style="width: 75px;"></label>
-      <label>Height <input id="crop-height" type="number" min="1" step="1" style="width: 75px;"></label>
-      <button id="preview-crop">Preview crop</button>
-    </div>
-  </div>
-</details>
-
+<!-- Collapsed Comparison & Bulk Tools -->
 <details id="comparison-details">
   <summary>Compare students by question</summary>
   <div class="details-content">
@@ -372,10 +334,72 @@ marks as <strong>unreviewed drafts</strong>; previously reviewed marks will need
   </div>
 </details>
 
-<details><summary>Original OCR answer</summary><div class="details-content"><pre id="original" style="margin:0;"></pre></div></details>
-<details id="previous-review" hidden><summary>Previous approved review</summary><div class="details-content"><pre id="previous" style="margin:0;"></pre></div></details>
+<!-- Floating Script Detail Modal (Opens on clicking Script # cell, Open review, or selecting question) -->
+<div class="editor-modal" id="editor-modal">
+  <div class="editor-modal-header">
+    <strong id="modal-editor-title">Script Details</strong>
+    <div class="bar">
+      <label style="font-size:0.78rem;"><input id="full-page" type="checkbox"> Show entire page instead of crop</label>
+      <button type="button" id="close-editor-modal" style="padding: 0.15rem 0.5rem; font-size: 0.78rem;">✕ Close</button>
+    </div>
+  </div>
+  <div class="editor-modal-body">
+    <img id="image" alt="Selected answer or metadata crop">
 
-<!-- Image Lightbox Modal -->
+    <div id="mark-fields">
+      <p id="question" style="margin: 0 0 0.25rem 0; font-weight: 600;"></p>
+      <pre id="scheme" hidden></pre>
+      <p id="scores" style="margin: 0 0 0.25rem 0; font-size: 0.82rem; color: #2563eb; font-weight: 600;"></p>
+      <p id="flags" class="warning" style="margin: 0 0 0.4rem 0;"></p>
+      <label style="display:block; margin-bottom:0.4rem; font-weight:600;">Reviewed answer <textarea id="answer"></textarea></label>
+      <label style="display:block; margin-bottom:0.4rem; font-weight:600;">Reviewed reasoning <textarea id="reasoning"></textarea></label>
+      <div class="bar" style="margin-bottom:0.5rem;">
+        <label style="font-weight:600;">Manual mark (optional unless required) <input id="manual" inputmode="decimal" style="width: 90px;"></label>
+        <span id="review-status" style="font-weight: 600; color: #475569; margin-left: auto;"></span>
+      </div>
+
+      <details id="similarity-details">
+        <summary>Similarity-based mark suggestion</summary>
+        <div class="details-content">
+          <p style="margin-top:0; font-size:0.78rem;">Uses the original OCR answer and ignores moderation. Enter your chosen threshold (0–1) and mark increment.
+A suggestion is made only when a reviewed student with equal or higher similarity has a manual mark,
+and all such students share that same manual mark.</p>
+          <div class="bar">
+            <label>Similarity threshold <input id="threshold" inputmode="decimal" style="width: 70px;"></label>
+            <label>Mark increment <input id="increment" inputmode="decimal" style="width: 70px;"></label>
+            <button id="calculate">Calculate suggestion</button> <span id="suggestion" style="font-weight:600;"></span>
+            <button id="apply-suggestion" disabled>Use suggestion as manual mark</button>
+          </div>
+        </div>
+      </details>
+
+      <details>
+        <summary>Adjust crop for visual inspection</summary>
+        <div class="details-content">
+          <p style="margin-top:0; font-size:0.78rem;">Coordinates are pixels on the approved question page. This preview is temporary;
+it does not change model inputs, review data, region approvals or reports.</p>
+          <div class="bar">
+            <label>X <input id="crop-x" type="number" min="0" step="1" style="width: 70px;"></label>
+            <label>Y <input id="crop-y" type="number" min="0" step="1" style="width: 70px;"></label>
+            <label>Width <input id="crop-width" type="number" min="1" step="1" style="width: 70px;"></label>
+            <label>Height <input id="crop-height" type="number" min="1" step="1" style="width: 70px;"></label>
+            <button id="preview-crop">Preview crop</button>
+          </div>
+        </div>
+      </details>
+
+      <details><summary>Original OCR answer</summary><div class="details-content"><pre id="original" style="margin:0;"></pre></div></details>
+      <details id="previous-review" hidden><summary>Previous approved review</summary><div class="details-content"><pre id="previous" style="margin:0;"></pre></div></details>
+
+      <div class="bar" style="justify-content: flex-end; padding-top: 0.5rem; border-top: 1px solid #e2e8f0;">
+        <button type="button" id="modal-save">Save draft</button>
+        <button type="button" id="modal-review" class="btn-primary">Save and mark reviewed</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Full-screen Image Lightbox Modal -->
 <div class="modal-overlay" id="image-modal">
   <div class="modal-box">
     <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -410,7 +434,8 @@ function setBusy(value) {
                     "reviewed-id", "answer", "reasoning", "manual", "threshold", "increment", "calculate",
                     "compare-question", "compare-filter", "compare-sort", "refresh-comparison",
                     "bulk-threshold", "bulk-increment", "bulk-preview", "preview-crop",
-                    "minimumSimilarity", "granularity", "fullMark", "marksheet-sort", "marksheet-filter"]) {
+                    "minimumSimilarity", "granularity", "fullMark", "marksheet-sort", "marksheet-filter",
+                    "img-size", "modal-save", "modal-review"]) {
     const el = byId(id);
     if (el) el.disabled = busy;
   }
@@ -435,6 +460,14 @@ function clearBulk() {
   bulk = null; byId("bulk-results").replaceChildren(); setBusy(busy);
 }
 
+function openEditorModal() {
+  byId("editor-modal").classList.add("active");
+}
+function closeEditorModal() {
+  byId("editor-modal").classList.remove("active");
+}
+byId("close-editor-modal").onclick = closeEditorModal;
+
 async function api(path, body) {
   const options = {headers: {"Authorization": "Bearer " + token}};
   if (body !== undefined) {
@@ -455,7 +488,6 @@ function normalizeAnswer(text) {
   return text.toLowerCase().replace(/[^\w\s]/g, "").replace(/\s+/g, " ").trim();
 }
 
-// Compute token Jaccard similarity between two normalized strings for fuzzy grouping
 function textSimilarity(a, b) {
   if (a === b) return 1;
   if (!a || !b) return 0;
@@ -472,7 +504,10 @@ function renderTabs() {
   const idTab = document.createElement("a");
   idTab.className = "nav-tab metadata" + (section === "id" ? " active" : "");
   idTab.textContent = "Student Identity";
-  idTab.onclick = () => change("section", "id");
+  idTab.onclick = () => {
+    closeEditorModal();
+    change("section", "id");
+  };
   nav.append(idTab);
 
   if (state && state.questions) {
@@ -481,7 +516,10 @@ function renderTabs() {
       tab.className = "nav-tab" + (section === String(i) ? " active" : "");
       const qLabel = String(q.question_number).startsWith("Q") ? q.question_number : `Q${q.question_number}`;
       tab.textContent = `${qLabel} (${q.marks}m)`;
-      tab.onclick = () => change("section", String(i));
+      tab.onclick = () => {
+        closeEditorModal();
+        change("section", String(i));
+      };
       nav.append(tab);
     });
   }
@@ -545,7 +583,6 @@ async function renderMarksheetTable() {
   }
 
   if (sortMode === "group" && !isId) {
-    // Cluster answers by fuzzy similarity (>= 0.65 token overlap)
     const clusters = [];
     for (const e of entries) {
       let placed = false;
@@ -561,7 +598,6 @@ async function renderMarksheetTable() {
       }
     }
 
-    // Sort clusters: largest cluster first, then highest similarity
     clusters.sort((a, b) => {
       if (b.items.length !== a.items.length) return b.items.length - a.items.length;
       const simA = a.items.reduce((acc, i) => acc + i.similarity, 0) / a.items.length;
@@ -571,7 +607,6 @@ async function renderMarksheetTable() {
 
     let groupNum = 1;
     for (const cluster of clusters) {
-      // Only show group divider row when 2 or more students share a group (avoid 1-student clutter!)
       if (cluster.items.length >= 2) {
         const avgSim = (cluster.items.reduce((acc, it) => acc + it.similarity, 0) / cluster.items.length).toFixed(2);
         const avgScore = (cluster.items.reduce((acc, it) => acc + it.score, 0) / cluster.items.length).toFixed(1);
@@ -640,25 +675,23 @@ function createTableRow(item, isId, qIdx) {
   if (item.flagged) row.className = m && m.grading_failed ? "row-failed" : "row-flagged";
   if (sIdx === script) row.classList.add("row-selected");
 
-  // 1. Script / ID
+  // 1. Blind Script # ONLY (No student ID shown for fair blind review!)
   const cellId = document.createElement("td");
   cellId.style.cursor = "pointer";
-  cellId.title = "Click to select in editor";
+  cellId.title = "Click to open detailed editor modal";
   cellId.onclick = () => {
     if (dirty && !confirm("Discard unsaved edits?")) return;
     script = sIdx; dirty = false;
-    render().catch(e => message(e.message));
+    render().then(() => { if (!isId) openEditorModal(); }).catch(e => message(e.message));
   };
   const strongId = document.createElement("strong");
   strongId.textContent = `#${sIdx + 1}`;
-  const br = document.createElement("br");
-  const smallId = document.createElement("small");
-  smallId.style.color = "#64748b";
-  smallId.textContent = s.reviewed_id || s.id_ocr || "Unmatched";
-  cellId.append(strongId, br, smallId);
+  strongId.style.color = "#2563eb";
+  strongId.style.textDecoration = "underline";
+  cellId.append(strongId);
   row.append(cellId);
 
-  // 2. Image
+  // 2. Image (Maximizable)
   const cellImg = document.createElement("td");
   cellImg.className = "col-img";
   const img = document.createElement("img");
@@ -666,8 +699,8 @@ function createTableRow(item, isId, qIdx) {
   img.alt = `Script ${sIdx + 1}`;
   img.dataset.script = String(sIdx);
   img.dataset.field = isId ? (byId("metadata-image").value || "id") : String(qIdx);
-  img.title = "Click to enlarge";
-  img.onclick = () => openImageModal(img.src, `Script ${sIdx + 1} - ${isId ? 'Identity' : state.questions[qIdx].question_number}`);
+  img.title = "Click to enlarge fullscreen";
+  img.onclick = () => openImageModal(img.src, `Script #${sIdx + 1} - ${isId ? 'Identity' : state.questions[qIdx].question_number}`);
   cellImg.append(img);
   row.append(cellImg);
 
@@ -789,7 +822,7 @@ async function saveInlineMark(sIdx, qIdx, markValue, markReviewed) {
     await api("/api/save", body);
     dirty = false;
     await reload();
-    message(markReviewed ? `Script ${sIdx + 1} saved and reviewed.` : `Script ${sIdx + 1} mark saved.`);
+    message(markReviewed ? `Script #${sIdx + 1} saved and reviewed.` : `Script #${sIdx + 1} mark saved.`);
   } catch (e) {
     message(e.message);
   } finally {
@@ -856,6 +889,12 @@ document.querySelectorAll(".toggle-vis").forEach(btn => {
   };
 });
 
+byId("img-size").oninput = e => {
+  const val = e.target.value;
+  byId("currentImgSize").textContent = val + "px";
+  document.documentElement.style.setProperty("--img-max-h", val + "px");
+};
+
 byId("minimumSimilarity").oninput = e => {
   byId("currentSimilarity").textContent = Number(e.target.value).toFixed(2);
   refreshMarksBySimilarity();
@@ -899,7 +938,7 @@ function renderComparison() {
     button.onclick = () => {
       if (dirty && !confirm("Discard unsaved edits?")) return;
       script = current.script_index; section = String(q); dirty = false;
-      render().catch(e => message(e.message));
+      render().then(() => openEditorModal()).catch(e => message(e.message));
     };
     action.append(button); row.append(action); body.append(row);
   }
@@ -923,23 +962,25 @@ async function render() {
   byId("script").value = String(script); byId("section").value = section;
   const current = state.scripts[script];
   const identity = section === "id";
-  byId("script-fields").hidden = !identity; byId("mark-fields").hidden = identity;
+  byId("script-fields").style.display = identity ? "flex" : "none";
+  byId("mark-fields").hidden = identity;
 
   renderTabs();
   await renderMarksheetTable();
 
   if (identity) {
-    byId("ocr").textContent = `OCR ID: ${current.id_ocr} | OCR name: ${current.name_ocr ?? "unavailable"} | OCR class: ${current.class_ocr}` +
-      (current.errors.length ? " | OCR errors: " + current.errors.map(e => e.field + ": " + e.type).join(", ") : "");
+    byId("ocr").textContent = `Script #${script + 1} | OCR ID: ${current.id_ocr} | Name: ${current.name_ocr ?? "unavailable"} | Class: ${current.class_ocr}` +
+      (current.errors.length ? " | Errors: " + current.errors.map(e => e.field + ": " + e.type).join(", ") : "");
     byId("reviewed-id").replaceChildren(option("", "Choose a roster ID"));
     for (const [id, person] of Object.entries(state.roster))
       byId("reviewed-id").append(option(id, `${id} — ${person.name} (${person.class})`));
     byId("reviewed-id").value = current.reviewed_id == null ? "" : String(current.reviewed_id);
-    byId("review-status").textContent = current.reviewed ? "Identity reviewed." : "Identity not yet reviewed.";
+    byId("review-status-id").textContent = current.reviewed ? "Identity reviewed." : "Identity not yet reviewed.";
     await image(byId("metadata-image").value);
   } else {
     const q = Number(section), question = state.questions[q], mark = state.marks[script][q];
-    byId("question").textContent = `Script ${script + 1} · ${question.question_number}`;
+    byId("modal-editor-title").textContent = `Script #${script + 1} · ${question.question_number}`;
+    byId("question").textContent = `Script #${script + 1} · ${question.question_number}`;
     byId("scheme").textContent = question.marking_scheme;
     byId("scores").textContent = `Maximum: ${question.marks} | AI mark: ${mark.raw_mark ?? "failed"} | Moderated: ${mark.moderated_mark ?? "unavailable"} | Similarity: ${mark.similarity_score ?? "unavailable"}`;
     byId("flags").textContent = (mark.grading_failed ? "Grading failed. " : "") +
@@ -1028,7 +1069,10 @@ function change(which, value) {
 }
 
 byId("script").onchange = e => change("script", e.target.value);
-byId("section").onchange = e => change("section", e.target.value);
+byId("section").onchange = e => {
+  change("section", e.target.value);
+  if (e.target.value !== "id") openEditorModal(); else closeEditorModal();
+};
 byId("metadata-image").onchange = e => image(e.target.value).catch(err => message(err.message));
 byId("full-page").onchange = () => image(section === "id" ? byId("metadata-image").value : section)
   .catch(err => message(err.message));
@@ -1105,7 +1149,9 @@ async function save(reviewed) {
 }
 
 byId("save").onclick = () => save(false).catch(e => message(e.message));
+byId("modal-save").onclick = () => save(false).catch(e => message(e.message));
 byId("review").onclick = () => save(true).catch(e => message(e.message));
+byId("modal-review").onclick = () => save(true).catch(e => message(e.message));
 
 byId("approve").onclick = async () => {
   if (dirty) { message("Save the current item before approval."); return; }
