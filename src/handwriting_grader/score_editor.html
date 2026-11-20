@@ -46,6 +46,12 @@ p.instructions { font-size: 0.82rem; color: #475569; margin: 0 0 0.6rem 0; line-
   font-size: 0.78rem; font-weight: 600; color: #475569;
   padding: 0.25rem 0.55rem; background: #f1f5f9; border-radius: 999px;
 }
+.questions-drawer {
+  background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px;
+  padding: 0.6rem; margin-bottom: 0.65rem; max-height: 220px; overflow-y: auto;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 0.35rem;
+}
+.questions-drawer[hidden] { display: none; }
 
 .global-actions { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
 
@@ -275,6 +281,7 @@ Keep this URL private and close spreadsheet editors while using this interface.<
     <button id="approve" class="btn-success">Approve all grading</button>
   </div>
 </div>
+<div id="questions-drawer" class="questions-drawer" hidden></div>
 
 <div id="status" role="status">Connecting...</div>
 
@@ -566,7 +573,9 @@ function textSimilarity(a, b) {
 
 function renderTabs() {
   const nav = byId("question-tabs");
+  const drawer = byId("questions-drawer");
   nav.replaceChildren();
+  drawer.replaceChildren();
   if (!state || !state.scripts) return;
 
   const totalScripts = state.scripts.length;
@@ -589,50 +598,116 @@ function renderTabs() {
   nav.append(idTab);
 
   let totalPendingQuestions = idDone ? 0 : 1;
+  let totalFlaggedQuestions = idErrors > 0 ? 1 : 0;
   let nextPendingSection = idDone ? null : "id";
+  const questions = state.questions || [];
+  const useCompactPicker = questions.length > 10;
 
-  if (state.questions) {
-    state.questions.forEach((q, i) => {
-      let qReviewed = 0, qFlagged = 0;
-      for (const s of state.scripts) {
-        const m = state.marks[s.script_index][i];
-        if (m && m.reviewed) qReviewed++;
-        if (m && (m.grading_failed || m.moderator_flag) && !m.reviewed) qFlagged++;
-      }
-      const qDone = totalScripts > 0 && qReviewed === totalScripts;
-      if (!qDone) {
-        totalPendingQuestions++;
-        if (nextPendingSection === null || (section !== "id" && i > Number(section))) {
-          if (nextPendingSection === null || (section !== "id" && Number(nextPendingSection) <= Number(section))) {
-            nextPendingSection = String(i);
-          }
+  let picker = null;
+  if (useCompactPicker) {
+    const prevQ = document.createElement("button");
+    prevQ.type = "button";
+    prevQ.textContent = "◀";
+    prevQ.title = "Previous question";
+    prevQ.disabled = section === "id";
+    prevQ.onclick = () => {
+      closeEditorModal();
+      const idx = Number(section);
+      change("section", idx <= 0 ? "id" : String(idx - 1));
+    };
+
+    picker = document.createElement("select");
+    picker.id = "question-picker";
+    picker.style.maxWidth = "300px";
+    picker.style.fontWeight = "600";
+    const idOpt = option("id", `Student Identity (${idDone ? "✓" : `${idReviewed}/${totalScripts}`})`);
+    picker.append(idOpt);
+
+    const nextQ = document.createElement("button");
+    nextQ.type = "button";
+    nextQ.textContent = "▶";
+    nextQ.title = "Next question";
+    nextQ.disabled = section !== "id" && Number(section) >= questions.length - 1;
+    nextQ.onclick = () => {
+      closeEditorModal();
+      const idx = section === "id" ? 0 : Number(section) + 1;
+      if (idx < questions.length) change("section", String(idx));
+    };
+
+    picker.onchange = e => {
+      closeEditorModal();
+      change("section", e.target.value);
+    };
+    nav.append(prevQ, picker, nextQ);
+  }
+
+  questions.forEach((q, i) => {
+    let qReviewed = 0, qFlagged = 0;
+    for (const s of state.scripts) {
+      const m = state.marks[s.script_index][i];
+      if (m && m.reviewed) qReviewed++;
+      if (m && (m.grading_failed || m.moderator_flag) && !m.reviewed) qFlagged++;
+    }
+    const qDone = totalScripts > 0 && qReviewed === totalScripts;
+    if (!qDone) {
+      totalPendingQuestions++;
+      if (qFlagged > 0) totalFlaggedQuestions++;
+      if (nextPendingSection === null || (section !== "id" && i > Number(section))) {
+        if (nextPendingSection === null || (section !== "id" && Number(nextPendingSection) <= Number(section))) {
+          nextPendingSection = String(i);
         }
       }
+    }
 
-      const tab = document.createElement("button");
-      tab.type = "button";
-      tab.className = "nav-tab" + (section === String(i) ? " active" : "") + (qDone ? " tab-done" : (qFlagged > 0 ? " tab-flagged" : ""));
-      const qLabel = String(q.question_number).startsWith("Q") ? q.question_number : `Q${q.question_number}`;
-      tab.append(document.createTextNode(`${qLabel} (${q.marks}m)`));
+    const qLabel = String(q.question_number).startsWith("Q") ? q.question_number : `Q${q.question_number}`;
+    const badgeText = qDone ? "✓" : `${qReviewed}/${totalScripts}` + (qFlagged > 0 ? ` ⚠${qFlagged}` : "");
 
-      const badge = document.createElement("span");
-      badge.className = "tab-badge " + (qDone ? "done" : (qFlagged > 0 ? "flagged" : "pending"));
-      badge.textContent = qDone ? "✓" : `${qReviewed}/${totalScripts}` + (qFlagged > 0 ? ` ⚠${qFlagged}` : "");
-      tab.append(badge);
+    if (picker) {
+      picker.append(option(String(i), `${qLabel} (${q.marks}m) · ${badgeText}`));
+    }
 
-      tab.onclick = () => {
-        closeEditorModal();
-        change("section", String(i));
-      };
+    const tab = document.createElement("button");
+    tab.type = "button";
+    tab.className = "nav-tab" + (section === String(i) ? " active" : "") + (qDone ? " tab-done" : (qFlagged > 0 ? " tab-flagged" : ""));
+    tab.append(document.createTextNode(`${qLabel} (${q.marks}m)`));
+
+    const badge = document.createElement("span");
+    badge.className = "tab-badge " + (qDone ? "done" : (qFlagged > 0 ? "flagged" : "pending"));
+    badge.textContent = badgeText;
+    tab.append(badge);
+
+    tab.onclick = () => {
+      closeEditorModal();
+      change("section", String(i));
+    };
+    if (useCompactPicker) {
+      drawer.append(tab);
+    } else {
       nav.append(tab);
-    });
+    }
+  });
+
+  if (picker) {
+    picker.value = section;
+    const toggleDrawer = document.createElement("button");
+    toggleDrawer.type = "button";
+    toggleDrawer.style.fontSize = "0.78rem";
+    toggleDrawer.textContent = drawer.hidden ? `All ${questions.length} Qs ▾` : `Hide ${questions.length} Qs ▴`;
+    toggleDrawer.onclick = () => {
+      drawer.hidden = !drawer.hidden;
+      toggleDrawer.textContent = drawer.hidden ? `All ${questions.length} Qs ▾` : `Hide ${questions.length} Qs ▴`;
+    };
+    nav.append(toggleDrawer);
+  } else {
+    drawer.hidden = true;
   }
 
   const summary = document.createElement("span");
   summary.className = "review-summary-pill";
   summary.textContent = totalPendingQuestions === 0
     ? "All sections reviewed ✓"
-    : `${totalPendingQuestions} section${totalPendingQuestions === 1 ? "" : "s"} need review`;
+    : `${totalPendingQuestions} section${totalPendingQuestions === 1 ? "" : "s"} need review` +
+      (totalFlaggedQuestions > 0 ? ` (${totalFlaggedQuestions} flagged)` : "");
   nav.append(summary);
 
   if (nextPendingSection !== null && nextPendingSection !== section) {
