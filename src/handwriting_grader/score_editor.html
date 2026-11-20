@@ -490,6 +490,14 @@ let questionStatusFilter = "all";
 const tableImageUrls = new Map();
 
 function message(text) { byId("status").textContent = text; }
+function updateRevision(rev) {
+  if (!rev) return;
+  if (rev.includes(":") || !state || !state.revision || !state.revision.includes(":")) {
+    state.revision = rev;
+  } else {
+    state.revision = rev + state.revision.slice(state.revision.indexOf(":"));
+  }
+}
 function modalMessage(text, isError = false) {
   const ms = byId("modal-status");
   if (!ms) return;
@@ -1020,7 +1028,7 @@ function createTableRow(item, isId, qIdx) {
           kind: "script",
           reviewed_id: idSelect.value,
         })).json();
-        state.revision = res.revision;
+        updateRevision(res.revision);
         s.reviewed_id = idSelect.value || null;
         s.reviewed = idSelect.value !== "";
         dirty = false;
@@ -1158,7 +1166,7 @@ async function saveInlineMark(sIdx, qIdx, markValue, markReviewed) {
       manual_mark: markValue,
     };
     const res = await (await api("/api/save", body)).json();
-    state.revision = res.revision;
+    updateRevision(res.revision);
     currentMark.manual_mark = markValue === "" ? null : markValue;
     currentMark.reviewed = markReviewed;
     dirty = false;
@@ -1204,7 +1212,7 @@ byId("mark-ids-reviewed").onclick = async () => {
         kind: "script",
         reviewed_id: t.reviewed_id,
       })).json();
-      state.revision = res.revision;
+      updateRevision(res.revision);
     }
     dirty = false;
     await reload();
@@ -1277,7 +1285,7 @@ byId("mark-question-reviewed").onclick = async () => {
         reasoning: m.reasoning,
         manual_mark: manualVal,
       })).json();
-      state.revision = res.revision;
+      updateRevision(res.revision);
     }
     dirty = false;
     await reload();
@@ -1684,7 +1692,7 @@ byId("approve").onclick = async () => {
           kind: "script",
           reviewed_id: String(s.reviewed_id),
         })).json();
-        state.revision = res.revision;
+        updateRevision(res.revision);
       }
     }
     for (let qIdx = 0; qIdx < state.questions.length; qIdx++) {
@@ -1702,7 +1710,7 @@ byId("approve").onclick = async () => {
             reasoning: m.reasoning,
             manual_mark: hasManual ? String(m.manual_mark) : "",
           })).json();
-          state.revision = res.revision;
+          updateRevision(res.revision);
         }
       }
     }
