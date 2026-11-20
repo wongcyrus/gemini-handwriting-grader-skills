@@ -48,16 +48,31 @@ execute a notebook as a workaround, or claim a human approval occurred.
    model access or approval. Ask the user to confirm the layout and scan order.
    If attendance is configured, read `references/attendance.md` and obtain
    explicit review and approval before grading.
-6. To review regions, read `references/regions.md` and obtain confirmation
-   before preparing files or starting the local server. The editor starts with
-   empty boxes; optional Vertex suggestions require separate explicit consent.
-7. For rubric, grading, reporting and AI analysis read `references/grading.md`.
+6. For region setup and review, read `references/regions.md`:
+   a. Run `.venv/bin/handwriting-grader prepare-regions --exam /path/to/exam.yaml`
+      to render the first script's page images into `output_dir/regions/images/`.
+   b. Ask the user if they want Gemini to automatically detect bounding boxes.
+      If yes, preview `suggest-regions` (with `--model-config`, `--project`,
+      `--location`), explain the target and page count, obtain explicit cost
+      consent, and run with `--confirm-cost` to generate `suggestions.json`.
+   c. Start the local server with `review-regions --exam /path/to/exam.yaml`.
+      Provide the URL so the user can inspect the automatically loaded AI proposals
+      across all pages, adjust boxes (`ID`, `NAME`, `CLASS`, questions), save each
+      page, and approve.
+7. For rubric setup, read `references/grading.md`:
+   a. If the marking scheme is a DOCX, run `extract-rubric` (preview first,
+      obtain cost consent, then `--confirm-cost`) to extract questions and
+      marks into `output_dir/rubric/rubric.xlsx` using Gemini.
+   b. If the marking scheme is an existing XLSX, run `import-rubric`.
+   c. Have the teacher inspect `rubric.xlsx` and explicitly approve with
+      `approve-rubric --exam /path/to/exam.yaml --confirm-reviewed`.
+8. For grading, reporting and AI analysis read `references/grading.md`.
    Obtain the specified human confirmations; never infer approval.
-8. For distribution read `references/email.md`; never send without reviewing
+9. For distribution read `references/email.md`; never send without reviewing
    the exact preview and separate dispatch approval.
    For targeted regrading read `references/regrading.md`; require a current
    approved parent, separate cost consent and fresh review of the child.
-9. If the requested next stage is unimplemented, stop and say so.
+10. If the requested next stage is unimplemented, stop and say so.
 
 For the detailed stage flow and known notebook gaps read
 `references/flow-and-parity.md`; for the short gate overview read

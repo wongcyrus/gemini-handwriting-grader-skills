@@ -27,13 +27,19 @@ class SuggestedBoxes(BaseModel):
     boxes: list[SuggestedBox]
 
 
-PROMPT = """Identify answer regions on this scanned exam page.
-Return a box for each complete question answer area and the NAME, ID and CLASS
-fields when present. Label question boxes with their question number. Do not
-include instructions or non-answer areas. Coordinates must use a normalized
-0-to-1000 scale: x and y are the top-left corner, and width and height are
-the box dimensions. Ensure all boxes lie entirely inside the page. Return
-an empty list if no regions can be identified."""
+PROMPT = """Identify answer and metadata regions on this scanned exam page.
+
+For metadata fields (NAME, ID, CLASS):
+- The bounding box MUST enclose the handwritten/input value area (the blank line, box, or write-in space where the student writes), NOT the printed label text (such as "Name:", "Student ID:", or "Class:").
+- For NAME: Allocate generous horizontal width across the entire designated answer line/blank to accommodate variable student name lengths.
+- For ID and CLASS: Enclose the complete write-in area or box designated for the student's ID and class.
+- Use exact labels "NAME", "ID", and "CLASS".
+
+For question answer areas:
+- Return a box enclosing the complete student answer region for each question, labeled with its question number (e.g., "Q1", "Q2").
+- Do not include printed question instructions or titles in the answer box.
+
+Coordinates must use a normalized 0-to-1000 scale: x and y are the top-left corner, and width and height are the box dimensions. Ensure all boxes lie entirely inside the page. Return an empty list if no regions can be identified."""
 
 
 def load_model_settings(path, agent="annotation"):
@@ -120,9 +126,25 @@ def generate_suggestions(config, config_dir, config_path, model_config_path, pro
                 top = round(box.y * page["height"] / 1000)
                 right = round((box.x + box.width) * page["width"] / 1000)
                 bottom = round((box.y + box.height) * page["height"] / 1000)
+                raw_label = box.label.strip()
+                normalized = raw_label.upper()
+                if normalized in {"NAME", "STUDENT NAME"}:
+                    if index != 0:
+                        continue
+                    label = "NAME"
+                elif normalized in {"ID", "STUDENT ID"}:
+                    if index != 0:
+                        continue
+                    label = "ID"
+                elif normalized in {"CLASS", "STUDENT CLASS"}:
+                    if index != 0:
+                        continue
+                    label = "CLASS"
+                else:
+                    label = raw_label
                 boxes.append({
                     "x": left, "y": top, "width": right - left, "height": bottom - top,
-                    "label": box.label.strip(),
+                    "label": label,
                 })
             suggestions[str(index)] = boxes
     validate_annotations(suggestions, manifest["pages"])

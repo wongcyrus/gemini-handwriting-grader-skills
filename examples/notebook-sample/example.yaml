@@ -3,7 +3,7 @@ exam:
   roster: VTC Test Name List.xlsx
   roster_sheet: Name List
   scanned_pdf: VTC Test.pdf
-  marking_scheme: VTC Test Marking Scheme.xlsx
+  marking_scheme: VTC Test Marking Scheme.docx
   answer_sheet_template: VTC Test Answer Sheet.docx
   output_dir: output
 

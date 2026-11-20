@@ -441,6 +441,7 @@ class RegionWorkflowTests(unittest.TestCase):
                 page = browser.new_page(viewport={"width": 1200, "height": 900})
                 page.goto(f"{self.server.origin}/#{self.server.token}")
                 page.get_by_text("Review and save every page.").wait_for()
+                expect(page.locator("#list button")).to_have_text(["1"])
                 page.locator("#new").click()
                 page.locator("#label").fill("Manual")
                 bounds = page.locator("#canvas").bounding_box()
@@ -448,10 +449,11 @@ class RegionWorkflowTests(unittest.TestCase):
                 page.mouse.down()
                 page.mouse.move(bounds["x"] + 70, bounds["y"] + 80, steps=4)
                 page.mouse.up()
+                self.assertEqual(page.locator("#list button").all_text_contents(), ["1", "Manual"])
                 with page.expect_event("dialog") as first_dialog:
                     page.locator("#suggestions").click()
                 first_dialog.value.dismiss()
-                self.assertEqual(page.locator("#list button").all_text_contents(), ["Manual"])
+                self.assertEqual(page.locator("#list button").all_text_contents(), ["1", "Manual"])
                 with page.expect_event("dialog") as second_dialog:
                     page.locator("#suggestions").click()
                 second_dialog.value.accept()

@@ -100,8 +100,13 @@ rounded down to the increment. Check the answer and moderated mark before decidi
 <img id="image" alt="Selected answer or metadata crop">
 <script>
 "use strict";
-const token = location.hash.slice(1);
-history.replaceState(null, "", location.pathname);
+let token = location.hash.slice(1);
+if (token) {
+  try { sessionStorage.setItem("score_token", token); } catch (_) {}
+  history.replaceState(null, "", location.pathname);
+} else {
+  try { token = sessionStorage.getItem("score_token") || ""; } catch (_) {}
+}
 const byId = id => document.getElementById(id);
 let state, script = 0, section = "id", dirty = false, imageUrl = null, imageGeneration = 0;
 let busy = false, imageReady = false, suggestion = null, bulk = null;

@@ -22,11 +22,11 @@
 3. Run `.venv/bin/handwriting-grader review-regions --exam /path/to/exam.yaml`.
    Open the complete localhost URL shown in the terminal. Do not share its
    temporary token. The server runs until stopped with Ctrl+C.
-4. On each page click New box, enter a label, then drag to draw. Select a box
-   to move or relabel it, use its bottom-right handle to resize, or delete it.
-   Optionally load the separately saved AI suggestions; replacing existing
-   boxes requires confirmation. Save and mark each page reviewed. Check all
-   answer and metadata regions; the ID box must be on the first page.
+4. When AI suggestions exist, they are automatically loaded across all pages
+   on startup. The Load AI suggestions button can also reload them across all
+   pages. On each page, adjust boxes (move, resize with handle, relabel, delete,
+   or add new boxes). Save and mark each page reviewed. Check all answer and
+   metadata regions; the ID box must be on the first page.
 5. Approve all regions only after reviewing every page. The editor writes
    `annotations.json` and a separate hash-based `approval.json`. Saving another
    edit invalidates approval; source PDF, page images or configuration

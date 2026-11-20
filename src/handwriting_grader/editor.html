@@ -35,8 +35,13 @@ Boxes cover the whole answer area. AI suggestions are optional and must be revie
 <svg id="canvas" xmlns="http://www.w3.org/2000/svg" aria-label="Page region editor"></svg>
 <script>
 "use strict";
-const token = location.hash.slice(1);
-history.replaceState(null, "", location.pathname);
+let token = location.hash.slice(1);
+if (token) {
+  try { sessionStorage.setItem("region_token", token); } catch (_) {}
+  history.replaceState(null, "", location.pathname);
+} else {
+  try { token = sessionStorage.getItem("region_token") || ""; } catch (_) {}
+}
 const canvas = document.getElementById("canvas"), status = document.getElementById("status");
 const label = document.getElementById("label"), list = document.getElementById("list");
 const ns = "http://www.w3.org/2000/svg";
@@ -62,6 +67,7 @@ function svgElement(name, attrs) {
   return element;
 }
 function draw() {
+  if (!state || !state.pages || !state.draft) return;
   const dims = state.pages[page];
   canvas.setAttribute("viewBox", `0 0 ${dims.width} ${dims.height}`);
   canvas.replaceChildren(svgElement("image", {href: imageUrl, width: dims.width, height: dims.height}));
@@ -142,15 +148,25 @@ document.getElementById("delete").onclick = () => {
 document.getElementById("new").onclick = () => {
   selected = -1; label.value = ""; draw(); label.focus();
 };
-document.getElementById("suggestions").onclick = async () => {
+async function loadAllSuggestions(promptConfirm) {
   try {
     const data = await (await api("/api/suggestions")).json();
-    if (boxes.length && !confirm("Replace the current page's boxes with AI suggestions? This does not save yet.")) return;
-    boxes = structuredClone(data.annotations[String(page)]);
-    selected = -1; dirty = true; draw();
-    message("Loaded suggestions from " + data.model + ". Review them before saving.");
-  } catch (e) { message(e.message); }
-};
+    if (!data || !data.annotations) return;
+    const hasBoxes = Object.values(state.draft.annotations).some(b => b && b.length > 0) || boxes.length > 0;
+    if (promptConfirm && hasBoxes && !confirm("Replace all pages' boxes with AI suggestions? This does not save yet.")) return;
+    for (let p = 0; p < state.pages.length; p++) {
+      if (data.annotations[String(p)]) {
+        state.draft.annotations[String(p)] = structuredClone(data.annotations[String(p)]);
+      }
+    }
+    boxes = structuredClone(state.draft.annotations[String(page)]);
+    selected = -1; dirty = promptConfirm; draw();
+    if (promptConfirm) message("Loaded suggestions from " + data.model + " across all pages. Review and save each page.");
+  } catch (e) {
+    if (promptConfirm) message(e.message);
+  }
+}
+document.getElementById("suggestions").onclick = () => loadAllSuggestions(true);
 async function showPage(index) {
   if (dirty && !confirm("Discard unsaved edits on this page?")) return;
   page = index; selected = -1; dirty = false;
@@ -161,8 +177,17 @@ async function showPage(index) {
 }
 async function save(reviewed) {
   if (selected >= 0) boxes[selected].label = label.value.trim();
+  state.draft.annotations[String(page)] = structuredClone(boxes);
   const response = await api("/api/page", {revision: state.draft.revision, page, boxes, reviewed});
-  state.draft = await response.json(); dirty = false; state.approved = false; draw();
+  const updated = await response.json();
+  for (let p = 0; p < state.pages.length; p++) {
+    if (p !== page && (!updated.annotations[String(p)] || updated.annotations[String(p)].length === 0)) {
+      if (state.draft.annotations[String(p)] && state.draft.annotations[String(p)].length > 0) {
+        updated.annotations[String(p)] = state.draft.annotations[String(p)];
+      }
+    }
+  }
+  state.draft = updated; dirty = false; state.approved = false; draw();
   message(reviewed ? "Page saved and marked reviewed." : "Draft saved; page is not marked reviewed.");
 }
 document.getElementById("prev").onclick = () => showPage(Math.max(0, page - 1)).catch(e => message(e.message));
@@ -183,6 +208,20 @@ window.addEventListener("beforeunload", e => { if (dirty) { e.preventDefault(); 
   try {
     if (!token) throw new Error("Open the full URL printed by the review command.");
     state = await (await api("/api/state")).json();
+    if (!state.approved) {
+      try {
+        const data = await (await api("/api/suggestions")).json();
+        if (data && data.annotations) {
+          for (let p = 0; p < state.pages.length; p++) {
+            const pageBoxes = state.draft.annotations[String(p)];
+            const isReviewed = state.draft.reviewed.includes(p);
+            if ((!pageBoxes || pageBoxes.length === 0) && !isReviewed && data.annotations[String(p)]) {
+              state.draft.annotations[String(p)] = structuredClone(data.annotations[String(p)]);
+            }
+          }
+        }
+      } catch (_) {}
+    }
     await showPage(0);
     message(state.approved ? "A prior approval exists. Editing and saving invalidates it." : "Review and save every page.");
   } catch (e) { message(e.message); }
