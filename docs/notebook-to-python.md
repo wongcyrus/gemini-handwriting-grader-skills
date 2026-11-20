@@ -13,6 +13,7 @@ notebook kernels. See the [operational flow](../skills/handwriting-grading/refer
 and [README](../README.md) for the current procedures. The separate
 [attendance and regrading design](attendance-and-regrading-design.md)
 describes the implemented attendance and targeted regrading workflows.
+For testing the skill and tools safely, see the [testing guide](testing-skills.md).
 
 ## What changed for a notebook user
 

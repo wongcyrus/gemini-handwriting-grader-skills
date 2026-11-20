@@ -297,6 +297,9 @@ tested; no real messages were sent.
 
 ## Tests
 
+For skill registration, safe Copilot prompts, offline tests and a synthetic
+exam walkthrough, see the [testing guide](docs/testing-skills.md).
+
 ```sh
 .venv/bin/python -m unittest discover -s tests -v
 ```
