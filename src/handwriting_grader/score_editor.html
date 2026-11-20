@@ -54,6 +54,11 @@ p.instructions { font-size: 0.82rem; color: #475569; margin: 0 0 0.6rem 0; line-
 .questions-drawer[hidden] { display: none; }
 
 .global-actions { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
+.visually-hidden:where(:not(:focus-within, :active)) {
+  position: absolute !important; clip-path: inset(50%) !important; overflow: hidden !important;
+  width: 1px !important; height: 1px !important; margin: -1px !important; padding: 0 !important; border: 0 !important;
+  white-space: nowrap !important;
+}
 
 input, select, textarea, button { font: inherit; font-size: 0.84rem; }
 input[type="number"], input[type="text"], select {
@@ -272,8 +277,8 @@ Keep this URL private and close spreadsheet editors while using this interface.<
 <div class="top-nav-row">
   <nav class="nav-tabs" id="question-tabs"></nav>
   <div class="global-actions">
-    <label style="font-size:0.8rem;">Script <select id="script"></select></label>
-    <label style="font-size:0.8rem;">Review <select id="section"></select></label>
+    <label class="visually-hidden">Script <select id="script"></select></label>
+    <label class="visually-hidden">Review <select id="section"></select></label>
     <span id="global-save-slot" class="bar">
       <button id="save">Save draft</button>
       <button id="review" class="btn-primary">Save and mark reviewed</button>
@@ -392,6 +397,7 @@ marks as <strong>unreviewed drafts</strong>; previously reviewed marks will need
       <button type="button" id="close-editor-modal" style="padding: 0.25rem 0.65rem;">✕ Close</button>
     </div>
   </div>
+  <div id="modal-status" role="status" style="display:none; margin:0.5rem 1.15rem 0 1.15rem; padding:0.45rem 0.7rem; border-radius:5px; font-size:0.82rem; font-weight:600; background:#eff6ff; border:1px solid #bfdbfe; color:#1d4ed8; flex-shrink:0;"></div>
   <div class="editor-modal-body">
     <div class="editor-modal-image-pane">
       <img id="image" alt="Selected answer or metadata crop">
@@ -442,7 +448,6 @@ it does not change model inputs, review data, region approvals or reports.</p>
       <details><summary>Original OCR answer</summary><div class="details-content"><pre id="original" style="margin:0;"></pre></div></details>
       <details id="previous-review" hidden><summary>Previous approved review</summary><div class="details-content"><pre id="previous" style="margin:0;"></pre></div></details>
 
-      <div id="modal-status" role="status" style="display:none; padding:0.45rem 0.7rem; border-radius:5px; font-size:0.82rem; font-weight:600; background:#eff6ff; border:1px solid #bfdbfe; color:#1d4ed8;"></div>
       <div id="modal-footer-actions" class="bar" style="justify-content: flex-end; padding-top: 0.5rem; border-top: 1px solid #e2e8f0;">
       </div>
     </div>
