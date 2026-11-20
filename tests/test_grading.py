@@ -53,8 +53,8 @@ class FakeGrader:
             return "Example name"
         return "A" if field == "CLASS" else "Example answer"
 
-    def grade(self, question, answer):
-        return {"mark": 1.0, "similarity_score": 0.5, "reasoning": "Example"}
+    def grade(self, question, answer="", image=None):
+        return {"answer": "Example answer", "mark": 1.0, "similarity_score": 0.5, "reasoning": "Example"}
 
     def moderate(self, question, entries):
         return {
@@ -526,7 +526,7 @@ class GradingTests(unittest.TestCase):
             self.assertEqual(main(arguments), 1)
             run.assert_not_called()
         self.assertIn("Cache: disabled; location=none", output.getvalue())
-        self.assertIn("Up to 11 requests", output.getvalue())
+        self.assertIn("Up to 9 requests", output.getvalue())
         self.assertFalse((self.root / "output" / "grading").exists())
 
     def test_review_diagnostics_reports_multiple_issues_without_approval(self):
@@ -1027,7 +1027,7 @@ class GradingTests(unittest.TestCase):
                         for i in range(2)
                     ]})
                 elif "grade-model" in self.path:
-                    text = json.dumps({"mark": 1, "similarity_score": 0.5, "reasoning": "Example"})
+                    text = json.dumps({"answer": "Example answer", "mark": 1, "similarity_score": 0.5, "reasoning": "Example"})
                 else:
                     text = "Example"
                 body = json.dumps({"candidates": [{
@@ -1053,7 +1053,7 @@ class GradingTests(unittest.TestCase):
             results = json.loads((root / "results.json").read_text())
             self.assertTrue(results["completed"])
             self.assertTrue(all(not row["grading_failed"] for row in results["marks"]))
-            self.assertEqual(len(calls), 11)
+            self.assertEqual(len(calls), 9)
             self.assertTrue(all(script["name_ocr"] == "Example" for script in results["scripts"]))
             image_request = calls[0][1]
             self.assertTrue(any("inlineData" in part for content in image_request["contents"]

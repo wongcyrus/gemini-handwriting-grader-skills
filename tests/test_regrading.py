@@ -134,11 +134,11 @@ class RegradingTests(unittest.TestCase):
         sizes = []
 
         class CropsGrader(FakeGrader):
-            def ocr(self, image, field):
-                if field == "answer":
+            def grade(self, question, answer="", image=None):
+                if image is not None:
                     with Image.open(BytesIO(image)) as decoded:
                         sizes.append(decoded.size)
-                return super().ocr(image, field)
+                return super().grade(question, answer, image=image)
 
         child = regrade(self.config, self.root, self.exam, "cropped", None, "Q1", self.models,
                         "project", "global", crop_proposal_id="crop1", provider_factory=CropsGrader)
@@ -285,7 +285,7 @@ class RegradingTests(unittest.TestCase):
         independent_manifest = json.loads((independent / "grading" / "manifest.json").read_text())
         self.assertFalse(independent_manifest["reuse_parent_cache"])
         self.assertNotEqual(independent_manifest["cache_root"], parent_manifest["cache_root"])
-        self.assertIn(("ocr", "answer"), calls)
+        self.assertIn(("grade", "Q1"), calls)
 
         class Interrupt(NoCallGrader):
             def grade(self, question, answer):
@@ -342,8 +342,7 @@ class RegradingTests(unittest.TestCase):
 
         child = regrade(self.config, self.root, self.exam, "revision1", None, "1",
                         self.models, "project", "global", provider_factory=SpyGrader)
-        self.assertEqual(calls, [("ocr", "answer"), ("grade", "Q1"), ("ocr", "answer"),
-                                 ("grade", "Q1"), ("moderate", "Q1", 2)])
+        self.assertEqual(calls, [("grade", "Q1"), ("grade", "Q1"), ("moderate", "Q1", 2)])
         self.assertEqual(before, {name: file_hash(self.parent / name) for name in before})
         with self.assertRaisesRegex(ValueError, "explicit human review"):
             validate_review(self.config, self.root, self.exam, run_id="revision1")
@@ -516,11 +515,11 @@ class RegradingTests(unittest.TestCase):
         failures = []
 
         class Slow(FakeGrader):
-            def ocr(self, image, field):
+            def grade(self, question, answer="", image=None):
                 entered.set()
                 if not release.wait(10):
                     raise RuntimeError("Test timed out")
-                return super().ocr(image, field)
+                return super().grade(question, answer, image=image)
 
         def create():
             try:

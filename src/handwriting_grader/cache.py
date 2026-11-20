@@ -83,30 +83,39 @@ class CachedGrader:
         return self.call("ocr", {"image_sha256": hashlib.sha256(image).hexdigest(), "field": field},
                          lambda: self.provider.ocr(image, field), validate)
 
-    def grade(self, question, answer, image=None):
+    def grade(self, question, answer="", image=None):
         from .grading import GradeResponse
         import inspect
         import math
 
+        payload = {"question": question}
+        if answer:
+            payload["answer"] = answer
+        if image is not None:
+            payload["image_sha256"] = hashlib.sha256(image).hexdigest()
+
         def validate(value):
+            if isinstance(value, dict) and "answer" not in value and "mark" in value:
+                value["answer"] = payload.get("answer", "")
             grade = GradeResponse.model_validate(value)
             if (not math.isfinite(grade.mark) or not 0 <= grade.mark <= question["marks"]
                     or not math.isfinite(grade.similarity_score) or not 0 <= grade.similarity_score <= 1):
                 raise ValueError("Invalid cached grade")
             return grade.model_dump()
 
-        payload = {"question": question, "answer": answer}
-        if image is not None:
-            payload["image_sha256"] = hashlib.sha256(image).hexdigest()
-
         def compute():
             try:
                 sig = inspect.signature(self.provider.grade)
-                if "image" in sig.parameters:
-                    return self.provider.grade(question, answer, image=image)
+                params = sig.parameters
+                if "image" in params and "answer" in params:
+                    return self.provider.grade(question, answer=answer, image=image)
+                elif "image" in params:
+                    return self.provider.grade(question, image=image)
+                elif "answer" in params:
+                    return self.provider.grade(question, answer or "")
             except (ValueError, TypeError):
                 pass
-            return self.provider.grade(question, answer)
+            return self.provider.grade(question, answer or "")
 
         return self.call("grading", payload, compute, validate)
 

@@ -229,7 +229,7 @@ In the following commands, replace `/private/model-config.yaml`,
   --model-config /private/model-config.yaml --project PROJECT_ID --location LOCATION
 ```
 
-The sample's preview shows up to 57 requests: OCR, grading and moderation.
+The sample's preview shows up to 37 requests: metadata OCR, single-pass multimodal grading and moderation.
 It exits without sending requests because `--confirm-cost` is absent. Check
 the target, model names, data transfer and potential cost; retries may cost
 more. Only after explicitly accepting them, repeat the same command with

@@ -487,7 +487,7 @@ def main(argv=None):
         print(f"Parent: {args.parent or 'original'}; child: {args.run}; question: {info['question_key']}; "
               f"rubric: {args.rubric_proposal or 'parent'}; crops: {args.crop_proposal or 'parent'}; students: {count}. "
               f"Vertex target: project={args.project}, location={args.location}, models={info['models']}. "
-              f"Up to {2 * count + 1} requests send student work or answers and may incur charges. "
+              f"Up to {count + 1} requests send student work or answers and may incur charges. "
               f"Cache: {info['cache_agents'] or 'disabled'}; location={info['cache_root'] or 'none'}.")
         if info["reuse_parent_cache"]:
             print("Parent cache reuse is enabled: matching model responses may be reused rather than regenerated.")
@@ -530,7 +530,7 @@ def main(argv=None):
         except (OSError, ValueError, KeyError, yaml.YAMLError) as exc:
             print(f"Cannot prepare grading: {exc}", file=sys.stderr)
             return 1
-        request_count = summary["students"] * (3 + 2 * len(questions)) + len(questions)
+        request_count = summary["students"] * (3 + len(questions)) + len(questions)
         print(f"Vertex target: project={args.project}, location={args.location}, models={models}. "
               f"Up to {request_count} requests will send student work or answers and incur charges. "
               f"Cache: {cache_agents or 'disabled'}; location={cache_path if cache_agents else 'none'}.")
