@@ -182,52 +182,13 @@ input.mark-input.locked { border-color: #ea580c; background-color: #fff7ed; }
 .sim-mid { background: #fef9c3; color: #854d0e; }
 .sim-low { background: #f1f5f9; color: #64748b; }
 
-/* Large Native Top-Layer Script Detail Dialog */
-dialog.editor-modal {
-  position: fixed;
-  inset: 0;
-  margin: auto;
-  width: min(96vw, 1380px);
-  max-height: 92vh;
-  padding: 0;
-  background: #ffffff;
-  border: 2px solid #2563eb;
-  border-radius: 10px;
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.35);
-  overscroll-behavior: contain;
-  overflow: hidden;
+.inline-text {
+  width: 100%; min-height: 2.6rem; padding: 0.25rem 0.35rem;
+  border: 1px solid transparent; border-radius: 4px; background: transparent;
+  font: inherit; color: inherit; resize: vertical; line-height: 1.35;
 }
-dialog.editor-modal:is(:popover-open, [open]) {
-  display: flex;
-  flex-direction: column;
-}
-.editor-modal-header {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 0.75rem 1.1rem; background: #eff6ff; border-bottom: 1px solid #bfdbfe;
-  flex-shrink: 0;
-}
-.editor-modal-header h2 {
-  margin: 0; font-size: 1.05rem; font-weight: 700; color: #1e293b;
-}
-.editor-modal-body {
-  padding: 1rem 1.15rem; overflow-y: auto;
-  display: grid; grid-template-columns: minmax(400px, 1.35fr) 1fr; gap: 1.15rem; align-items: start;
-}
-@media (max-width: 820px) {
-  .editor-modal-body { grid-template-columns: 1fr; }
-}
-.editor-modal-image-pane {
-  display: flex; flex-direction: column; gap: 0.5rem; position: sticky; top: 0;
-}
-textarea {
-  display: block; width: 100%; min-height: 5rem;
-  padding: 0.4rem 0.55rem; border: 1px solid #cbd5e1; border-radius: 4px;
-}
-#image {
-  width: 100%; max-width: 100%; max-height: 70vh;
-  border: 1px solid #94a3b8; border-radius: 6px; object-fit: contain; background: #f8fafc;
-  cursor: zoom-in;
-}
+.inline-text:hover { border-color: #cbd5e1; background: #ffffff; }
+.inline-text:focus { border-color: #2563eb; background: #ffffff; outline: none; }
 .warning { color: #dc2626; font-weight: 700; }
 .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
 [hidden] { display: none !important; }
@@ -383,75 +344,6 @@ Keep this URL private and close spreadsheet editors while using this interface.<
   </table>
 </div>
 
-<!-- Large Native Top-Layer Script Detail Dialog (Opens on clicking Script # cell or selecting question) -->
-<dialog class="editor-modal" id="editor-modal" popover="manual" aria-labelledby="modal-editor-title">
-  <div class="editor-modal-header">
-    <h2 id="modal-editor-title">Script Details</h2>
-    <div class="bar">
-      <button type="button" id="modal-context-btn" style="padding: 0.25rem 0.6rem;" title="Expand crop margins to see out-of-bounds writing">+Context</button>
-      <label style="font-size:0.82rem;"><input id="full-page" type="checkbox"> Full page</label>
-      <button type="button" id="modal-zoom-btn" style="padding: 0.25rem 0.6rem;" title="Open full-screen zoom & pan viewer">🔍 Zoom</button>
-      <button type="button" id="close-editor-modal" style="padding: 0.25rem 0.65rem;">✕ Close</button>
-    </div>
-  </div>
-  <div id="modal-status" role="status" style="display:none; margin:0.5rem 1.15rem 0 1.15rem; padding:0.45rem 0.7rem; border-radius:5px; font-size:0.82rem; font-weight:600; background:#eff6ff; border:1px solid #bfdbfe; color:#1d4ed8; flex-shrink:0;"></div>
-  <div class="editor-modal-body">
-    <div class="editor-modal-image-pane">
-      <img id="image" alt="Selected answer or metadata crop">
-    </div>
-
-    <div id="mark-fields">
-      <p id="question" style="margin: 0 0 0.25rem 0; font-weight: 600;"></p>
-      <pre id="scheme" hidden></pre>
-      <p id="scores" style="margin: 0 0 0.25rem 0; font-size: 0.82rem; color: #2563eb; font-weight: 600;"></p>
-      <p id="flags" class="warning" style="margin: 0 0 0.4rem 0;"></p>
-      <label style="display:block; margin-bottom:0.4rem; font-weight:600;">Reviewed answer <textarea id="answer"></textarea></label>
-      <label style="display:block; margin-bottom:0.4rem; font-weight:600;">Reviewed reasoning <textarea id="reasoning"></textarea></label>
-      <div class="bar" style="margin-bottom:0.5rem;">
-        <label style="font-weight:600;">Manual mark (optional unless required) <input id="manual" inputmode="decimal" style="width: 90px;"></label>
-        <span id="review-status" style="font-weight: 600; color: #475569; margin-left: auto;"></span>
-      </div>
-
-      <details id="similarity-details">
-        <summary>Similarity-based mark suggestion</summary>
-        <div class="details-content">
-          <p style="margin-top:0; font-size:0.78rem;">Uses the original OCR answer and ignores moderation. Enter your chosen threshold (0–1) and mark increment.
-A suggestion is made only when a reviewed student with equal or higher similarity has a manual mark,
-and all such students share that same manual mark.</p>
-          <div class="bar">
-            <label>Similarity threshold <input id="threshold" inputmode="decimal" style="width: 70px;"></label>
-            <label>Mark increment <input id="increment" inputmode="decimal" style="width: 70px;"></label>
-            <button id="calculate">Calculate suggestion</button> <span id="suggestion" style="font-weight:600;"></span>
-            <button id="apply-suggestion" disabled>Use suggestion as manual mark</button>
-          </div>
-        </div>
-      </details>
-
-      <details>
-        <summary>Adjust crop for visual inspection</summary>
-        <div class="details-content">
-          <p style="margin-top:0; font-size:0.78rem;">Coordinates are pixels on the approved question page. This preview is temporary;
-it does not change model inputs, review data, region approvals or reports.</p>
-          <div class="bar">
-            <label>X <input id="crop-x" type="number" min="0" step="1" style="width: 70px;"></label>
-            <label>Y <input id="crop-y" type="number" min="0" step="1" style="width: 70px;"></label>
-            <label>Width <input id="crop-width" type="number" min="1" step="1" style="width: 70px;"></label>
-            <label>Height <input id="crop-height" type="number" min="1" step="1" style="width: 70px;"></label>
-            <button id="preview-crop">Preview crop</button>
-          </div>
-        </div>
-      </details>
-
-      <details><summary>Original OCR answer</summary><div class="details-content"><pre id="original" style="margin:0;"></pre></div></details>
-      <details id="previous-review" hidden><summary>Previous approved review</summary><div class="details-content"><pre id="previous" style="margin:0;"></pre></div></details>
-    </div>
-  </div>
-  <div id="modal-footer-actions" class="bar" style="justify-content: flex-end; padding: 0.65rem 1.15rem; border-top: 1px solid #e2e8f0; background: #f8fafc; flex-shrink: 0;">
-    <button id="save">Save draft</button>
-    <button id="review" class="btn-primary">Save and mark reviewed</button>
-  </div>
-</dialog>
-
 <!-- Native Full-screen Zoom & Pan Image Lightbox Modal -->
 <dialog id="image-modal" closedby="any" aria-labelledby="modal-title">
   <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.65rem; flex-shrink: 0;">
@@ -505,59 +397,22 @@ function updateRevision(rev) {
     state.revision = rev + state.revision.slice(state.revision.indexOf(":"));
   }
 }
-function modalMessage(text, isError = false) {
-  const ms = byId("modal-status");
-  if (!ms) return;
-  ms.textContent = text;
-  ms.style.display = text ? "block" : "none";
-  ms.style.background = isError ? "#fef2f2" : "#eff6ff";
-  ms.style.borderColor = isError ? "#fecaca" : "#bfdbfe";
-  ms.style.color = isError ? "#b91c1c" : "#1d4ed8";
-}
-
 function setBusy(value) {
   busy = value;
-  for (const id of ["script", "section", "metadata-image", "full-page", "save", "approve", "review",
-                    "reviewed-id", "answer", "reasoning", "manual", "threshold", "increment", "calculate",
-                    "preview-crop", "minimumSimilarity", "granularity", "fullMark", "marksheet-filter",
+  for (const id of ["script", "section", "metadata-image", "approve",
+                    "minimumSimilarity", "granularity", "fullMark", "marksheet-filter",
                     "img-size", "mark-question-reviewed", "mark-ids-reviewed"]) {
     const el = byId(id);
     if (el) el.disabled = busy;
   }
-  for (const el of document.querySelectorAll("table.marksheet button, table.marksheet input.mark-input"))
+  for (const el of document.querySelectorAll("table.marksheet button, table.marksheet input.mark-input, table.marksheet textarea.inline-text"))
     el.disabled = busy;
-  const applySug = byId("apply-suggestion");
-  if (applySug) applySug.disabled = busy || suggestion === null;
 }
 
 function option(value, text) {
   const element = document.createElement("option");
   element.value = value; element.textContent = text; return element;
 }
-
-function clearSuggestion() {
-  suggestion = null; byId("suggestion").textContent = ""; setBusy(busy);
-}
-
-function openEditorModal() {
-  const ms = byId("modal-status");
-  if (ms) ms.style.display = "none";
-  const modal = byId("editor-modal");
-  if (typeof modal.showPopover === "function") {
-    if (!modal.matches(":popover-open")) modal.showPopover();
-  } else if (!modal.open) {
-    modal.show();
-  }
-}
-function closeEditorModal() {
-  const modal = byId("editor-modal");
-  if (typeof modal.hidePopover === "function") {
-    if (modal.matches(":popover-open")) modal.hidePopover();
-  } else if (modal.open) {
-    modal.close();
-  }
-}
-byId("close-editor-modal").onclick = closeEditorModal;
 
 async function api(path, body) {
   const options = {headers: {"Authorization": "Bearer " + token}};
@@ -609,7 +464,6 @@ function renderTabs() {
   idBadge.textContent = idDone ? "✓" : `${idReviewed}/${totalScripts}` + (idErrors > 0 ? ` ⚠${idErrors}` : "");
   idTab.append(idBadge);
   idTab.onclick = () => {
-    closeEditorModal();
     change("section", "id");
   };
   nav.append(idTab);
@@ -670,7 +524,6 @@ function renderTabs() {
     prevQ.title = "Previous question";
     prevQ.disabled = section === "id";
     prevQ.onclick = () => {
-      closeEditorModal();
       const idx = Number(section);
       change("section", idx <= 0 ? "id" : String(idx - 1));
     };
@@ -688,13 +541,11 @@ function renderTabs() {
     nextQ.title = "Next question";
     nextQ.disabled = section !== "id" && Number(section) >= questions.length - 1;
     nextQ.onclick = () => {
-      closeEditorModal();
       const idx = section === "id" ? 0 : Number(section) + 1;
       if (idx < questions.length) change("section", String(idx));
     };
 
     picker.onchange = e => {
-      closeEditorModal();
       change("section", e.target.value);
     };
     nav.append(prevQ, picker, nextQ);
@@ -725,7 +576,6 @@ function renderTabs() {
     tab.append(badge);
 
     tab.onclick = () => {
-      closeEditorModal();
       change("section", String(i));
     };
     if (useCompactPicker) {
@@ -766,7 +616,6 @@ function renderTabs() {
     jumpBtn.style.padding = "0.25rem 0.55rem";
     jumpBtn.textContent = "Next needing review →";
     jumpBtn.onclick = () => {
-      closeEditorModal();
       change("section", nextPendingSection);
     };
     nav.append(jumpBtn);
@@ -963,11 +812,14 @@ function createTableRow(item, isId, qIdx) {
   // 1. Blind Script # ONLY (No student ID shown for fair blind review!)
   const cellId = document.createElement("td");
   cellId.style.cursor = "pointer";
-  cellId.title = "Click to open detailed editor modal";
+  cellId.title = "Click to select row";
   cellId.onclick = () => {
-    if (dirty && !confirm("Discard unsaved edits?")) return;
-    script = sIdx; dirty = false;
-    render().then(() => { if (!isId) openEditorModal(); }).catch(e => message(e.message));
+    script = sIdx;
+    byId("script").value = String(sIdx);
+    document.querySelectorAll("#marksheet-tbody tr.row-selected").forEach(tr => tr.classList.remove("row-selected"));
+    row.classList.add("row-selected");
+    const inp = byId(`inline-mark-${sIdx}`);
+    if (inp) inp.focus();
   };
   const strongId = document.createElement("strong");
   strongId.textContent = `#${sIdx + 1}`;
@@ -1000,8 +852,23 @@ function createTableRow(item, isId, qIdx) {
   // 3. Answer
   const cellAns = document.createElement("td");
   cellAns.className = "col-ans";
-  cellAns.style.whiteSpace = "pre-wrap";
-  cellAns.textContent = item.answer || "(no answer text)";
+  if (isId) {
+    cellAns.style.whiteSpace = "pre-wrap";
+    cellAns.textContent = item.answer || "(no answer text)";
+  } else {
+    const ansArea = document.createElement("textarea");
+    ansArea.className = "inline-text inline-ans";
+    ansArea.id = `inline-ans-${sIdx}`;
+    ansArea.value = m.answer || "";
+    ansArea.placeholder = "(no answer text)";
+    ansArea.title = "Edit reviewed answer (auto-saves on blur)";
+    ansArea.onchange = async () => {
+      if (ansArea.value === (m.answer || "")) return;
+      const inp = byId(`inline-mark-${sIdx}`);
+      await saveInlineMark(sIdx, qIdx, inp ? inp.value.trim() : "", m.reviewed);
+    };
+    cellAns.append(ansArea);
+  }
   row.append(cellAns);
 
   // 4. Mark
@@ -1123,10 +990,28 @@ function createTableRow(item, isId, qIdx) {
   if (isId) {
     cellReason.textContent = s.errors && s.errors.length ? s.errors.map(e => e.field + ": " + e.type).join(", ") : "OK";
   } else {
-    let text = m.reasoning || "";
-    if (m.moderator_flag) text += `\n⚠️ Moderator: ${m.moderator_note || "Flagged"}`;
-    if (m.grading_failed) text += `\n❌ Grading failed; manual mark required.`;
-    cellReason.textContent = text;
+    const reasonArea = document.createElement("textarea");
+    reasonArea.className = "inline-text inline-reason";
+    reasonArea.id = `inline-reason-${sIdx}`;
+    reasonArea.value = m.reasoning || "";
+    reasonArea.placeholder = "(no reasoning)";
+    reasonArea.title = "Edit reviewed reasoning (auto-saves on blur)";
+    reasonArea.onchange = async () => {
+      if (reasonArea.value === (m.reasoning || "")) return;
+      const inp = byId(`inline-mark-${sIdx}`);
+      await saveInlineMark(sIdx, qIdx, inp ? inp.value.trim() : "", m.reviewed);
+    };
+    cellReason.append(reasonArea);
+    if (m.moderator_flag || m.grading_failed) {
+      const flagDiv = document.createElement("div");
+      flagDiv.style.fontSize = "0.75rem";
+      flagDiv.style.color = m.grading_failed ? "#dc2626" : "#b45309";
+      flagDiv.style.fontWeight = "600";
+      flagDiv.style.marginTop = "0.2rem";
+      flagDiv.textContent = (m.grading_failed ? "❌ Grading failed; manual mark required. " : "") +
+        (m.moderator_flag ? `⚠️ Moderator: ${m.moderator_note || "Flagged"}` : "");
+      cellReason.append(flagDiv);
+    }
   }
   row.append(cellReason);
 
@@ -1141,11 +1026,29 @@ function createTableRow(item, isId, qIdx) {
   revBtn.textContent = item.reviewed ? "Reviewed ✓" : (needsManual ? "Needs mark ⚠" : "Auto (OK)");
   revBtn.onclick = async () => {
     if (isId) {
-      script = sIdx; section = "id";
-      await save(true);
+      setBusy(true); message(`Saving identity for Script #${sIdx + 1}...`);
+      try {
+        const res = await (await api("/api/save", {
+          revision: state.revision,
+          script_index: sIdx,
+          reviewed: true,
+          kind: "script",
+          reviewed_id: s.reviewed_id || "",
+        })).json();
+        updateRevision(res.revision);
+        s.reviewed = true;
+        revBtn.className = "btn-success";
+        revBtn.textContent = "Reviewed ✓";
+        renderTabs();
+        message(`Script #${sIdx + 1} identity saved and reviewed.`);
+      } catch (e) {
+        message(e.message);
+      } finally {
+        setBusy(false);
+      }
     } else {
       const input = byId(`inline-mark-${sIdx}`);
-      await saveInlineMark(sIdx, qIdx, input ? input.value : "", true);
+      await saveInlineMark(sIdx, qIdx, input ? input.value.trim() : "", true);
     }
   };
   cellAction.append(revBtn);
@@ -1158,18 +1061,22 @@ async function saveInlineMark(sIdx, qIdx, markValue, markReviewed) {
   setBusy(true); message("Saving mark...");
   try {
     const currentMark = state.marks[sIdx][qIdx];
+    const ansEl = byId(`inline-ans-${sIdx}`);
+    const reasonEl = byId(`inline-reason-${sIdx}`);
     const body = {
       revision: state.revision,
       script_index: sIdx,
       reviewed: markReviewed,
       kind: "mark",
       question_index: qIdx,
-      answer: currentMark.answer,
-      reasoning: currentMark.reasoning,
+      answer: ansEl ? ansEl.value : currentMark.answer,
+      reasoning: reasonEl ? reasonEl.value : currentMark.reasoning,
       manual_mark: markValue,
     };
     const res = await (await api("/api/save", body)).json();
     updateRevision(res.revision);
+    currentMark.answer = body.answer;
+    currentMark.reasoning = body.reasoning;
     currentMark.manual_mark = markValue === "" ? null : markValue;
     currentMark.reviewed = markReviewed;
     dirty = false;
@@ -1557,31 +1464,12 @@ document.querySelectorAll("#marksheet th.sortable").forEach(th => {
 
 function renderComparison() {}
 
-let modalContext = false;
-async function image(field) {
-  const generation = ++imageGeneration;
-  imageReady = false; setBusy(busy);
-  byId("image").removeAttribute("src");
-  const prefix = byId("full-page").checked ? "full-" : (modalContext ? "ctx-" : "");
-  const pad = Number(byId("box-pad").value) || 0;
-  const query = !byId("full-page").checked && !modalContext && pad > 0 ? `?pad=${pad}` : "";
-  const response = await api(`/api/image/${script}/${prefix}${field}${query}`);
-  const blob = await response.blob();
-  if (generation !== imageGeneration) return;
-  if (imageUrl) URL.revokeObjectURL(imageUrl);
-  imageUrl = URL.createObjectURL(blob);
-  byId("image").src = imageUrl;
-  imageReady = true; setBusy(busy);
-}
-
 async function render() {
-  clearSuggestion();
   byId("script").value = String(script); byId("section").value = section;
   const current = state.scripts[script];
   const identity = section === "id";
   byId("script-fields").style.display = identity ? "flex" : "none";
   byId("mark-question-reviewed").hidden = identity;
-  byId("mark-fields").hidden = identity;
 
   renderTabs();
   await renderMarksheetTable();
@@ -1594,25 +1482,6 @@ async function render() {
       byId("reviewed-id").append(option(id, `${id} — ${person.name} (${person.class})`));
     byId("reviewed-id").value = current.reviewed_id == null ? "" : String(current.reviewed_id);
     byId("review-status-id").textContent = current.reviewed ? "Identity reviewed." : "Identity not yet reviewed.";
-    await image(byId("metadata-image").value);
-  } else {
-    const q = Number(section), question = state.questions[q], mark = state.marks[script][q];
-    byId("modal-editor-title").textContent = `Script #${script + 1} · ${question.question_number}`;
-    byId("question").textContent = `Script #${script + 1} · ${question.question_number}`;
-    byId("scheme").textContent = question.marking_scheme;
-    byId("scores").textContent = `Maximum: ${question.marks} | AI mark: ${mark.raw_mark ?? "failed"} | Moderated: ${mark.moderated_mark ?? "unavailable"} | Similarity: ${mark.similarity_score ?? "unavailable"}`;
-    byId("flags").textContent = (mark.grading_failed ? "Grading failed. " : "") +
-      (mark.moderator_flag ? "Moderation flagged. " : "") + (mark.moderator_note || "");
-    byId("answer").value = mark.answer; byId("reasoning").value = mark.reasoning;
-    byId("manual").value = mark.manual_mark == null ? "" : String(mark.manual_mark);
-    for (const key of ["x", "y", "width", "height"])
-      byId("crop-" + key).value = String(state.crops[script][q][key]);
-    byId("original").textContent = mark.original_answer;
-    byId("previous-review").hidden = !mark.previous;
-    byId("previous").textContent = mark.previous
-      ? `${mark.previous.rerun ? "Rerun question" : "Inherited draft"}\nPrevious mark: ${mark.previous.mark}\nPrevious answer: ${mark.previous.answer}\nPrevious reasoning: ${mark.previous.reasoning}` : "";
-    byId("review-status").textContent = mark.reviewed ? "Mark reviewed." : "Mark not yet reviewed.";
-    await image(section);
   }
 }
 
@@ -1633,115 +1502,8 @@ function change(which, value) {
 }
 
 byId("script").onchange = e => change("script", e.target.value);
-byId("section").onchange = e => {
-  change("section", e.target.value);
-  if (e.target.value !== "id") openEditorModal(); else closeEditorModal();
-};
-byId("metadata-image").onchange = e => {
-  image(e.target.value).catch(err => message(err.message));
-  renderMarksheetTable();
-};
-byId("full-page").onchange = () => {
-  if (byId("full-page").checked) {
-    modalContext = false;
-    byId("modal-context-btn").classList.remove("active");
-  }
-  image(section === "id" ? byId("metadata-image").value : section).catch(err => message(err.message));
-};
-byId("modal-context-btn").onclick = () => {
-  modalContext = !modalContext;
-  byId("modal-context-btn").classList.toggle("active", modalContext);
-  if (modalContext) byId("full-page").checked = false;
-  image(section === "id" ? byId("metadata-image").value : section).catch(err => message(err.message));
-};
-const openCurrentInLightbox = () => {
-  const f = section === "id" ? byId("metadata-image").value : section;
-  const m = byId("full-page").checked ? "full-" : (modalContext ? "ctx-" : "");
-  const label = section === "id" ? "Identity" : state.questions[Number(section)].question_number;
-  openImageModal(imageUrl, `Script #${script + 1} - ${label}`, script, f, m);
-};
-byId("image").onclick = openCurrentInLightbox;
-byId("modal-zoom-btn").onclick = openCurrentInLightbox;
-
-for (const id of ["reviewed-id", "answer", "reasoning", "manual"])
-  byId(id).addEventListener("input", () => { dirty = true; });
-
-for (const id of ["answer", "threshold", "increment"])
-  byId(id).addEventListener("input", clearSuggestion);
-
-byId("preview-crop").onclick = async () => {
-  const fields = ["x", "y", "width", "height"], coords = {};
-  for (const key of fields) {
-    const text = byId("crop-" + key).value;
-    if (!/^[0-9]+$/.test(text) || !Number.isSafeInteger(Number(text))) {
-      message("Crop coordinates must be whole numbers."); return;
-    }
-    coords[key] = Number(text);
-  }
-  const generation = ++imageGeneration;
-  imageReady = false; setBusy(true); message("Previewing crop; grading inputs are unchanged...");
-  try {
-    const response = await api("/api/preview-crop", {
-      revision: state.revision, script_index: script, question_index: Number(section), ...coords,
-    });
-    const blob = await response.blob();
-    if (generation !== imageGeneration) return;
-    if (imageUrl) URL.revokeObjectURL(imageUrl);
-    imageUrl = URL.createObjectURL(blob); byId("image").src = imageUrl;
-    byId("full-page").checked = false; imageReady = true;
-    message("Temporary visual preview only; grading inputs are unchanged.");
-  } catch (e) { message(e.message); } finally { setBusy(false); }
-};
-
-byId("calculate").onclick = async () => {
-  clearSuggestion();
-  if (byId("answer").value !== state.marks[script][Number(section)].original_answer) {
-    message("Similarity applies only to the original OCR answer."); return;
-  }
-  setBusy(true); message("Calculating suggestion...");
-  try {
-    const result = await (await api("/api/suggest", {
-      revision: state.revision, script_index: script, question_index: Number(section),
-      threshold: byId("threshold").value, step: byId("increment").value,
-    })).json();
-    suggestion = result.suggestion;
-    byId("suggestion").textContent = `Suggested mark: ${suggestion}`;
-    message("Suggestion only; no mark has been changed.");
-  } catch (e) { message(e.message); } finally { setBusy(false); }
-};
-
-byId("apply-suggestion").onclick = () => {
-  if (suggestion === null) return;
-  byId("manual").value = suggestion; dirty = true;
-  message("Suggestion copied to manual mark; save and review it to persist.");
-  clearSuggestion();
-};
-
-async function save(reviewed) {
-  const body = {revision: state.revision, script_index: script, reviewed};
-  if (section === "id") {
-    body.kind = "script"; body.reviewed_id = byId("reviewed-id").value;
-  } else {
-    body.kind = "mark"; body.question_index = Number(section);
-    body.answer = byId("answer").value; body.reasoning = byId("reasoning").value;
-    body.manual_mark = byId("manual").value;
-  }
-  setBusy(true); message("Saving..."); modalMessage("Saving...");
-  try {
-    await api("/api/save", body);
-    dirty = false; await reload();
-    if (reviewed) {
-      modalMessage("");
-      closeEditorModal();
-    } else {
-      modalMessage("Draft saved; item is not reviewed.");
-    }
-    message(reviewed ? "Saved and marked reviewed. Any earlier approval is stale." : "Draft saved; item is not reviewed.");
-  } finally { setBusy(false); }
-}
-
-byId("save").onclick = () => save(false).catch(e => { message(e.message); modalMessage(e.message, true); });
-byId("review").onclick = () => save(true).catch(e => { message(e.message); modalMessage(e.message, true); });
+byId("section").onchange = e => change("section", e.target.value);
+byId("metadata-image").onchange = () => renderMarksheetTable();
 
 byId("approve").onclick = async () => {
   if (dirty) { message("Save the current item before approval."); return; }
@@ -1812,25 +1574,15 @@ function focusMarkRow(delta, currentEl) {
 
 document.addEventListener("keydown", e => {
   if (!state || busy) return;
-  const modal = byId("editor-modal");
-  const modalOpen = modal && (modal.open || (typeof modal.matches === "function" && modal.matches(":popover-open")));
   const inInput = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName);
 
   if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
     e.preventDefault();
-    if (modalOpen) {
-      byId("review").click();
-    } else if (section === "id") {
+    if (section === "id") {
       byId("mark-ids-reviewed").click();
     } else {
       byId("mark-question-reviewed").click();
     }
-    return;
-  }
-
-  if (e.key === "Escape" && modalOpen) {
-    e.preventDefault();
-    closeEditorModal();
     return;
   }
 
@@ -1850,10 +1602,10 @@ document.addEventListener("keydown", e => {
     const totalQ = (state.questions || []).length;
     if (e.key === "ArrowRight") {
       const next = section === "id" ? (totalQ > 0 ? "0" : "id") : String(Math.min(totalQ - 1, Number(section) + 1));
-      closeEditorModal(); change("section", next);
+      change("section", next);
     } else {
       const prev = section === "id" ? "id" : (Number(section) <= 0 ? "id" : String(Number(section) - 1));
-      closeEditorModal(); change("section", prev);
+      change("section", prev);
     }
     return;
   }
@@ -1864,7 +1616,7 @@ document.addEventListener("keydown", e => {
     e.preventDefault(); focusMarkRow(-1); return;
   }
 
-  if (inInput || modalOpen || byId("image-modal").open) return;
+  if (inInput || byId("image-modal").open) return;
 
   if (e.key.toLowerCase() === "z") {
     e.preventDefault();
