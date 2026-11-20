@@ -49,11 +49,11 @@ def atomic_json(path, value):
         temp.unlink(missing_ok=True)
 
 
+from .pdf_renderer import render_pdf_to_images
+
+
 def prepare_regions(config, config_dir, page_count):
     """Render the first script's pages, without replacing an existing run."""
-    renderer = shutil.which("pdftoppm")
-    if not renderer:
-        raise ValueError("pdftoppm is required; install Poppler before preparing regions")
     pdf = resolve_path(config_dir, config["exam"]["scanned_pdf"])
     output = resolve_path(config_dir, config["exam"]["output_dir"])
     output.mkdir(parents=True, exist_ok=True)
@@ -63,18 +63,17 @@ def prepare_regions(config, config_dir, page_count):
     source_hash = file_hash(pdf)
     with tempfile.TemporaryDirectory(prefix=".regions-", dir=output) as temp:
         temporary = Path(temp)
-        prefix = temporary / "page"
-        result = subprocess.run(
-            [renderer, "-f", "1", "-l", str(page_count), "-r", "200",
-             "-jpeg", str(pdf), str(prefix)],
-            capture_output=True, timeout=300, check=False,
-        )
-        if result.returncode:
-            raise ValueError("PDF page rendering failed")
-        rendered = sorted(
-            temporary.glob("page-*.jpg"),
-            key=lambda path: int(path.stem.removeprefix("page-")),
-        )
+        try:
+            rendered = render_pdf_to_images(
+                pdf_path=pdf,
+                output_dir=temporary,
+                prefix="page",
+                dpi=200,
+                first_page=1,
+                last_page=page_count,
+            )
+        except Exception as exc:
+            raise ValueError(f"PDF page rendering failed: {exc}") from exc
         if len(rendered) != page_count:
             raise ValueError("PDF renderer returned an unexpected number of pages")
         if file_hash(pdf) != source_hash:

@@ -16,6 +16,7 @@ from openpyxl import Workbook
 from PIL import Image, ImageEnhance
 from pydantic import BaseModel, StrictBool, StrictInt, StrictStr
 
+from .pdf_renderer import render_pdf_to_images
 from .regions import (
     approval_is_current, atomic_json, config_hash, file_hash, resolve_path,
     validate_annotations, verify_run,
@@ -78,17 +79,18 @@ def grading_models(model_config_path):
 
 
 def render_scripts(config, config_dir, manifest, total_pages, staging):
-    renderer = shutil.which("pdftoppm")
-    if not renderer:
-        raise ValueError("pdftoppm is required; install Poppler")
     pdf = resolve_path(config_dir, config["exam"]["scanned_pdf"])
-    result = subprocess.run(
-        [renderer, "-r", "200", "-jpeg", str(pdf), str(staging / "page")],
-        capture_output=True, timeout=600, check=False,
-    )
-    if result.returncode:
-        raise ValueError("PDF page rendering failed")
-    pages = sorted(staging.glob("page-*.jpg"), key=lambda p: int(p.stem.removeprefix("page-")))
+    try:
+        pages = render_pdf_to_images(
+            pdf_path=pdf,
+            output_dir=staging,
+            prefix="page",
+            dpi=200,
+            first_page=1,
+            last_page=total_pages,
+        )
+    except Exception as exc:
+        raise ValueError(f"PDF page rendering failed: {exc}") from exc
     if len(pages) != total_pages:
         raise ValueError("Rendered PDF page count changed")
     per_script = len(manifest["pages"])
