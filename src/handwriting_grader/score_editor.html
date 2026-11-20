@@ -246,8 +246,10 @@ Keep this URL private and close spreadsheet editors while using this interface.<
   <div class="global-actions">
     <label style="font-size:0.8rem;">Script <select id="script"></select></label>
     <label style="font-size:0.8rem;">Review <select id="section"></select></label>
-    <button id="save">Save draft</button>
-    <button id="review" class="btn-primary">Save and mark reviewed</button>
+    <span id="global-save-slot" class="bar">
+      <button id="save">Save draft</button>
+      <button id="review" class="btn-primary">Save and mark reviewed</button>
+    </span>
     <button id="approve" class="btn-success">Approve all grading</button>
   </div>
 </div>
@@ -419,9 +421,7 @@ it does not change model inputs, review data, region approvals or reports.</p>
       <details><summary>Original OCR answer</summary><div class="details-content"><pre id="original" style="margin:0;"></pre></div></details>
       <details id="previous-review" hidden><summary>Previous approved review</summary><div class="details-content"><pre id="previous" style="margin:0;"></pre></div></details>
 
-      <div class="bar" style="justify-content: flex-end; padding-top: 0.5rem; border-top: 1px solid #e2e8f0;">
-        <button type="button" id="modal-save">Save draft</button>
-        <button type="button" id="modal-review" class="btn-primary">Save and mark reviewed</button>
+      <div id="modal-footer-actions" class="bar" style="justify-content: flex-end; padding-top: 0.5rem; border-top: 1px solid #e2e8f0;">
       </div>
     </div>
   </div>
@@ -463,7 +463,7 @@ function setBusy(value) {
                     "compare-question", "compare-filter", "compare-sort", "refresh-comparison",
                     "bulk-threshold", "bulk-increment", "bulk-preview", "preview-crop",
                     "minimumSimilarity", "granularity", "fullMark", "marksheet-sort", "marksheet-filter",
-                    "img-size", "modal-save", "modal-review"]) {
+                    "img-size"]) {
     const el = byId(id);
     if (el) el.disabled = busy;
   }
@@ -489,6 +489,7 @@ function clearBulk() {
 }
 
 function openEditorModal() {
+  byId("modal-footer-actions").append(byId("save"), byId("review"));
   const modal = byId("editor-modal");
   if (typeof modal.showPopover === "function") {
     if (!modal.matches(":popover-open")) modal.showPopover();
@@ -497,6 +498,7 @@ function openEditorModal() {
   }
 }
 function closeEditorModal() {
+  byId("global-save-slot").append(byId("save"), byId("review"));
   const modal = byId("editor-modal");
   if (typeof modal.hidePopover === "function") {
     if (modal.matches(":popover-open")) modal.hidePopover();
@@ -1013,6 +1015,7 @@ async function render() {
   const current = state.scripts[script];
   const identity = section === "id";
   byId("script-fields").style.display = identity ? "flex" : "none";
+  byId("global-save-slot").hidden = !identity;
   byId("mark-fields").hidden = identity;
 
   renderTabs();
@@ -1199,9 +1202,7 @@ async function save(reviewed) {
 }
 
 byId("save").onclick = () => save(false).catch(e => message(e.message));
-byId("modal-save").onclick = () => save(false).catch(e => message(e.message));
 byId("review").onclick = () => save(true).catch(e => message(e.message));
-byId("modal-review").onclick = () => save(true).catch(e => message(e.message));
 
 byId("approve").onclick = async () => {
   if (dirty) { message("Save the current item before approval."); return; }
