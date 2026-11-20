@@ -475,6 +475,7 @@ const byId = id => document.getElementById(id);
 let state, script = 0, section = "id", dirty = false, imageUrl = null, imageGeneration = 0;
 let busy = false, imageReady = false, suggestion = null, bulk = null;
 let marksheetSort = {col: "answer", mode: "group"};
+let questionStatusFilter = "all";
 const tableImageUrls = new Map();
 
 function message(text) { byId("status").textContent = text; }
@@ -599,9 +600,51 @@ function renderTabs() {
 
   let totalPendingQuestions = idDone ? 0 : 1;
   let totalFlaggedQuestions = idErrors > 0 ? 1 : 0;
+  let totalDoneQuestions = 0;
   let nextPendingSection = idDone ? null : "id";
   const questions = state.questions || [];
   const useCompactPicker = questions.length > 10;
+
+  const qStats = questions.map((q, i) => {
+    let qReviewed = 0, qFlagged = 0;
+    for (const s of state.scripts) {
+      const m = state.marks[s.script_index][i];
+      if (m && m.reviewed) qReviewed++;
+      if (m && (m.grading_failed || m.moderator_flag) && !m.reviewed) qFlagged++;
+    }
+    const qDone = totalScripts > 0 && qReviewed === totalScripts;
+    if (qDone) {
+      totalDoneQuestions++;
+    } else {
+      totalPendingQuestions++;
+      if (qFlagged > 0) totalFlaggedQuestions++;
+      if (nextPendingSection === null || (section !== "id" && i > Number(section))) {
+        if (nextPendingSection === null || (section !== "id" && Number(nextPendingSection) <= Number(section))) {
+          nextPendingSection = String(i);
+        }
+      }
+    }
+    return {q, i, qReviewed, qFlagged, qDone};
+  });
+
+  if (questions.length > 0) {
+    const qFilterSelect = document.createElement("select");
+    qFilterSelect.id = "question-status-filter";
+    qFilterSelect.title = "Filter questions by review status";
+    qFilterSelect.style.fontSize = "0.78rem";
+    qFilterSelect.append(
+      option("all", `Show Qs: All (${questions.length})`),
+      option("pending", `Needs Review (${questions.length - totalDoneQuestions})`),
+      option("flagged", `Flagged (${qStats.filter(x => x.qFlagged > 0).length})`),
+      option("done", `Reviewed ✓ (${totalDoneQuestions})`)
+    );
+    qFilterSelect.value = questionStatusFilter;
+    qFilterSelect.onchange = e => {
+      questionStatusFilter = e.target.value;
+      renderTabs();
+    };
+    nav.append(qFilterSelect);
+  }
 
   let picker = null;
   if (useCompactPicker) {
@@ -641,23 +684,12 @@ function renderTabs() {
     nav.append(prevQ, picker, nextQ);
   }
 
-  questions.forEach((q, i) => {
-    let qReviewed = 0, qFlagged = 0;
-    for (const s of state.scripts) {
-      const m = state.marks[s.script_index][i];
-      if (m && m.reviewed) qReviewed++;
-      if (m && (m.grading_failed || m.moderator_flag) && !m.reviewed) qFlagged++;
-    }
-    const qDone = totalScripts > 0 && qReviewed === totalScripts;
-    if (!qDone) {
-      totalPendingQuestions++;
-      if (qFlagged > 0) totalFlaggedQuestions++;
-      if (nextPendingSection === null || (section !== "id" && i > Number(section))) {
-        if (nextPendingSection === null || (section !== "id" && Number(nextPendingSection) <= Number(section))) {
-          nextPendingSection = String(i);
-        }
-      }
-    }
+  qStats.forEach(({q, i, qReviewed, qFlagged, qDone}) => {
+    const matchesFilter = questionStatusFilter === "all" ||
+      (questionStatusFilter === "pending" && !qDone) ||
+      (questionStatusFilter === "flagged" && qFlagged > 0) ||
+      (questionStatusFilter === "done" && qDone);
+    if (!matchesFilter && section !== String(i)) return;
 
     const qLabel = String(q.question_number).startsWith("Q") ? q.question_number : `Q${q.question_number}`;
     const badgeText = qDone ? "✓" : `${qReviewed}/${totalScripts}` + (qFlagged > 0 ? ` ⚠${qFlagged}` : "");
@@ -741,10 +773,12 @@ async function renderMarksheetTable() {
     byId("fullMark").value = "";
     byId("fullMark").disabled = true;
   } else {
+    const qLabel = String(qData.question_number).startsWith("Q") ? qData.question_number : `Q${qData.question_number}`;
     byId("q-banner-title").textContent = `${qData.question_number}: ${qData.question_text || ""}`;
     byId("q-banner-scheme").textContent = `Marking Scheme: ${qData.marking_scheme || "(No marking scheme)"}`;
     byId("fullMark").value = qData.marks;
     byId("fullMark").disabled = false;
+    byId("mark-question-reviewed").textContent = `Mark ${qLabel} Reviewed ✓`;
   }
 
   const sortMode = marksheetSort.mode;
