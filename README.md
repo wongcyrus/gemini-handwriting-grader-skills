@@ -15,6 +15,7 @@ See [detailed workflow and notebook gaps](skills/handwriting-grading/references/
 for stage-by-stage inputs, human decisions, outputs and known missing behavior.
 
 ### Technical & Architecture Documentation
+- [Design Logic, State Machine & Pipeline Flow](docs/design-logic-and-flow.md): Complete architectural philosophy, Mermaid state machine, data flow, cryptographic binding, and failure recovery logic.
 - [Cross-Platform Architecture](docs/cross-platform-architecture.md): Pure Python PDF rendering with `pypdfium2`, sub-pixel dimension parity, and universal Windows/Mac/Linux support.
 - [Self-Contained Multi-Assignment Design](docs/multi-assignment-design.md): Managing multiple independent exam/homework folders without workspace coupling or collisions.
 - [Preflight, Validation & Security Model](docs/preflight-and-security.md): Security principles, input validation, roster schema, and page count geometry.
