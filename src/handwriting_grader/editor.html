@@ -5,34 +5,130 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Review answer regions</title>
 <style>
-body { font: 16px system-ui, sans-serif; margin: 1.2rem; color: #172033; }
-button, input { font: inherit; margin: .2rem; padding: .35rem; }
-button { cursor: pointer; }
-.bar { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
-#status { padding: .6rem; background: #e9f2fb; white-space: pre-wrap; }
-#canvas { width: min(100%, 1000px); height: auto; border: 1px solid #576b7e; touch-action: none; user-select: none; }
-#list { display: flex; flex-wrap: wrap; gap: .3rem; padding: .5rem 0; }
-.selected { background: #ffdd7a; }
-.hint { max-width: 70rem; }
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  margin: 0; padding: 0 1.25rem 2.5rem 1.25rem;
+  color: #1a202c; background: #f8fafc; line-height: 1.45;
+}
+header { margin: 0.85rem 0 0.75rem 0; }
+h1 { font-size: 1.35rem; font-weight: 700; margin: 0 0 0.25rem 0; color: #1e293b; }
+h2 { font-size: 0.95rem; font-weight: 700; margin: 0 0 0.5rem 0; color: #1e293b; }
+.hint { max-width: 72rem; font-size: 0.84rem; color: #475569; margin: 0 0 0.65rem 0; }
+
+button, input {
+  font: inherit; font-size: 0.86rem;
+  min-block-size: 34px; padding: 0.32rem 0.7rem;
+  border-radius: 5px; border: 1px solid #cbd5e1; background: #ffffff; color: #1e293b;
+}
+button { cursor: pointer; font-weight: 600; transition: background-color 0.12s ease, border-color 0.12s ease; }
+button:hover:not(:disabled) { background: #f1f5f9; border-color: #94a3b8; }
+button.btn-primary { background: #2563eb; color: #ffffff; border-color: #1d4ed8; }
+button.btn-primary:hover:not(:disabled) { background: #1d4ed8; }
+button.btn-success { background: #16a34a; color: #ffffff; border-color: #15803d; }
+button.btn-success:hover:not(:disabled) { background: #15803d; }
+button.btn-danger { color: #b91c1c; border-color: #fecaca; background: #fef2f2; }
+button.btn-danger:hover:not(:disabled) { background: #fee2e2; border-color: #fca5a5; }
+:where(button, input, [tabindex]):focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+@media (pointer: coarse) {
+  button, input { min-block-size: 44px; }
+}
+
+.toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem;
+  background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px;
+  padding: 0.55rem 0.85rem; margin-bottom: 0.65rem;
+}
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+#page { font-size: 0.9rem; color: #1e293b; padding: 0 0.35rem; }
+
+#status {
+  padding: 0.5rem 0.85rem; background: #eff6ff; border: 1px solid #bfdbfe;
+  border-radius: 6px; color: #1d4ed8; font-size: 0.86rem; font-weight: 500;
+  white-space: pre-wrap; margin-bottom: 0.75rem;
+}
+
+.workspace {
+  display: grid; grid-template-columns: minmax(260px, 320px) 1fr; gap: 1rem; align-items: start;
+}
+@media (max-width: 860px) {
+  .workspace { grid-template-columns: 1fr; }
+}
+
+.sidebar-panel {
+  background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0.85rem;
+  display: flex; flex-direction: column; gap: 0.75rem;
+  content-visibility: auto; contain-intrinsic-size: auto 300px auto 500px;
+}
+@supports not (content-visibility: auto) {
+  .sidebar-panel { contain: layout style paint; }
+}
+.field-group { display: flex; flex-direction: column; gap: 0.3rem; }
+.field-group label { font-size: 0.82rem; font-weight: 600; color: #334155; }
+.field-group input { width: 100%; }
+
+#list { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+#list button { min-inline-size: 40px; }
+#list button.selected { background: #fef3c7; border-color: #d97706; color: #92400e; }
+
+.canvas-panel {
+  background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0.75rem;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+}
+#canvas {
+  display: block; width: min(100%, 1000px); height: auto;
+  border: 1px solid #94a3b8; border-radius: 4px;
+  touch-action: none; user-select: none; background: #f1f5f9;
+}
+#canvas rect[data-action="move"] { cursor: move; }
+#canvas rect[data-action="resize"] { cursor: nwse-resize; }
+.box-coords { font-size: 0.78rem; color: #64748b; }
 </style>
 </head>
 <body>
-<h1>Review answer regions</h1>
-<p class="hint">Click New box, set a label and drag on the image to draw. Select a box to move it;
+<header>
+  <h1>Review answer regions</h1>
+  <p class="hint">Click New box, set a label and drag on the image to draw. Select a box to move it;
 drag its bottom-right handle to resize. Save each page as reviewed. Use exact uppercase NAME, ID and CLASS labels,
 and place the ID box on the first page.
 Boxes cover the whole answer area. AI suggestions are optional and must be reviewed.</p>
-<div class="bar">
-<button id="prev">Previous</button><strong id="page"></strong><button id="next">Next</button>
-<label>Box label <input id="label" maxlength="64" placeholder="ID or question number"></label>
-<button id="new">New box</button><button id="delete">Delete selected</button>
-<button id="suggestions">Load AI suggestions</button>
-<button id="save">Save draft</button><button id="review">Save and mark reviewed</button>
-<button id="approve">Approve all regions</button>
-</div>
+
+  <nav class="toolbar" aria-label="Page and approval actions">
+    <div class="bar">
+      <button type="button" id="prev">Previous</button>
+      <strong id="page"></strong>
+      <button type="button" id="next">Next</button>
+    </div>
+    <div class="bar">
+      <button type="button" id="suggestions">Load AI suggestions</button>
+      <button type="button" id="save">Save draft</button>
+      <button type="button" id="review" class="btn-primary">Save and mark reviewed</button>
+      <button type="button" id="approve" class="btn-success">Approve all regions</button>
+    </div>
+  </nav>
+</header>
+
 <div id="status" role="status">Connecting...</div>
-<div id="list" aria-label="Boxes on this page"></div>
-<svg id="canvas" xmlns="http://www.w3.org/2000/svg" aria-label="Page region editor"></svg>
+
+<main class="workspace">
+  <aside class="sidebar-panel" aria-labelledby="boxes-heading">
+    <h2 id="boxes-heading">Regions on this page</h2>
+    <div class="field-group">
+      <label for="label">Box label</label>
+      <input id="label" maxlength="64" placeholder="ID or question number">
+    </div>
+    <div class="bar">
+      <button type="button" id="new">New box</button>
+      <button type="button" id="delete" class="btn-danger">Delete selected</button>
+    </div>
+    <div id="list" aria-label="Boxes on this page"></div>
+    <div id="selected-coords" class="box-coords">Select a box to inspect or use arrow keys to nudge.</div>
+  </aside>
+
+  <section class="canvas-panel" aria-label="Page image canvas">
+    <svg id="canvas" xmlns="http://www.w3.org/2000/svg" tabindex="0" aria-label="Page region editor"></svg>
+  </section>
+</main>
 <script>
 "use strict";
 let token = location.hash.slice(1);
@@ -73,24 +169,43 @@ function draw() {
   canvas.replaceChildren(svgElement("image", {href: imageUrl, width: dims.width, height: dims.height}));
   list.replaceChildren();
   boxes.forEach((box, index) => {
-    const color = index === selected ? "#ff9f00" : "#e22";
+    const isSel = index === selected;
+    const color = isSel ? "#d97706" : "#dc2626";
+    const fill = isSel ? "rgba(245,158,11,.16)" : "rgba(220,38,38,.10)";
     const rect = svgElement("rect", {x: box.x, y: box.y, width: box.width, height: box.height,
-      fill: "rgba(255,60,30,.12)", stroke: color, "stroke-width": Math.max(2, dims.width / 400),
+      fill, stroke: color, "stroke-width": Math.max(2, dims.width / 400),
       "data-index": index, "data-action": "move"});
     canvas.append(rect);
-    const text = svgElement("text", {x: box.x + 3, y: box.y + Math.max(20, dims.width / 60),
-      fill: color, "font-size": Math.max(20, dims.width / 60), "pointer-events": "none"});
+    const text = svgElement("text", {x: box.x + 4, y: box.y + Math.max(20, dims.width / 60),
+      fill: color, "font-size": Math.max(20, dims.width / 60), "font-weight": "700", "pointer-events": "none"});
     text.textContent = box.label; canvas.append(text);
-    if (index === selected) {
+    if (isSel) {
       const size = Math.max(16, dims.width / 70);
       canvas.append(svgElement("rect", {x: box.x + box.width - size, y: box.y + box.height - size,
         width: size, height: size, fill: color, "data-index": index, "data-action": "resize"}));
     }
     const item = document.createElement("button");
-    item.textContent = box.label; item.className = index === selected ? "selected" : "";
+    item.type = "button";
+    item.textContent = box.label; item.className = isSel ? "selected" : "";
+    item.setAttribute("aria-pressed", isSel ? "true" : "false");
     item.addEventListener("click", () => { selected = index; label.value = box.label; draw(); });
     list.append(item);
   });
+  if (gesture && gesture.action === "draw" && gesture.preview) {
+    const p = gesture.preview;
+    canvas.append(svgElement("rect", {
+      x: p.x, y: p.y, width: p.width, height: p.height,
+      fill: "rgba(37,99,235,.12)", stroke: "#2563eb",
+      "stroke-width": Math.max(2, dims.width / 400), "stroke-dasharray": "6 4",
+      "pointer-events": "none"
+    }));
+  }
+  const coordsEl = document.getElementById("selected-coords");
+  if (coordsEl) {
+    coordsEl.textContent = selected >= 0 && boxes[selected]
+      ? `Selected: ${boxes[selected].label} (${boxes[selected].x}, ${boxes[selected].y}, ${boxes[selected].width}×${boxes[selected].height})`
+      : "Select a box to inspect or use arrow keys to nudge.";
+  }
   document.getElementById("page").textContent =
     `Page ${page + 1} of ${state.pages.length}${state.draft.reviewed.includes(page) ? " (reviewed)" : ""}${dirty ? " (unsaved)" : ""}`;
 }
@@ -115,8 +230,19 @@ canvas.addEventListener("pointerdown", event => {
   canvas.setPointerCapture(event.pointerId); draw();
 });
 canvas.addEventListener("pointermove", event => {
-  if (!gesture || gesture.action === "draw") return;
-  const pos = point(event), orig = gesture.original, dims = state.pages[page];
+  if (!gesture) return;
+  const pos = point(event), dims = state.pages[page];
+  if (gesture.action === "draw") {
+    gesture.preview = {
+      x: Math.min(pos.x, gesture.pos.x),
+      y: Math.min(pos.y, gesture.pos.y),
+      width: Math.abs(pos.x - gesture.pos.x),
+      height: Math.abs(pos.y - gesture.pos.y),
+    };
+    draw();
+    return;
+  }
+  const orig = gesture.original;
   const dx = pos.x - gesture.pos.x, dy = pos.y - gesture.pos.y;
   if (gesture.action === "move") {
     boxes[selected].x = Math.max(0, Math.min(dims.width - orig.width, orig.x + dx));
@@ -126,6 +252,18 @@ canvas.addEventListener("pointermove", event => {
     boxes[selected].height = Math.max(1, Math.min(dims.height - orig.y, orig.height + dy));
   }
   dirty = true; draw();
+});
+canvas.addEventListener("keydown", event => {
+  if (selected < 0 || !boxes[selected] || !state) return;
+  const step = event.shiftKey ? 20 : 4;
+  const dims = state.pages[page], box = boxes[selected];
+  if (event.key === "ArrowLeft") { box.x = Math.max(0, box.x - step); }
+  else if (event.key === "ArrowRight") { box.x = Math.min(dims.width - box.width, box.x + step); }
+  else if (event.key === "ArrowUp") { box.y = Math.max(0, box.y - step); }
+  else if (event.key === "ArrowDown") { box.y = Math.min(dims.height - box.height, box.y + step); }
+  else if (event.key === "Delete" || event.key === "Backspace") { boxes.splice(selected, 1); selected = -1; }
+  else return;
+  event.preventDefault(); dirty = true; draw();
 });
 canvas.addEventListener("pointerup", event => {
   if (!gesture) return;
