@@ -21,7 +21,8 @@
    pricing separately. A failure is not proof that no requests were billed.
 3. Run `.venv/bin/handwriting-grader review-regions --exam /path/to/exam.yaml`.
    Open the complete localhost URL shown in the terminal. Do not share its
-   temporary token. The server runs until stopped with Ctrl+C.
+   temporary token. The server runs until stopped with Ctrl+C; once regions are
+   approved, stop the local `review-regions` server.
 4. When AI suggestions exist, they are automatically loaded across all pages
    on startup. The Load AI suggestions button can also reload them across all
    pages. On each page, adjust boxes (drag to draw with live preview, move,
