@@ -308,6 +308,7 @@ Keep this URL private and close spreadsheet editors while using this interface.<
     <span id="ocr" class="visually-hidden"></span>
     <label class="visually-hidden">Reviewed roster ID <select id="reviewed-id"></select></label>
     <label>Metadata image <select id="metadata-image"><option value="id">ID</option><option value="name">Name</option><option value="class">Class</option></select></label>
+    <button type="button" id="mark-ids-reviewed" class="btn-success">Match OCR IDs &amp; Mark Reviewed ✓</button>
     <span id="review-status-id" class="visually-hidden"></span>
   </div>
 </div>
@@ -505,7 +506,7 @@ function setBusy(value) {
                     "compare-question", "compare-filter", "compare-sort", "refresh-comparison",
                     "bulk-threshold", "bulk-increment", "bulk-preview", "preview-crop",
                     "minimumSimilarity", "granularity", "fullMark", "marksheet-filter",
-                    "img-size", "mark-question-reviewed"]) {
+                    "img-size", "mark-question-reviewed", "mark-ids-reviewed"]) {
     const el = byId(id);
     if (el) el.disabled = busy;
   }
@@ -1170,31 +1171,82 @@ async function saveInlineMark(sIdx, qIdx, markValue, markReviewed) {
   }
 }
 
+byId("mark-ids-reviewed").onclick = async () => {
+  if (section !== "id" || !state) return;
+  const roster = state.roster || {};
+  const targets = [];
+  for (const s of state.scripts) {
+    if (s.reviewed) continue;
+    const candidate = s.reviewed_id || (s.id_ocr && Object.prototype.hasOwnProperty.call(roster, String(s.id_ocr)) ? String(s.id_ocr) : "");
+    if (candidate) targets.push({script_index: s.script_index, reviewed_id: candidate});
+  }
+  if (targets.length === 0) {
+    message("No unmatched OCR IDs can be auto-matched; choose roster IDs in the table.");
+    return;
+  }
+  setBusy(true); message(`Marking ${targets.length} matched student ID(s) reviewed...`);
+  try {
+    for (const t of targets) {
+      const res = await (await api("/api/save", {
+        revision: state.revision,
+        script_index: t.script_index,
+        reviewed: true,
+        kind: "script",
+        reviewed_id: t.reviewed_id,
+      })).json();
+      state.revision = res.revision;
+    }
+    dirty = false;
+    await reload();
+    message(`Marked ${targets.length} student identity/identities reviewed.`);
+  } catch (e) {
+    message(e.message);
+  } finally {
+    setBusy(false);
+  }
+};
+
 byId("mark-question-reviewed").onclick = async () => {
   if (section === "id" || !state) return;
   const qIdx = Number(section);
-  const targets = state.scripts.filter(s => {
+  const unreviewed = state.scripts.filter(s => {
     const m = state.marks[s.script_index][qIdx];
-    return m && !m.reviewed && !m.grading_failed && !m.moderator_flag;
+    return m && !m.reviewed;
   });
-  const flaggedRemaining = state.scripts.filter(s => {
-    const m = state.marks[s.script_index][qIdx];
-    return m && !m.reviewed && (m.grading_failed || m.moderator_flag);
-  }).length;
-  if (targets.length === 0) {
-    if (flaggedRemaining > 0) {
-      byId("marksheet-filter").value = "flagged";
-      renderMarksheetTable();
-      message(`${flaggedRemaining} flagged/failed item(s) still require a manual mark.`);
-    } else {
-      message("All items in this question are already reviewed.");
-    }
+  if (unreviewed.length === 0) {
+    message("All items in this question are already reviewed.");
     return;
   }
-  setBusy(true); message(`Marking ${targets.length} unflagged item(s) reviewed...`);
+  const failedNoMark = unreviewed.filter(s => {
+    const m = state.marks[s.script_index][qIdx];
+    const hasManual = m.manual_mark != null && String(m.manual_mark).trim() !== "";
+    return m.grading_failed && !hasManual;
+  });
+  const modFlagged = unreviewed.filter(s => {
+    const m = state.marks[s.script_index][qIdx];
+    const hasManual = m.manual_mark != null && String(m.manual_mark).trim() !== "";
+    return !m.grading_failed && m.moderator_flag && !hasManual;
+  });
+  if (modFlagged.length > 0) {
+    if (!confirm(`This question has ${modFlagged.length} moderator-flagged item(s). Accept their displayed marks and mark the whole question reviewed?`)) return;
+  }
+  const targets = unreviewed.filter(s => !failedNoMark.includes(s));
+  if (targets.length === 0) {
+    byId("marksheet-filter").value = "flagged";
+    renderMarksheetTable();
+    message(`${failedNoMark.length} failed item(s) require a manual mark before they can be reviewed.`);
+    return;
+  }
+  setBusy(true); message(`Marking ${targets.length} item(s) reviewed...`);
   try {
     for (const s of targets) {
       const m = state.marks[s.script_index][qIdx];
+      const hasManual = m.manual_mark != null && String(m.manual_mark).trim() !== "";
+      const inputEl = byId(`inline-mark-${s.script_index}`);
+      let manualVal = hasManual ? String(m.manual_mark) : "";
+      if (!hasManual && m.moderator_flag) {
+        manualVal = inputEl ? inputEl.value.trim() : String(m.moderated_mark ?? m.raw_mark ?? "");
+      }
       const res = await (await api("/api/save", {
         revision: state.revision,
         script_index: s.script_index,
@@ -1203,18 +1255,18 @@ byId("mark-question-reviewed").onclick = async () => {
         question_index: qIdx,
         answer: m.answer,
         reasoning: m.reasoning,
-        manual_mark: m.manual_mark == null ? "" : String(m.manual_mark),
+        manual_mark: manualVal,
       })).json();
       state.revision = res.revision;
     }
     dirty = false;
     await reload();
-    if (flaggedRemaining > 0) {
+    if (failedNoMark.length > 0) {
       byId("marksheet-filter").value = "flagged";
       await renderMarksheetTable();
-      message(`Marked ${targets.length} unflagged item(s) reviewed. ${flaggedRemaining} flagged/failed item(s) still need a manual mark.`);
+      message(`Marked ${targets.length} item(s) reviewed. ${failedNoMark.length} failed item(s) still need a manual mark.`);
     } else {
-      message(`Marked all ${targets.length} item(s) in this question reviewed.`);
+      message(`Marked all ${targets.length} item(s) in this question reviewed ✓`);
     }
   } catch (e) {
     message(e.message);
