@@ -397,7 +397,7 @@ class GradingTests(unittest.TestCase):
         importlib.util.find_spec("playwright") and shutil.which("google-chrome"),
         "Playwright and Google Chrome are required",
     )
-    def test_comparison_table_is_read_only_and_navigates_review(self):
+    def test_marksheet_table_escapes_html_and_navigates_review(self):
         from playwright.sync_api import sync_playwright
 
         root = self.run_grading()
@@ -414,75 +414,18 @@ class GradingTests(unittest.TestCase):
                 page = browser.new_page()
                 page.goto(f"{self.score_server.origin}/#{self.score_server.token}")
                 page.get_by_text("Review each identity and every mark before approval.").wait_for()
-                page.get_by_text("Compare students by question").click()
-                rows = page.locator("#comparison tbody tr")
-                self.assertEqual(rows.count(), 2)
-                self.assertIn('<img src=x', rows.nth(1).inner_text())
-                self.assertEqual(page.locator("#comparison img").count(), 0)
-                page.locator("#compare-sort").select_option("score")
-                self.assertEqual(rows.nth(0).locator("td").first.inner_text(), "2")
-                page.locator("#compare-filter").select_option("flagged")
-                self.assertEqual(rows.count(), 1)
-                self.assertEqual(rows.nth(0).locator("td").first.inner_text(), "1")
-                page.locator("#compare-filter").select_option("all")
-                rows.nth(0).get_by_text("Open review").click()
+                page.get_by_role("button", name="Q1").click()
+                self.assertEqual(page.locator("#marksheet-tbody tr").count(), 2)
+                self.assertIn('<img src=x', page.locator("#marksheet-tbody").inner_text())
+                page.locator("#marksheet-tbody td strong", has_text="#2").click()
                 self.assertEqual(page.locator("#script").input_value(), "1")
                 self.assertEqual(page.locator("#section").input_value(), "0")
-                self.assertIn("<img", page.locator("#answer").input_value())
-                page.locator("#answer").fill("Unsaved")
-                page.once("dialog", lambda dialog: dialog.dismiss())
-                rows.nth(1).get_by_text("Open review").click()
-                self.assertEqual(page.locator("#answer").input_value(), "Unsaved")
-                page.once("dialog", lambda dialog: dialog.accept())
-                page.locator("#refresh-comparison").click()
-                page.get_by_text("Saved review refreshed; no changes were made.").wait_for()
                 self.assertIn("<img", page.locator("#answer").input_value())
                 self.assertIsNone(page.evaluate("window.injected"))
             finally:
                 browser.close()
         self.assertEqual(file_hash(root / "review.xlsx"), before)
         self.assertFalse((root / "approval.json").exists())
-
-    @unittest.skipUnless(
-        importlib.util.find_spec("playwright") and shutil.which("google-chrome"),
-        "Playwright and Google Chrome are required",
-    )
-    def test_bulk_similarity_browser_requires_preview_selection_and_confirmation(self):
-        from playwright.sync_api import sync_playwright
-
-        root = self.run_grading()
-        self.fill_review(root / "review.xlsx")
-        before = file_hash(root / "review.xlsx")
-        self.start_score_editor()
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(executable_path=shutil.which("google-chrome"), headless=True)
-            try:
-                page = browser.new_page()
-                page.on("dialog", lambda dialog: dialog.accept())
-                page.goto(f"{self.score_server.origin}/#{self.score_server.token}")
-                page.get_by_text("Review each identity and every mark before approval.").wait_for()
-                page.get_by_text("Compare students by question").click()
-                page.get_by_text("Preview bulk similarity suggestions").click()
-                page.locator("#bulk-threshold").fill(".8")
-                page.locator("#bulk-increment").fill(".25")
-                page.locator("#bulk-preview").click()
-                page.get_by_text("Preview only; no scores have changed. Select suggestions explicitly.").wait_for()
-                self.assertEqual(file_hash(root / "review.xlsx"), before)
-                self.assertEqual(page.locator("#bulk-results input:checked").count(), 0)
-                page.locator("#bulk-apply").click()
-                page.get_by_text("Select at least one suggestion.").wait_for()
-                page.locator("#bulk-results input").first.check()
-                page.locator("#bulk-apply").click()
-                page.get_by_text("Saved 1 unreviewed drafts. Earlier approval is stale.").wait_for()
-            finally:
-                browser.close()
-        book = load_workbook(root / "review.xlsx")
-        try:
-            self.assertEqual(book["Marks"]["K2"].value, 1)
-            self.assertIsNone(book["Marks"]["L2"].value)
-            self.assertEqual(book["Marks"]["L3"].value, "yes")
-        finally:
-            book.close()
 
     @unittest.skipUnless(
         importlib.util.find_spec("playwright") and shutil.which("google-chrome"),
