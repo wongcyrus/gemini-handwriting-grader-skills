@@ -105,6 +105,12 @@ table.marksheet tr:hover { background-color: #f8fafc; }
 table.marksheet tr.row-flagged { background-color: #fff7ed; }
 table.marksheet tr.row-failed { background-color: #fef2f2; }
 table.marksheet tr.row-selected { outline: 2px solid #2563eb; outline-offset: -2px; }
+@supports (content-visibility: auto) {
+  table.marksheet tbody tr:nth-child(n+12) {
+    content-visibility: auto;
+    contain-intrinsic-size: auto none auto 140px;
+  }
+}
 
 tr.group-divider td {
   background: #e2e8f0; font-weight: 700; color: #1e293b;
@@ -142,36 +148,51 @@ input.mark-input.locked { border-color: #ea580c; background-color: #fff7ed; }
 .sim-mid { background: #fef9c3; color: #854d0e; }
 .sim-low { background: #f1f5f9; color: #64748b; }
 
-/* Floating Non-Blocking Script Detail Modal */
-.editor-modal {
-  display: none;
+/* Large Native Top-Layer Script Detail Dialog */
+dialog.editor-modal {
   position: fixed;
-  right: 1.25rem;
-  bottom: 1.25rem;
-  width: min(680px, 94vw);
-  max-height: 82vh;
+  inset: 0;
+  margin: auto;
+  width: min(94vw, 1140px);
+  max-height: 90vh;
+  padding: 0;
   background: #ffffff;
   border: 2px solid #2563eb;
-  border-radius: 8px;
-  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.28);
-  z-index: 900;
-  flex-direction: column;
+  border-radius: 10px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.35);
+  overscroll-behavior: contain;
   overflow: hidden;
 }
-.editor-modal.active { display: flex; }
+dialog.editor-modal:is(:popover-open, [open]) {
+  display: flex;
+  flex-direction: column;
+}
 .editor-modal-header {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 0.6rem 0.9rem; background: #eff6ff; border-bottom: 1px solid #bfdbfe;
+  padding: 0.75rem 1.1rem; background: #eff6ff; border-bottom: 1px solid #bfdbfe;
   flex-shrink: 0;
 }
+.editor-modal-header h2 {
+  margin: 0; font-size: 1.05rem; font-weight: 700; color: #1e293b;
+}
 .editor-modal-body {
-  padding: 0.85rem 1rem; overflow-y: auto; display: flex; flex-direction: column; gap: 0.65rem;
+  padding: 1rem 1.15rem; overflow-y: auto;
+  display: grid; grid-template-columns: minmax(340px, 1.1fr) 1fr; gap: 1.15rem; align-items: start;
+}
+@media (max-width: 820px) {
+  .editor-modal-body { grid-template-columns: 1fr; }
+}
+.editor-modal-image-pane {
+  display: flex; flex-direction: column; gap: 0.5rem; position: sticky; top: 0;
 }
 textarea {
-  display: block; width: 100%; min-height: 4.5rem;
-  padding: 0.35rem 0.5rem; border: 1px solid #cbd5e1; border-radius: 4px;
+  display: block; width: 100%; min-height: 5rem;
+  padding: 0.4rem 0.55rem; border: 1px solid #cbd5e1; border-radius: 4px;
 }
-#image { max-width: 100%; max-height: 35vh; border: 1px solid #94a3b8; border-radius: 4px; object-fit: contain; }
+#image {
+  width: 100%; max-width: 100%; max-height: 62vh;
+  border: 1px solid #94a3b8; border-radius: 6px; object-fit: contain; background: #f8fafc;
+}
 .warning { color: #dc2626; font-weight: 700; }
 .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
 
@@ -192,18 +213,23 @@ table#comparison { border-collapse: collapse; width: 100%; font-size: 0.82rem; }
 table#comparison th, table#comparison td { border: 1px solid #cbd5e1; padding: 0.35rem 0.5rem; text-align: left; }
 table#comparison th { background: #f8fafc; }
 
-/* Full-screen Image Lightbox Modal */
-.modal-overlay {
-  display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(15, 23, 42, 0.82); z-index: 1000;
-  align-items: center; justify-content: center; padding: 1.5rem;
+/* Native Full-screen Image Lightbox Modal */
+dialog#image-modal {
+  border: none; border-radius: 10px; padding: 1rem;
+  max-width: 94vw; max-height: 94vh; margin: auto;
+  background: #ffffff; box-shadow: 0 24px 60px rgba(15, 23, 42, 0.45);
+  overscroll-behavior: contain;
 }
-.modal-overlay.active { display: flex; }
-.modal-box {
-  background: #ffffff; padding: 1rem; border-radius: 8px; max-width: 94vw; max-height: 94vh;
-  display: flex; flex-direction: column; gap: 0.5rem; text-align: center; overflow: hidden;
+dialog#image-modal[open] {
+  display: flex; flex-direction: column; gap: 0.65rem;
 }
-.modal-box img { max-width: 100%; max-height: 82vh; object-fit: contain; border: 1px solid #cbd5e1; }
+dialog#image-modal::backdrop {
+  background: rgba(15, 23, 42, 0.82); backdrop-filter: blur(3px);
+  overflow: hidden; overscroll-behavior: contain;
+}
+dialog#image-modal img {
+  max-width: 90vw; max-height: 82vh; object-fit: contain; border: 1px solid #cbd5e1; border-radius: 4px;
+}
 </style>
 </head>
 <body>
@@ -334,17 +360,19 @@ marks as <strong>unreviewed drafts</strong>; previously reviewed marks will need
   </div>
 </details>
 
-<!-- Floating Script Detail Modal (Opens on clicking Script # cell, Open review, or selecting question) -->
-<div class="editor-modal" id="editor-modal">
+<!-- Large Native Top-Layer Script Detail Dialog (Opens on clicking Script # cell, Open review, or selecting question) -->
+<dialog class="editor-modal" id="editor-modal" popover="manual" aria-labelledby="modal-editor-title">
   <div class="editor-modal-header">
-    <strong id="modal-editor-title">Script Details</strong>
+    <h2 id="modal-editor-title">Script Details</h2>
     <div class="bar">
-      <label style="font-size:0.78rem;"><input id="full-page" type="checkbox"> Show entire page instead of crop</label>
-      <button type="button" id="close-editor-modal" style="padding: 0.15rem 0.5rem; font-size: 0.78rem;">✕ Close</button>
+      <label style="font-size:0.82rem;"><input id="full-page" type="checkbox"> Show entire page instead of crop</label>
+      <button type="button" id="close-editor-modal" style="padding: 0.25rem 0.65rem;">✕ Close</button>
     </div>
   </div>
   <div class="editor-modal-body">
-    <img id="image" alt="Selected answer or metadata crop">
+    <div class="editor-modal-image-pane">
+      <img id="image" alt="Selected answer or metadata crop">
+    </div>
 
     <div id="mark-fields">
       <p id="question" style="margin: 0 0 0.25rem 0; font-weight: 600;"></p>
@@ -397,18 +425,18 @@ it does not change model inputs, review data, region approvals or reports.</p>
       </div>
     </div>
   </div>
-</div>
+</dialog>
 
-<!-- Full-screen Image Lightbox Modal -->
-<div class="modal-overlay" id="image-modal">
-  <div class="modal-box">
-    <div style="display: flex; justify-content: space-between; align-items: center;">
-      <h3 style="margin:0; font-size: 1rem;" id="modal-title">Enlarged Preview</h3>
-      <button type="button" id="modal-close" style="padding: 0.2rem 0.6rem;">✕ Close</button>
-    </div>
-    <img id="modal-img" src="" alt="Enlarged answer crop">
+<!-- Native Full-screen Image Lightbox Modal -->
+<dialog id="image-modal" closedby="any" aria-labelledby="modal-title">
+  <div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem;">
+    <h2 style="margin:0; font-size: 1.05rem;" id="modal-title">Enlarged Preview</h2>
+    <form method="dialog" style="margin:0;">
+      <button type="submit" id="modal-close" style="padding: 0.25rem 0.65rem;">✕ Close</button>
+    </form>
   </div>
-</div>
+  <img id="modal-img" src="" alt="Enlarged answer crop">
+</dialog>
 
 <script>
 "use strict";
@@ -461,10 +489,20 @@ function clearBulk() {
 }
 
 function openEditorModal() {
-  byId("editor-modal").classList.add("active");
+  const modal = byId("editor-modal");
+  if (typeof modal.showPopover === "function") {
+    if (!modal.matches(":popover-open")) modal.showPopover();
+  } else if (!modal.open) {
+    modal.show();
+  }
 }
 function closeEditorModal() {
-  byId("editor-modal").classList.remove("active");
+  const modal = byId("editor-modal");
+  if (typeof modal.hidePopover === "function") {
+    if (modal.matches(":popover-open")) modal.hidePopover();
+  } else if (modal.open) {
+    modal.close();
+  }
 }
 byId("close-editor-modal").onclick = closeEditorModal;
 
@@ -697,6 +735,8 @@ function createTableRow(item, isId, qIdx) {
   const img = document.createElement("img");
   img.className = "answer-crop-img";
   img.alt = `Script ${sIdx + 1}`;
+  img.loading = "lazy";
+  img.decoding = "async";
   img.dataset.script = String(sIdx);
   img.dataset.field = isId ? (byId("metadata-image").value || "id") : String(qIdx);
   img.title = "Click to enlarge fullscreen";
@@ -872,11 +912,21 @@ function openImageModal(src, title) {
   if (!src) return;
   byId("modal-img").src = src;
   byId("modal-title").textContent = title;
-  byId("image-modal").classList.add("active");
+  const dialog = byId("image-modal");
+  if (!dialog.open) dialog.showModal();
 }
 
-byId("modal-close").onclick = () => byId("image-modal").classList.remove("active");
-byId("image-modal").onclick = e => { if (e.target === byId("image-modal")) byId("image-modal").classList.remove("active"); };
+if (!("closedBy" in HTMLDialogElement.prototype)) {
+  const outside = (e, dialog) => {
+    const r = dialog.getBoundingClientRect();
+    return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+  };
+  for (const dialog of document.querySelectorAll('dialog[closedby="any"]')) {
+    let pressedOutside = false;
+    dialog.addEventListener("pointerdown", e => { pressedOutside = outside(e, dialog); });
+    dialog.addEventListener("pointerup", e => { if (pressedOutside && outside(e, dialog)) dialog.close(); });
+  }
+}
 
 document.querySelectorAll(".toggle-vis").forEach(btn => {
   btn.onclick = () => {
