@@ -17,10 +17,18 @@ for stage-by-stage inputs, human decisions, outputs and known missing behavior.
 ### Technical & Architecture Documentation
 - [Cross-Platform Architecture](docs/cross-platform-architecture.md): Pure Python PDF rendering with `pypdfium2`, sub-pixel dimension parity, and universal Windows/Mac/Linux support.
 - [Self-Contained Multi-Assignment Design](docs/multi-assignment-design.md): Managing multiple independent exam/homework folders without workspace coupling or collisions.
+- [Preflight, Validation & Security Model](docs/preflight-and-security.md): Security principles, input validation, roster schema, and page count geometry.
+- [Rubric Extraction & Verification](docs/rubric-architecture.md): DOCX rubric extraction, search-grounded verification, and cryptographic approval hashes.
+- [Region Definition & Bounding Box Editor](docs/region-and-layout-architecture.md): Coordinate system, AI layout proposals, and local browser editor.
+- [Grading & Moderation Engine](docs/grading-and-moderation-engine.md): Multimodal handwriting OCR, per-script question grading, and batch consistency moderation.
+- [Score Review & Approval](docs/score-review-and-approval.md): Blind question marksheets, similarity grouping, crop controls, and discrepancy diagnostics.
+- [Reporting & Offline Analytics](docs/reporting-and-analytics-engine.md): Grade slip generation, annotated PDFs, stratified samples, and offline box plots.
+- [Gated Email Distribution](docs/email-distribution-architecture.md): Private email previews, attachment binding, human approval gates, and SMTP STARTTLS dispatch.
+- [Model Configuration & Caching](docs/model-configuration-and-caching.md): Model mapping, private/shared response caching, and Google Cloud ADC authentication.
 - [ADK Telemetry & Cost Reporting](docs/telemetry-and-cost-reporting.md): Real-time sub-step progress tracking, Gemini token accounting, and `cost-report` generation.
 - [Cleanup, Archival & Retention Design](docs/cleanup-and-retention-design.md): Student data protection principles, automatic cross-platform `.zip` backups, and gated cleanup.
-- [Migration & Parity Guide](docs/notebook-to-python.md): Detailed comparison between legacy notebook workflows and modern Python CLI tools.
 - [Attendance & Regrading Architecture](docs/attendance-and-regrading-design.md): Detailed lineage tracking for isolated one-question regrades.
+- [Migration & Parity Guide](docs/notebook-to-python.md): Detailed comparison between legacy notebook workflows and modern Python CLI tools.
 - [Agent Skill Testing](docs/testing-skills.md): Testing across Antigravity CLI, Copilot CLI, and Gemini CLI.
 
 ## Setup

@@ -1,0 +1,93 @@
+# Three-Stage Grading & Consistency Moderation Engine
+
+This document details the multimodal OCR, per-script question grading, and batch consistency moderation pipeline in `gemini-handwriting-grader-skills`.
+
+---
+
+## 1. Pipeline Overview
+
+Grading runs in three strictly decoupled, resilient phases:
+
+```
+[Scanned Script Pages]
+         |
+         v
++-----------------------------------------------------------+
+| Stage 1: Student Metadata OCR                             |
+| Extract handwritten ID, CLASS, NAME from Page 0           |
++-----------------------------------------------------------+
+         |
+         v
++-----------------------------------------------------------+
+| Stage 2: Question Grading (Per-Question, Per-Script)      |
+| Extract student answer, drawings/diagrams, score & reason |
++-----------------------------------------------------------+
+         |
+         v
++-----------------------------------------------------------+
+| Stage 3: Consistency Moderation (Per-Question Batch)      |
+| Evaluate all student answers together to eliminate bias   |
++-----------------------------------------------------------+
+         |
+         v
+[Results Checkpoint (results.json) & Review Workbook (review.xlsx)]
+```
+
+---
+
+## 2. Stage 1: Student Metadata OCR
+
+- **Input**: High-resolution crop of `ID`, `CLASS`, and `NAME` bounding boxes from each student's page 0.
+- **Image Preprocessing**:
+  ```python
+  crop = ImageEnhance.Sharpness(crop).enhance(3)
+  ```
+- **Prompt**: Strict extraction directive:
+  > *"Extract only the handwritten {field} from this image. Preserve text and line breaks. Return an empty response if blank; do not guess."*
+- **Model**: Fast flash model (`gemini-3.8-flash` / `gemini-2.5-flash`), temperature = 0.
+
+---
+
+## 3. Stage 2: Multimodal Question Grading
+
+- **Input**:
+  - Image crop of the student's answer box (supports handwriting, equations, flowcharts, ER diagrams, drawings).
+  - Question text, maximum marks, and approved marking scheme criteria.
+- **Structured Response Schema (`GradeResponse`)**:
+  ```python
+  class GradeResponse(BaseModel):
+      answer: StrictStr          # Verbatim transcription or diagram description
+      mark: float                # Points awarded (0 <= mark <= max_marks)
+      similarity_score: float    # Semantic similarity to marking criteria (0.0 to 1.0)
+      reasoning: StrictStr       # Justification referencing rubric criteria
+  ```
+- **Prompt Guard**: Student handwriting is explicitly framed as data, not instructions, to defend against prompt injection in student submissions.
+
+---
+
+## 4. Stage 3: Batch Consistency Moderation
+
+Single-pass LLM grading can exhibit drift or variance across different scripts. To ensure fairness, moderation evaluates all student answers for a question simultaneously:
+
+- **Input**: Array of all student answers, raw marks, and reasoning for question $Q$.
+- **Structured Response Schema (`ModerationResponse`)**:
+  ```python
+  class ModerationItem(BaseModel):
+      script_index: StrictInt
+      moderated_mark: float
+      flag: StrictBool           # True if mark was adjusted or concerns noted
+      note: StrictStr            # Explanation of consistency adjustment
+  ```
+- **Moderator Actions**:
+  - Detects harshness/leniency inconsistencies across identical or similar answers.
+  - Flags borderline or ambiguous cases for human teacher inspection.
+  - Populates `moderator_flag` and `moderator_note` in the review sheet.
+
+---
+
+## 5. Resumable Checkpoint Engine (`results.json`)
+
+To prevent loss of work or duplicate billing if a network error occurs:
+- `output/grading/results.json` records every completed script and question atomically via `atomic_json()`.
+- `resume-grading --exam exam.yaml --confirm-cost` skips already graded and moderated questions, continuing from the exact failure point.
+- Protected by `processing.lock` to prevent concurrent execution races.
