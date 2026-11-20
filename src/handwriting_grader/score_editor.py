@@ -387,8 +387,11 @@ class ScoreHandler(BaseHTTPRequestHandler):
                 if len(segments) == 5 and segments[1:3] == ["api", "image"]:
                     script, field = segments[3:]
                     full_page = field.startswith("full-")
+                    context_crop = field.startswith("ctx-")
                     if full_page:
                         field = field[5:]
+                    elif context_crop:
+                        field = field[4:]
                     if not script.isascii() or not script.isdigit() or int(script) not in scripts:
                         return self.json_response(404, {"error": "Image not found"})
                     if field in {"id", "name", "class"}:
@@ -404,6 +407,20 @@ class ScoreHandler(BaseHTTPRequestHandler):
                     image = root / "images" / f"{int(script) * self.server.config['layout']['pages_per_student'] + page}.jpg"
                     if full_page:
                         return self.respond(200, image.read_bytes(), "image/jpeg")
+                    if context_crop:
+                        with Image.open(image) as source:
+                            pad_x = max(80, int(box["width"] * 0.35))
+                            pad_y = max(80, int(box["height"] * 0.50))
+                            x0 = max(0, box["x"] - pad_x)
+                            y0 = max(0, box["y"] - pad_y)
+                            x1 = min(source.width, box["x"] + box["width"] + pad_x)
+                            y1 = min(source.height, box["y"] + box["height"] + pad_y)
+                            box = {
+                                "x": x0,
+                                "y": y0,
+                                "width": max(1, x1 - x0),
+                                "height": max(1, y1 - y0),
+                            }
                     return self.respond(200, crop_image(image, box), "image/png")
         except (OSError, ValueError, KeyError, TypeError):
             return self.json_response(409, {"error": "Run or review changed; stop and inspect it"})
