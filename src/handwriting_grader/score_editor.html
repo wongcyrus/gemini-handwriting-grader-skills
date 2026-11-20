@@ -809,12 +809,15 @@ async function renderMarksheetTable() {
     }
   });
 
+  const metaField = isId ? (byId("metadata-image").value || "id") : null;
   let entries = state.scripts.map(s => {
     const mark = isId ? null : state.marks[s.script_index][qIdx];
     const rawScore = mark ? (mark.manual_mark != null && String(mark.manual_mark).trim() !== "" ? mark.manual_mark : mark.moderated_mark ?? mark.raw_mark) : 0;
     const numScore = rawScore != null && Number.isFinite(Number(rawScore)) ? Number(rawScore) : 0;
     const simScore = mark ? (Number(mark.similarity_score) || 0) : 0;
-    const ansText = isId ? (s.id_ocr || "") : (mark ? mark.answer || "" : "");
+    const ansText = isId
+      ? (metaField === "name" ? (s.name_ocr || "") : (metaField === "class" ? (s.class_ocr || "") : (s.id_ocr || "")))
+      : (mark ? mark.answer || "" : "");
     const isRev = isId ? Boolean(s.reviewed) : Boolean(mark && mark.reviewed);
     const isFlg = !isId && mark && (mark.grading_failed || mark.moderator_flag);
 
@@ -992,7 +995,7 @@ function createTableRow(item, isId, qIdx) {
     spanMeta.style.color = "#64748b";
     spanMeta.style.fontSize = "0.78rem";
     spanMeta.style.marginBottom = "0.25rem";
-    spanMeta.textContent = `${s.name_ocr || ""} (${s.class_ocr || ""})`;
+    spanMeta.textContent = `ID: ${s.id_ocr || "-"} · ${s.name_ocr || ""} (${s.class_ocr || ""})`;
 
     const idSelect = document.createElement("select");
     idSelect.style.maxWidth = "200px";
