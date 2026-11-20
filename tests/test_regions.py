@@ -283,6 +283,30 @@ class RegionWorkflowTests(unittest.TestCase):
         self.assertFalse((self.regions / "ai_suggestions.json").exists())
         self.assertEqual((self.regions / "draft.json").read_bytes(), original)
 
+    def test_annotation_cache_reuses_results_without_skipping_confirmation(self):
+        config_path = self.root / "exam.yaml"
+        config_path.write_text(yaml.safe_dump(self.config))
+        model_path = self.root / "config.yaml"
+        model_path.write_text(yaml.safe_dump({
+            "vertex_ai": {"use_vertexai": True}, "models": {"annotation": "test-model"},
+            "caching": {"enabled": True, "agents": {"annotation": True}},
+        }))
+        arguments = ["suggest-regions", "--exam", str(config_path), "--model-config", str(model_path),
+                     "--project", "test-project", "--location", "global"]
+        with patch("handwriting_grader.suggestions.genai.Client") as constructor:
+            client = constructor.return_value.__enter__.return_value
+            client.models.generate_content.return_value = SimpleNamespace(parsed={
+                "boxes": [{"x": 100, "y": 200, "width": 300, "height": 400, "label": "1"}]
+            })
+            self.assertEqual(main(arguments), 1)
+            self.assertEqual(main(arguments + ["--confirm-cost"]), 0)
+            calls = client.models.generate_content.call_count
+            self.assertGreater(calls, 0)
+            (self.regions / "ai_suggestions.json").rename(self.regions / "first-suggestions.json")
+            self.assertEqual(main(arguments), 1)
+            self.assertEqual(main(arguments + ["--confirm-cost"]), 0)
+            self.assertEqual(client.models.generate_content.call_count, calls)
+
     def test_vertex_sdk_serializes_requests_against_local_fake_service(self):
         from google.oauth2.credentials import Credentials
         from google.genai import Client

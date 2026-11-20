@@ -1,0 +1,8 @@
+# Reserved synthetic addresses used in documentation and offline tests.
+teacher@example.test
+one@example.test
+two@example.test
+three@example.test
+wrong@example.test
+student001@example.invalid
+student002@example.invalid

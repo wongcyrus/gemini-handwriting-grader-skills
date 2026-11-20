@@ -12,8 +12,13 @@ dependencies = [
   "openpyxl>=3.1,<4",
   "pypdf>=6.5,<7",
   "Pillow>=11,<13",
+  "matplotlib>=3.9,<4",
   "google-genai>=2.30,<3",
   "pydantic>=2,<3",
+  "mammoth>=1.8,<2",
+  "html2text>=2024.2.26",
+  "python-docx>=1,<2",
+  "python-pptx>=1,<2",
 ]
 
 [project.optional-dependencies]
@@ -26,4 +31,4 @@ handwriting-grader = "handwriting_grader.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-handwriting_grader = ["editor.html"]
+handwriting_grader = ["editor.html", "score_editor.html"]

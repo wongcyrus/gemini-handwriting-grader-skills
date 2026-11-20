@@ -1,0 +1,93 @@
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+import yaml
+
+from handwriting_grader.cache import CachedGrader, cache_directory, enabled_agents
+
+
+class Provider:
+    def __init__(self):
+        self.calls = []
+
+    def ocr(self, image, field):
+        self.calls.append(("ocr", field))
+        return "answer"
+
+    def grade(self, question, answer):
+        self.calls.append(("grading", answer))
+        return {"mark": 1, "similarity_score": 0.5, "reasoning": "example"}
+
+    def moderate(self, question, entries):
+        self.calls.append(("moderation", len(entries)))
+        return {entry["script_index"]: {"script_index": entry["script_index"], "moderated_mark": 1,
+                                        "flag": False, "note": ""} for entry in entries}
+
+
+class CacheTests(unittest.TestCase):
+    def test_only_enabled_agents_are_cached_and_reused_across_resume(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config = root / "models.yaml"
+            config.write_text(yaml.safe_dump({"caching": {"enabled": True, "agents": {
+                "ocr": True, "grading": True, "moderation": False,
+            }}}))
+            agents = enabled_agents(config)
+            self.assertEqual(agents, ["ocr", "grading"])
+            models = {"ocr": "o", "grading": "g", "moderation": "m"}
+            first = Provider()
+            cached = CachedGrader(first, root / "cache", agents, models, "project", "location")
+            question = {"question_number": "1", "question_text": "Question", "marking_scheme": "Scheme", "marks": 2}
+            entries = [{"script_index": 0, "answer": "answer", "mark": 1, "reasoning": "example"}]
+            cached.ocr(b"image", "answer")
+            cached.grade(question, "answer")
+            cached.moderate(question, entries)
+            second = Provider()
+            resumed = CachedGrader(second, root / "cache", agents, models, "project", "location")
+            self.assertEqual(resumed.ocr(b"image", "answer"), "answer")
+            self.assertEqual(resumed.grade(question, "answer")["mark"], 1)
+            resumed.moderate(question, entries)
+            self.assertEqual(second.calls, [("moderation", 1)])
+            resumed.ocr(b"different", "answer")
+            self.assertEqual(second.calls[-1], ("ocr", "answer"))
+            files = list((root / "cache").glob("*.json"))
+            path = next(p for p in files if json.loads(p.read_text())["key"]["kind"] == "grading")
+            invalid = json.loads(path.read_text())
+            invalid["result"]["mark"] = 999
+            path.write_text(json.dumps(invalid))
+            with self.assertRaisesRegex(ValueError, "Invalid cached grade"):
+                resumed.grade(question, "answer")
+
+    def test_caching_is_off_without_explicit_settings(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            config = Path(temporary) / "models.yaml"
+            config.write_text("{}")
+            self.assertEqual(enabled_agents(config), [])
+
+    def test_shared_cache_requires_explicit_private_directory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config = root / "models.yaml"
+            config.write_text(yaml.safe_dump({"caching": {"enabled": True, "scope": "shared",
+                                                         "directory": "shared", "agents": {"ocr": True}}}))
+            shared = cache_directory(config, root / "run")
+            self.assertEqual(shared, root / "shared" / "handwriting-grader-cache-v1")
+            models = {"ocr": "o", "grading": "g", "moderation": "m"}
+            first = Provider()
+            CachedGrader(first, shared, enabled_agents(config), models, "p", "l").ocr(b"image", "answer")
+            second = Provider()
+            CachedGrader(second, cache_directory(config, root / "other"), enabled_agents(config),
+                         models, "p", "l").ocr(b"image", "answer")
+            self.assertEqual(second.calls, [])
+            shared.chmod(0o755)
+            with self.assertRaisesRegex(ValueError, "private"):
+                CachedGrader(second, shared, ["ocr"], models, "p", "l")
+            config.write_text(yaml.safe_dump({"caching": {"scope": "shared"}}))
+            with self.assertRaisesRegex(ValueError, "caching.directory"):
+                cache_directory(config, root / "run")
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -96,6 +96,18 @@ def check_exam(config, config_dir):
         except Exception as exc:
             errors.append(f"cannot read roster: {type(exc).__name__}")
 
+    absent_count = 0
+    if exam.get("attendance") is not None:
+        try:
+            from .attendance import attendance_rows
+
+            _, statuses = attendance_rows(config, config_dir)
+            roster_count = sum(status == "present" for status in statuses.values())
+            absent_count = sum(status == "absent" for status in statuses.values())
+        except (OSError, ValueError, KeyError) as exc:
+            errors.append(f"attendance: {exc}")
+            roster_count = None
+
     pdf_count = None
     pdf = paths.get("scanned_pdf")
     if pdf and pdf.is_file():
@@ -107,8 +119,32 @@ def check_exam(config, config_dir):
             errors.append(f"cannot read scanned_pdf: {type(exc).__name__}")
     if roster_count and pdf_count is not None and pages and pdf_count != roster_count * pages:
         errors.append("PDF page count does not equal roster count times pages_per_student")
-    summary.update(exam=name, students=roster_count, pdf_pages=pdf_count, pages_per_student=pages)
+    summary.update(exam=name, students=roster_count, absent=absent_count,
+                   pdf_pages=pdf_count, pages_per_student=pages)
     return errors, summary
+
+
+def check_rubric_inputs(config, config_dir):
+    exam = config.get("exam")
+    if not isinstance(exam, dict):
+        return ["exam must be a mapping"], {}
+    errors = []
+    paths = {}
+    for key in ("name", "marking_scheme", "output_dir"):
+        value = exam.get(key)
+        if not isinstance(value, str) or not value.strip():
+            errors.append(f"{key} must be provided")
+        elif key != "name":
+            paths[key] = (config_dir / Path(value.strip()).expanduser()).resolve()
+    source = paths.get("marking_scheme")
+    output = paths.get("output_dir")
+    if source and not source.is_file():
+        errors.append("marking_scheme is not a readable file")
+    if output and output.exists() and not output.is_dir():
+        errors.append("output_dir exists but is not a directory")
+    if source and output and (source == output or output in source.parents):
+        errors.append("output_dir contains the marking scheme; choose a separate output directory")
+    return errors, paths
 
 
 def main(argv=None):
@@ -116,6 +152,13 @@ def main(argv=None):
     commands = parser.add_subparsers(dest="command", required=True)
     preflight = commands.add_parser("preflight", help="Check exam inputs without making changes")
     preflight.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    attendance_prepare = commands.add_parser("prepare-attendance", help="Prepare a private attendance review")
+    attendance_prepare.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    attendance_approve = commands.add_parser("approve-attendance", help="Approve the reviewed attendance list")
+    attendance_approve.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    attendance_approve.add_argument("--confirm-reviewed", action="store_true", help="Confirm attendance review")
+    answer_sheets = commands.add_parser("answer-sheets", help="Generate personalized printable answer sheets")
+    answer_sheets.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     prepare = commands.add_parser("prepare-regions", help="Render page layouts for manual review")
     prepare.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     review = commands.add_parser("review-regions", help="Start a local browser-based region editor")
@@ -127,11 +170,119 @@ def main(argv=None):
     suggest.add_argument("--project", required=True, help="Explicit Google Cloud project")
     suggest.add_argument("--location", required=True, help="Explicit Vertex AI location")
     suggest.add_argument("--confirm-cost", action="store_true", help="Confirm sending pages to Vertex AI")
+    rubric_import = commands.add_parser("import-rubric", help="Import an existing structured XLSX rubric")
+    rubric_import.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    rubric_extract = commands.add_parser("extract-rubric", help="Extract a DOCX rubric using Vertex AI")
+    rubric_extract.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    rubric_extract.add_argument("--model-config", required=True, type=Path, help="Path to existing AI config.yaml")
+    rubric_extract.add_argument("--project", required=True, help="Explicit Google Cloud project")
+    rubric_extract.add_argument("--location", required=True, help="Explicit Vertex AI location")
+    rubric_extract.add_argument("--confirm-cost", action="store_true", help="Confirm sending rubric to Vertex AI")
+    rubric_verify = commands.add_parser("verify-rubric", help="Request optional search-grounded rubric review")
+    rubric_verify.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    rubric_verify.add_argument("--model-config", required=True, type=Path, help="Path to existing AI config.yaml")
+    rubric_verify.add_argument("--project", required=True, help="Explicit Google Cloud project")
+    rubric_verify.add_argument("--location", required=True, help="Explicit Vertex AI location")
+    rubric_verify.add_argument("--confirm-cost", action="store_true", help="Confirm Vertex and search requests")
+    rubric_approve = commands.add_parser("approve-rubric", help="Validate and explicitly approve a reviewed rubric")
+    rubric_approve.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    rubric_approve.add_argument("--confirm-reviewed", action="store_true", help="Confirm human review")
+    grade = commands.add_parser("grade", help="OCR, grade and moderate approved regions with Vertex AI")
+    grade.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    grade.add_argument("--model-config", required=True, type=Path, help="Path to existing AI config.yaml")
+    grade.add_argument("--project", required=True, help="Explicit Google Cloud project")
+    grade.add_argument("--location", required=True, help="Explicit Vertex AI location")
+    grade.add_argument("--confirm-cost", action="store_true", help="Confirm sending student work to Vertex AI")
+    resume = commands.add_parser("resume-grading", help="Resume a supported interrupted grading checkpoint")
+    resume.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    resume.add_argument("--confirm-cost", action="store_true", help="Confirm resumed paid calls")
+    regrade_rubric = commands.add_parser("prepare-regrade-rubric", help="Prepare a replacement rubric for review")
+    regrade_rubric.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    regrade_rubric.add_argument("--proposal", required=True, help="New rubric proposal ID")
+    regrade_rubric.add_argument("--parent", help="Parent run ID (default: original run)")
+    regrade_rubric.add_argument("--question", required=True, help="Question to rerun")
+    regrade_rubric.add_argument("--rubric", required=True, type=Path, help="Replacement XLSX rubric")
+    regrade_approve = commands.add_parser("approve-regrade-rubric", help="Approve a reviewed replacement rubric")
+    regrade_approve.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    regrade_approve.add_argument("--proposal", required=True, help="Rubric proposal ID")
+    regrade_approve.add_argument("--confirm-reviewed", action="store_true", help="Confirm human rubric review")
+    crop_prepare = commands.add_parser("prepare-regrade-crops", help="Prepare shared and per-script crops for review")
+    crop_prepare.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    crop_prepare.add_argument("--proposal", required=True, help="New crop proposal ID")
+    crop_prepare.add_argument("--parent", help="Parent run ID (default: original run)")
+    crop_prepare.add_argument("--question", required=True, help="Question to rerun")
+    crop_prepare.add_argument("--crops", required=True, type=Path, help="Private crop JSON outside output")
+    crop_approve = commands.add_parser("approve-regrade-crops", help="Approve reviewed crop proposal")
+    crop_approve.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    crop_approve.add_argument("--proposal", required=True, help="Crop proposal ID")
+    crop_approve.add_argument("--confirm-reviewed", action="store_true", help="Confirm human crop review")
+    regrade = commands.add_parser("regrade", help="Rerun one question in an isolated child run")
+    regrade.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    regrade.add_argument("--run", required=True, help="New child run ID")
+    regrade.add_argument("--parent", help="Parent run ID (default: original run)")
+    regrade.add_argument("--question", required=True, help="Question to rerun for all present students")
+    regrade.add_argument("--rubric-proposal", help="Approved replacement rubric proposal ID")
+    regrade.add_argument("--crop-proposal", help="Approved shared and per-script crop proposal ID")
+    regrade.add_argument("--reuse-parent-cache", action="store_true",
+                         help="Reuse enabled parent cache; results may not be independently regenerated")
+    regrade.add_argument("--model-config", required=True, type=Path, help="Path to existing AI config.yaml")
+    regrade.add_argument("--project", required=True, help="Explicit Google Cloud project")
+    regrade.add_argument("--location", required=True, help="Explicit Vertex AI location")
+    regrade.add_argument("--confirm-cost", action="store_true", help="Confirm sending student work to Vertex AI")
+    grade_review = commands.add_parser("review-grading", help="Start a local browser-based grading editor")
+    grade_review.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    grade_review.add_argument("--port", type=int, default=0, help="Local port (default: automatically selected)")
+    grade_check = commands.add_parser("check-grading-review", help="Diagnose review discrepancies without approval")
+    grade_check.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    grade_approve = commands.add_parser("approve-grading", help="Validate and approve human-reviewed scores")
+    grade_approve.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    grade_approve.add_argument("--confirm-reviewed", action="store_true", help="Confirm human review")
+    report = commands.add_parser("report", help="Generate reports from approved grading")
+    report.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    analytics = commands.add_parser("analytics", help="Calculate offline statistics from approved grading")
+    analytics.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    ai_analysis = commands.add_parser("ai-analysis", help="Generate reviewable Vertex AI performance analyses")
+    ai_analysis.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    ai_analysis.add_argument("--model-config", required=True, type=Path, help="Path to existing AI config.yaml")
+    ai_analysis.add_argument("--project", required=True, help="Explicit Google Cloud project")
+    ai_analysis.add_argument("--location", required=True, help="Explicit Vertex AI location")
+    ai_analysis.add_argument("--confirm-cost", action="store_true", help="Confirm sending student answers")
+    analysis_approve = commands.add_parser("approve-analysis", help="Approve human-reviewed AI feedback")
+    analysis_approve.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    analysis_approve.add_argument("--confirm-reviewed", action="store_true", help="Confirm all feedback reviewed")
+    infographics = commands.add_parser("infographics", help="Generate optional Vertex AI images from reviewed analysis")
+    infographics.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    infographics.add_argument("--model-config", required=True, type=Path, help="Path to existing AI config.yaml")
+    infographics.add_argument("--project", required=True, help="Explicit Google Cloud project")
+    infographics.add_argument("--location", required=True, help="Explicit Vertex AI location")
+    infographics.add_argument("--confirm-cost", action="store_true", help="Confirm sending reviewed analysis")
+    advanced_report = commands.add_parser("advanced-report", help="Generate reviewed Word and PowerPoint reports")
+    advanced_report.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    advanced_report.add_argument("--include-infographics", action="store_true", help="Include current AI images")
+    advanced_report.add_argument("--confirm-images-reviewed", action="store_true", help="Confirm infographic review")
+    email_preview = commands.add_parser("preview-email", help="Create a private recipient and attachment preview")
+    email_preview.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    email_preview.add_argument("--settings", required=True, type=Path, help="Path to email settings YAML")
+    email_preview.add_argument("--recipients", required=True, type=Path, help="Path to ID,EMAIL CSV")
+    email_approve = commands.add_parser("approve-email", help="Approve the exact email preview")
+    email_approve.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    email_approve.add_argument("--confirm-reviewed", action="store_true", help="Confirm recipient and attachment review")
+    email_send = commands.add_parser("send-email", help="Send individually approved emails using SMTP STARTTLS")
+    email_send.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    email_send.add_argument("--confirm-send", action="store_true", help="Explicitly confirm dispatch")
+    for selected in (resume, grade_review, grade_check, grade_approve, report, analytics, ai_analysis, analysis_approve,
+                     infographics, advanced_report, email_preview, email_approve, email_send):
+        selected.add_argument("--run", help="Child run ID (default: original run)")
     args = parser.parse_args(argv)
     try:
         path = args.exam.expanduser().resolve()
         config = load_config(path)
-        errors, summary = check_exam(config, path.parent)
+        if args.command == "answer-sheets":
+            errors, summary = [], {}
+        elif args.command in {"import-rubric", "extract-rubric", "verify-rubric", "approve-rubric"}:
+            errors, summary = check_rubric_inputs(config, path.parent)
+        else:
+            errors, summary = check_exam(config, path.parent)
     except (OSError, ValueError, yaml.YAMLError) as exc:
         print(f"Preflight failed: {exc}", file=sys.stderr)
         return 1
@@ -139,6 +290,503 @@ def main(argv=None):
         print(f"ERROR: {error}", file=sys.stderr)
     if errors:
         return 1
+    if args.command == "prepare-attendance":
+        from .attendance import prepare_attendance
+
+        try:
+            output = prepare_attendance(config, path.parent, path)
+        except (OSError, ValueError, KeyError, yaml.YAMLError) as exc:
+            print(f"Attendance preparation failed: {exc}", file=sys.stderr)
+            return 1
+        print(f"Attendance review saved to {output}. Review every student and status before approval.")
+        return 0
+    if args.command == "approve-attendance":
+        from .attendance import approve_attendance, current_review
+
+        try:
+            target, review, _, _ = current_review(config, path.parent, path)
+            print(f"Review {target / 'review.json'}: {summary['students']} present, {summary['absent']} absent.")
+            if not args.confirm_reviewed:
+                print("No approval recorded. Review each student and rerun with --confirm-reviewed.", file=sys.stderr)
+                return 1
+            approve_attendance(config, path.parent, path)
+        except (OSError, ValueError, KeyError, yaml.YAMLError) as exc:
+            print(f"Attendance approval failed: {exc}", file=sys.stderr)
+            return 1
+        print("Attendance approved; changes invalidate the approval.")
+        return 0
+    if args.command == "answer-sheets":
+        from .answer_sheets import generate_answer_sheets
+
+        try:
+            output = generate_answer_sheets(config, path.parent, path)
+        except (OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:
+            print(f"Answer sheet generation failed: {exc}", file=sys.stderr)
+            return 1
+        print(f"Answer sheets saved to {output}. Review them before printing.")
+        return 0
+    if args.command == "import-rubric":
+        from .rubric import import_rubric
+
+        try:
+            output = import_rubric(config, path.parent, path)
+        except (OSError, ValueError, yaml.YAMLError) as exc:
+            print(f"Rubric import failed: {exc}", file=sys.stderr)
+            return 1
+        print(f"Imported rubric to {output}. Review it before approval.")
+        return 0
+    if args.command == "extract-rubric":
+        from .rubric import extract_rubric, rubric_root
+        from .suggestions import load_model_settings
+
+        if (not args.project.strip() or not args.location.strip()
+                or any(char.isspace() for char in args.project)
+                or any(char.isspace() for char in args.location)):
+            print("Vertex project and location must be provided", file=sys.stderr)
+            return 1
+        try:
+            model = load_model_settings(args.model_config, "marking_scheme")
+            if summary["marking_scheme"].suffix.lower() != ".docx":
+                raise ValueError("AI extraction requires a DOCX marking scheme")
+            if rubric_root(config, path.parent).exists():
+                raise ValueError("A rubric run already exists; choose a different output directory")
+        except (OSError, ValueError, yaml.YAMLError) as exc:
+            print(f"Cannot prepare rubric extraction: {exc}", file=sys.stderr)
+            return 1
+        print(f"Vertex target: project={args.project}, location={args.location}, model={model}. "
+              "This sends the marking scheme and can incur charges.")
+        if not args.confirm_cost:
+            print("No request sent. Obtain user approval and rerun with --confirm-cost.", file=sys.stderr)
+            return 1
+        try:
+            output = extract_rubric(
+                config, path.parent, path, args.model_config, args.project.strip(), args.location.strip()
+            )
+        except Exception as exc:
+            print(f"Rubric extraction failed ({type(exc).__name__}); requests may have incurred charges.",
+                  file=sys.stderr)
+            return 1
+        print(f"Extracted rubric to {output}. Review it before approval.")
+        return 0
+    if args.command == "approve-rubric":
+        from .rubric import approve_rubric, read_rubric, verify_rubric_source
+
+        try:
+            root, _ = verify_rubric_source(config, path.parent, path)
+            questions = read_rubric(root / "rubric.xlsx")
+            print(f"Rubric contains {len(questions)} questions worth {sum(q['marks'] for q in questions):g} marks.")
+            if not args.confirm_reviewed:
+                print("No approval recorded. Review the workbook and rerun with --confirm-reviewed.",
+                      file=sys.stderr)
+                return 1
+            approve_rubric(config, path.parent, path)
+        except (OSError, ValueError, yaml.YAMLError) as exc:
+            print(f"Rubric approval failed: {exc}", file=sys.stderr)
+            return 1
+        print("Rubric approved; later changes invalidate the approval.")
+        return 0
+    if args.command == "verify-rubric":
+        from .rubric import read_rubric, verify_rubric_source
+        from .suggestions import load_model_settings
+        from .verification import verify_rubric
+
+        if (not args.project.strip() or not args.location.strip()
+                or any(char.isspace() for char in args.project)
+                or any(char.isspace() for char in args.location)):
+            print("Vertex project and location must be provided", file=sys.stderr)
+            return 1
+        try:
+            root, _ = verify_rubric_source(config, path.parent, path)
+            questions = read_rubric(root / "rubric.xlsx")
+            model = load_model_settings(args.model_config, "marking_scheme")
+            if (root / "verification").exists():
+                raise ValueError("Rubric verification already exists; do not overwrite it")
+        except (OSError, ValueError, yaml.YAMLError) as exc:
+            print(f"Cannot prepare verification: {exc}", file=sys.stderr)
+            return 1
+        print(f"Vertex target: project={args.project}, location={args.location}, model={model}. "
+              f"Up to {len(questions)} search-grounded requests send rubric content and can incur charges.")
+        if not args.confirm_cost:
+            print("No request sent. Obtain user approval and rerun with --confirm-cost.", file=sys.stderr)
+            return 1
+        try:
+            output = verify_rubric(config, path.parent, path, args.model_config, args.project, args.location)
+        except Exception as exc:
+            print(f"Rubric verification failed ({type(exc).__name__}); requests may have incurred charges.",
+                  file=sys.stderr)
+            return 1
+        print(f"Verification saved to {output}. Review claims and sources; this is not rubric approval.")
+        return 0
+    if args.command == "prepare-regrade-rubric":
+        from .regrading import prepare_rubric_proposal
+
+        try:
+            output = prepare_rubric_proposal(config, path.parent, path, args.proposal, args.parent,
+                                              args.question, args.rubric)
+        except (OSError, ValueError, KeyError, yaml.YAMLError) as exc:
+            print(f"Cannot prepare replacement rubric: {exc}", file=sys.stderr)
+            return 1
+        print(f"Replacement rubric saved to {output / 'rubric.xlsx'}. Review it before approval.")
+        return 0
+    if args.command == "approve-regrade-rubric":
+        from .regrading import approve_rubric_proposal, validate_proposal
+
+        try:
+            root, manifest, _ = validate_proposal(config, path.parent, path, args.proposal,
+                                                  require_approval=False)
+            print(f"Review {root / 'rubric.xlsx'}; selected question: {manifest['question_key']}.")
+            if not args.confirm_reviewed:
+                print("No approval recorded. Review the rubric and rerun with --confirm-reviewed.", file=sys.stderr)
+                return 1
+            approve_rubric_proposal(config, path.parent, path, args.proposal)
+        except (OSError, ValueError, KeyError, yaml.YAMLError) as exc:
+            print(f"Replacement rubric approval failed: {exc}", file=sys.stderr)
+            return 1
+        print("Replacement rubric approved; later changes invalidate the approval.")
+        return 0
+    if args.command == "prepare-regrade-crops":
+        from .crop_proposals import prepare_crop_proposal
+
+        try:
+            output = prepare_crop_proposal(config, path.parent, path, args.proposal, args.parent,
+                                           args.question, args.crops)
+        except (OSError, ValueError, KeyError, yaml.YAMLError) as exc:
+            print(f"Cannot prepare crop proposal: {exc}", file=sys.stderr)
+            return 1
+        print(f"Crop proposal saved to {output}. Review every resolved crop against its script.")
+        return 0
+    if args.command == "approve-regrade-crops":
+        from .crop_proposals import approve_crop_proposal, validate_crop_proposal
+
+        try:
+            root, manifest, crops = validate_crop_proposal(config, path.parent, path, args.proposal,
+                                                            require_approval=False)
+            print(f"Review {root / 'manifest.json'}; question {manifest['question_key']}, {len(crops)} scripts.")
+            if not args.confirm_reviewed:
+                print("No approval recorded. Review every crop and rerun with --confirm-reviewed.", file=sys.stderr)
+                return 1
+            approve_crop_proposal(config, path.parent, path, args.proposal)
+        except (OSError, ValueError, KeyError, yaml.YAMLError) as exc:
+            print(f"Crop proposal approval failed: {exc}", file=sys.stderr)
+            return 1
+        print("Crop proposal approved; later changes invalidate the approval.")
+        return 0
+    if args.command == "regrade":
+        from .regrading import inspect_regrade, regrade
+        from .rubric import question_key
+
+        try:
+            info = inspect_regrade(config, path.parent, path, args.run, args.parent, args.question,
+                                   args.model_config, args.project, args.location, args.rubric_proposal,
+                                   args.crop_proposal, args.reuse_parent_cache)
+        except (OSError, ValueError, KeyError, yaml.YAMLError) as exc:
+            print(f"Cannot prepare regrading: {exc}", file=sys.stderr)
+            return 1
+        count = len(info["parent"][5])
+        selected = next(q for q in info["questions"] if question_key(q["question_number"]) == info["question_key"])
+        print(f"Parent: {args.parent or 'original'}; child: {args.run}; question: {info['question_key']}; "
+              f"rubric: {args.rubric_proposal or 'parent'}; crops: {args.crop_proposal or 'parent'}; students: {count}. "
+              f"Vertex target: project={args.project}, location={args.location}, models={info['models']}. "
+              f"Up to {2 * count + 1} requests send student work or answers and may incur charges. "
+              f"Cache: {info['cache_agents'] or 'disabled'}; location={info['cache_root'] or 'none'}.")
+        if info["reuse_parent_cache"]:
+            print("Parent cache reuse is enabled: matching model responses may be reused rather than regenerated.")
+        print(f"Selected question: {selected['question_text']}\n"
+              f"Maximum marks: {selected['marks']:g}\nMarking criteria: {selected['marking_scheme']}")
+        if not args.confirm_cost:
+            print("No request sent. Obtain user approval and rerun with --confirm-cost.", file=sys.stderr)
+            return 1
+        try:
+            output = regrade(config, path.parent, path, args.run, args.parent, args.question,
+                             args.model_config, args.project, args.location, args.rubric_proposal,
+                             args.crop_proposal, args.reuse_parent_cache)
+        except Exception as exc:
+            print(f"Regrading failed ({type(exc).__name__}); requests may have incurred charges. "
+                  "Preserve and inspect the child run.", file=sys.stderr)
+            return 1
+        print(f"Child run saved to {output}. Fresh human review is required.")
+        return 0
+    if args.command == "grade":
+        from .cache import cache_directory, enabled_agents
+        from .grading import approved_inputs, grade_exam, grading_models
+        from .regions import resolve_path
+        from .reporting import question_passing_policy
+
+        if (not args.project.strip() or not args.location.strip()
+                or any(char.isspace() for char in args.project)
+                or any(char.isspace() for char in args.location)):
+            print("Vertex project and location must be provided", file=sys.stderr)
+            return 1
+        try:
+            questions, _, _, _ = approved_inputs(config, path.parent, path)
+            question_passing_policy(config, questions)
+            models, _ = grading_models(args.model_config)
+            cache_agents = [agent for agent in enabled_agents(args.model_config)
+                            if agent in {"ocr", "grading", "moderation"}]
+            cache_path = (cache_directory(args.model_config, resolve_path(path.parent, config["exam"]["output_dir"]) / "grading")
+                          if cache_agents else None)
+            if (resolve_path(path.parent, config["exam"]["output_dir"]) / "grading").exists():
+                raise ValueError("A grading run already exists; choose a different output directory")
+        except (OSError, ValueError, KeyError, yaml.YAMLError) as exc:
+            print(f"Cannot prepare grading: {exc}", file=sys.stderr)
+            return 1
+        request_count = summary["students"] * (3 + 2 * len(questions)) + len(questions)
+        print(f"Vertex target: project={args.project}, location={args.location}, models={models}. "
+              f"Up to {request_count} requests will send student work or answers and incur charges. "
+              f"Cache: {cache_agents or 'disabled'}; location={cache_path if cache_agents else 'none'}.")
+        if not args.confirm_cost:
+            print("No request sent. Obtain user approval and rerun with --confirm-cost.", file=sys.stderr)
+            return 1
+        try:
+            output = grade_exam(
+                config, path.parent, path, args.model_config, args.project.strip(),
+                args.location.strip(), summary,
+            )
+        except Exception as exc:
+            print(f"Grading failed ({type(exc).__name__}); requests may have incurred charges. "
+                  "Inspect any partial run before choosing a new output directory.", file=sys.stderr)
+            return 1
+        print(f"Grading results and review workbook saved to {output}. Human review is required.")
+        return 0
+    if args.command == "review-grading":
+        from .score_editor import ScoreServer
+
+        if not 0 <= args.port <= 65535:
+            print("Port must be between 0 and 65535", file=sys.stderr)
+            return 1
+        try:
+            server = ScoreServer(config, path.parent, args.port, path, run_id=args.run)
+        except (OSError, ValueError, KeyError) as exc:
+            print(f"Cannot start grading editor: {exc}", file=sys.stderr)
+            return 1
+        print(f"Open {server.origin}/#{server.token}", flush=True)
+        print("Press Ctrl+C to stop the local editor.", flush=True)
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            server.server_close()
+        return 0
+    if args.command == "check-grading-review":
+        from .review_diagnostics import diagnose_review
+
+        try:
+            issues = diagnose_review(config, path.parent, path, run_id=args.run)
+        except (OSError, ValueError, KeyError, yaml.YAMLError) as exc:
+            print(f"Review diagnostics failed: {exc}", file=sys.stderr)
+            return 1
+        if issues:
+            print("Review discrepancies (private; script indices start at zero):")
+            for issue in issues:
+                print(f"- {issue}")
+            print("No approval recorded. Correct the review and check again.")
+            return 1
+        print("No review discrepancies found. Human review and explicit approval are still required.")
+        return 0
+    if args.command == "approve-grading":
+        from .grade_review import approve_grading, validate_review
+
+        try:
+            validated = validate_review(config, path.parent, path, run_id=args.run)
+            print(f"Review covers {len(validated[5])} students and {len(validated[6])} marks.")
+            if not args.confirm_reviewed:
+                print("No approval recorded. Review the workbook and rerun with --confirm-reviewed.",
+                      file=sys.stderr)
+                return 1
+            approve_grading(config, path.parent, path, run_id=args.run)
+        except (OSError, ValueError, KeyError, yaml.YAMLError) as exc:
+            print(f"Grading approval failed: {exc}", file=sys.stderr)
+            return 1
+        print("Grading approved; later changes invalidate the approval.")
+        return 0
+    if args.command == "resume-grading":
+        from .grade_review import verify_grading_run
+        from .grading import resume_grading
+
+        try:
+            root, manifest, results, _ = verify_grading_run(config, path.parent, path, require_completed=False,
+                                                           run_id=args.run)
+            if results.get("checkpoint_version") != 1:
+                raise ValueError("This partial run predates resumable checkpoints")
+            if (root / "review.xlsx").exists() or (root / "approval.json").exists():
+                raise ValueError("A review or approval already exists; do not overwrite it")
+            if (root / "processing.lock").exists():
+                raise ValueError("Another grading process or a stale lock exists")
+        except (OSError, ValueError, KeyError) as exc:
+            print(f"Cannot resume grading: {exc}", file=sys.stderr)
+            return 1
+        print(f"Resume target: project={manifest['project']}, location={manifest['location']}, "
+              f"models={manifest['models']}; run={args.run or 'original'}"
+              f"{'; question=' + manifest['question_key'] if args.run else ''}. "
+              "In-flight requests can be repeated and billed.")
+        if manifest.get("reuse_parent_cache"):
+            print(f"Parent cache reuse remains enabled: {manifest['cache_root']}. "
+                  "Matching responses may be reused rather than regenerated.")
+        if not args.confirm_cost:
+            print("No request sent. Obtain user approval and rerun with --confirm-cost.", file=sys.stderr)
+            return 1
+        try:
+            if args.run is None:
+                output = resume_grading(config, path.parent, path, summary)
+            else:
+                from .regrading import resume_regrade
+                output = resume_regrade(config, path.parent, path, args.run)
+        except Exception as exc:
+            print(f"Resume failed ({type(exc).__name__}); requests may have incurred charges.", file=sys.stderr)
+            return 1
+        print(f"Grading review saved to {output}. Human review is required.")
+        return 0
+    if args.command == "report":
+        from .reporting import create_reports
+
+        try:
+            output = create_reports(config, path.parent, path, run_id=args.run)
+        except (OSError, ValueError, KeyError) as exc:
+            print(f"Report generation failed: {exc}", file=sys.stderr)
+            return 1
+        print(f"Reports saved to {output}. Review them before sharing.")
+        return 0
+    if args.command == "analytics":
+        from .analytics import create_analytics
+
+        try:
+            output = create_analytics(config, path.parent, path, run_id=args.run)
+        except (OSError, ValueError, KeyError) as exc:
+            print(f"Analytics failed: {exc}", file=sys.stderr)
+            return 1
+        print(f"Offline statistics saved to {output}. Review them before sharing.")
+        return 0
+    if args.command == "ai-analysis":
+        from .advanced import create_analysis
+        from .grade_review import read_approved_grading
+        from .suggestions import load_model_settings
+
+        if (not args.project.strip() or not args.location.strip()
+                or any(char.isspace() for char in args.project)
+                or any(char.isspace() for char in args.location)):
+            print("Vertex project and location must be provided", file=sys.stderr)
+            return 1
+        try:
+            validated = read_approved_grading(config, path.parent, path, run_id=args.run)
+            model = load_model_settings(args.model_config, "analytics")
+            if (validated[0].parent / "ai-analysis").exists():
+                raise ValueError("AI analysis already exists; preserve the existing run")
+        except (OSError, ValueError, KeyError, yaml.YAMLError) as exc:
+            print(f"Cannot prepare AI analysis: {exc}", file=sys.stderr)
+            return 1
+        print(f"Vertex target: project={args.project}, location={args.location}, model={model}. "
+              f"Up to {len(validated[5]) + len(validated[3]) + 1} requests send student answers and may incur charges.")
+        if not args.confirm_cost:
+            print("No request sent. Obtain user approval and rerun with --confirm-cost.", file=sys.stderr)
+            return 1
+        try:
+            output = create_analysis(config, path.parent, path, args.model_config, args.project, args.location,
+                                     run_id=args.run)
+        except Exception as exc:
+            print(f"AI analysis failed ({type(exc).__name__}); requests may have incurred charges.", file=sys.stderr)
+            return 1
+        print(f"AI analyses saved to {output}. Human review is required.")
+        return 0
+    if args.command == "approve-analysis":
+        from .advanced import approve_analysis, validate_analysis
+
+        try:
+            _, validated, students, questions, _ = validate_analysis(config, path.parent, path, run_id=args.run)
+            print(f"Review covers {len(students)} students and {len(questions)} questions.")
+            if not args.confirm_reviewed:
+                print("No approval recorded. Review all feedback and rerun with --confirm-reviewed.", file=sys.stderr)
+                return 1
+            approve_analysis(config, path.parent, path, run_id=args.run)
+        except (OSError, ValueError, KeyError) as exc:
+            print(f"Analysis approval failed: {exc}", file=sys.stderr)
+            return 1
+        print("AI analysis approved; later changes invalidate the approval.")
+        return 0
+    if args.command == "infographics":
+        from .advanced import create_infographics, read_approved_analysis
+        from .suggestions import load_model_settings
+
+        if (not args.project.strip() or not args.location.strip()
+                or any(char.isspace() for char in args.project)
+                or any(char.isspace() for char in args.location)):
+            print("Vertex project and location must be provided", file=sys.stderr)
+            return 1
+        try:
+            root, validated, _, _, _, _ = read_approved_analysis(config, path.parent, path, run_id=args.run)
+            model = load_model_settings(args.model_config, "analytics_image")
+            if (root / "infographics").exists():
+                raise ValueError("Infographics already exist; do not overwrite")
+        except (OSError, ValueError, KeyError, yaml.YAMLError) as exc:
+            print(f"Cannot prepare infographics: {exc}", file=sys.stderr)
+            return 1
+        print(f"Vertex target: project={args.project}, location={args.location}, model={model}. "
+              f"Up to {len(validated[3]) + 1} image requests send reviewed analysis and may incur charges.")
+        if not args.confirm_cost:
+            print("No request sent. Obtain user approval and rerun with --confirm-cost.", file=sys.stderr)
+            return 1
+        try:
+            output = create_infographics(config, path.parent, path, args.model_config, args.project, args.location,
+                                         run_id=args.run)
+        except Exception as exc:
+            print(f"Infographic generation failed ({type(exc).__name__}); requests may have incurred charges.",
+                  file=sys.stderr)
+            return 1
+        print(f"Infographics saved to {output}. Review them before sharing.")
+        return 0
+    if args.command == "advanced-report":
+        from .advanced import create_advanced_report
+
+        try:
+            output = create_advanced_report(config, path.parent, path, include_infographics=args.include_infographics,
+                                            confirm_images_reviewed=args.confirm_images_reviewed, run_id=args.run)
+        except (OSError, ValueError, KeyError) as exc:
+            print(f"Advanced reporting failed: {exc}", file=sys.stderr)
+            return 1
+        print(f"Advanced reports saved to {output}. Review them before sharing.")
+        return 0
+    if args.command == "preview-email":
+        from .distribution import preview_email
+
+        try:
+            output = preview_email(config, path.parent, path, args.settings, args.recipients, run_id=args.run)
+        except (OSError, ValueError, KeyError, yaml.YAMLError) as exc:
+            print(f"Email preview failed: {exc}", file=sys.stderr)
+            return 1
+        print(f"Email preview saved to {output}. No email was sent; inspect each message and attachment.")
+        return 0
+    if args.command == "approve-email":
+        from .distribution import approve_email, validate_preview
+
+        try:
+            _, preview, _ = validate_preview(config, path.parent, path, run_id=args.run)
+            print(f"Preview contains {len(preview['messages'])} individual messages.")
+            if not args.confirm_reviewed:
+                print("No approval recorded. Review every message, then rerun with --confirm-reviewed.",
+                      file=sys.stderr)
+                return 1
+            approve_email(config, path.parent, path, run_id=args.run)
+        except (OSError, ValueError, KeyError, yaml.YAMLError) as exc:
+            print(f"Email approval failed: {exc}", file=sys.stderr)
+            return 1
+        print("Email preview approved. Sending still requires separate confirmation.")
+        return 0
+    if args.command == "send-email":
+        from .distribution import send_email, validate_preview
+
+        try:
+            _, preview, _ = validate_preview(config, path.parent, path, run_id=args.run)
+            print(f"Dispatch would send {len(preview['messages'])} messages.")
+            if not args.confirm_send:
+                print("No email sent. Obtain explicit approval, then rerun with --confirm-send.", file=sys.stderr)
+                return 1
+            count = send_email(config, path.parent, path, run_id=args.run)
+        except Exception as exc:
+            print(f"Email sending failed ({type(exc).__name__}); inspect the delivery journal before retrying.",
+                  file=sys.stderr)
+            return 1
+        print(f"SMTP accepted {count} messages; acceptance does not guarantee delivery.")
+        return 0
     if args.command == "prepare-regions":
         from .regions import prepare_regions
 
@@ -208,7 +856,7 @@ def main(argv=None):
         print(f"Saved suggestions to {output}; human review is still required.")
         return 0
     print(
-        f"Preflight passed: {summary['students']} students, "
+        f"Preflight passed: {summary['students']} students, {summary['absent']} absent, "
         f"{summary['pdf_pages']} pages, {summary['pages_per_student']} pages per script."
     )
     print("Human confirmation of scan order and layout is still required.")

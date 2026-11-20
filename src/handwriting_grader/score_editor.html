@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Review grades</title>
+<style>
+body { font: 16px system-ui, sans-serif; margin: 1.2rem; color: #172033; }
+button, input, select, textarea { font: inherit; margin: .2rem; padding: .35rem; }
+button { cursor: pointer; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
+#status { padding: .6rem; background: #e9f2fb; white-space: pre-wrap; }
+#image { max-width: min(100%, 1000px); max-height: 60vh; border: 1px solid #576b7e; }
+textarea { display: block; width: min(100%, 70rem); min-height: 7rem; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 70rem; }
+label { display: block; }
+.warning { color: #a00000; font-weight: bold; }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { border: 1px solid #aeb9c4; padding: .35rem; text-align: left; vertical-align: top; }
+td { white-space: pre-wrap; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<h1>Review grades</h1>
+<p>Verify every identity and answer against the image. Correct the answer and reasoning where needed.
+Failed or flagged grades and corrected answers require a manual mark. Save each item as reviewed.
+Keep this URL private and close spreadsheet editors while using this interface.</p>
+<div class="bar">
+<label>Script <select id="script"></select></label>
+<label>Review <select id="section"></select></label>
+<button id="save">Save draft</button><button id="review">Save and mark reviewed</button>
+<button id="approve">Approve all grading</button>
+</div>
+<div id="status" role="status">Connecting...</div>
+<details>
+<summary>Compare students by question</summary>
+<p>Read-only snapshot of saved reviews. Open a row to check its image and edit it;
+this table does not review or approve scores. Reload after external changes.</p>
+<div class="bar">
+<label>Question <select id="compare-question"></select></label>
+<label>Filter <select id="compare-filter"><option value="all">All</option><option value="unreviewed">Not reviewed</option><option value="flagged">Failed or flagged</option></select></label>
+<label>Sort <select id="compare-sort"><option value="script">Script order</option><option value="score">Mark, low to high</option></select></label>
+<button id="refresh-comparison">Refresh saved review</button>
+</div>
+<div class="table-wrap">
+<table id="comparison">
+<thead><tr><th>Script</th><th>Roster ID</th><th>Answer</th><th>AI</th><th>Moderated</th><th>Manual</th><th>Review status</th><th>Action</th></tr></thead>
+<tbody></tbody>
+</table>
+</div>
+<details>
+<summary>Preview bulk similarity suggestions</summary>
+<p>Uses saved original OCR answers and ignores moderation. Select suggestions to replace manual
+marks as <strong>unreviewed drafts</strong>; previously reviewed marks will need review again.</p>
+<label>Similarity threshold <input id="bulk-threshold" inputmode="decimal"></label>
+<label>Mark increment <input id="bulk-increment" inputmode="decimal"></label>
+<button id="bulk-preview">Preview suggestions</button>
+<button id="bulk-apply" disabled>Apply selected as drafts</button>
+<div id="bulk-results"></div>
+</details>
+</details>
+<label><input id="full-page" type="checkbox"> Show entire page instead of crop</label>
+<div id="script-fields">
+<p id="ocr"></p>
+<label>Reviewed roster ID <select id="reviewed-id"></select></label>
+<label>Metadata image <select id="metadata-image"><option value="id">ID</option><option value="name">Name</option><option value="class">Class</option></select></label>
+</div>
+<div id="mark-fields">
+<p id="question"></p><pre id="scheme"></pre><p id="scores"></p><p id="flags" class="warning"></p>
+<label>Reviewed answer <textarea id="answer"></textarea></label>
+<label>Reviewed reasoning <textarea id="reasoning"></textarea></label>
+<label>Manual mark (optional unless required) <input id="manual" inputmode="decimal"></label>
+<details>
+<summary>Adjust crop for visual inspection</summary>
+<p>Coordinates are pixels on the approved question page. This preview is temporary;
+it does not change model inputs, review data, region approvals or reports.</p>
+<div class="bar">
+<label>X <input id="crop-x" type="number" min="0" step="1"></label>
+<label>Y <input id="crop-y" type="number" min="0" step="1"></label>
+<label>Width <input id="crop-width" type="number" min="1" step="1"></label>
+<label>Height <input id="crop-height" type="number" min="1" step="1"></label>
+<button id="preview-crop">Preview crop</button>
+</div>
+</details>
+<details>
+<summary>Similarity-based mark suggestion</summary>
+<p>Uses the original OCR answer and ignores moderation. Enter your chosen threshold (0–1) and mark increment.
+At or above the threshold, the suggestion is full marks; otherwise it is similarity times full marks,
+rounded down to the increment. Check the answer and moderated mark before deciding whether to apply it.</p>
+<label>Similarity threshold <input id="threshold" inputmode="decimal"></label>
+<label>Mark increment <input id="increment" inputmode="decimal"></label>
+<button id="calculate">Calculate suggestion</button> <span id="suggestion"></span>
+<button id="apply-suggestion" disabled>Use suggestion as manual mark</button>
+</details>
+<details><summary>Original OCR answer</summary><pre id="original"></pre></details>
+<details id="previous-review" hidden><summary>Previous approved review</summary><pre id="previous"></pre></details>
+</div>
+<p id="review-status"></p>
+<img id="image" alt="Selected answer or metadata crop">
+<script>
+"use strict";
+const token = location.hash.slice(1);
+history.replaceState(null, "", location.pathname);
+const byId = id => document.getElementById(id);
+let state, script = 0, section = "id", dirty = false, imageUrl = null, imageGeneration = 0;
+let busy = false, imageReady = false, suggestion = null, bulk = null;
+function message(text) { byId("status").textContent = text; }
+function setBusy(value) {
+  busy = value;
+  for (const id of ["script", "section", "metadata-image", "full-page", "save", "approve",
+                    "reviewed-id", "answer", "reasoning", "manual", "threshold", "increment", "calculate",
+                    "compare-question", "compare-filter", "compare-sort", "refresh-comparison",
+                    "bulk-threshold", "bulk-increment", "bulk-preview", "crop-x", "crop-y",
+                    "crop-width", "crop-height", "preview-crop"])
+    byId(id).disabled = busy;
+  for (const button of byId("comparison").querySelectorAll("button")) button.disabled = busy;
+  for (const input of byId("bulk-results").querySelectorAll("input")) input.disabled = busy;
+  byId("review").disabled = busy || !imageReady;
+  byId("apply-suggestion").disabled = busy || suggestion === null;
+  byId("bulk-apply").disabled = busy || bulk === null;
+}
+function clearSuggestion() {
+  suggestion = null; byId("suggestion").textContent = ""; setBusy(busy);
+}
+function clearBulk() {
+  bulk = null; byId("bulk-results").replaceChildren(); setBusy(busy);
+}
+async function api(path, body) {
+  const options = {headers: {"Authorization": "Bearer " + token}};
+  if (body !== undefined) {
+    options.method = "POST"; options.headers["Content-Type"] = "application/json";
+    options.body = JSON.stringify(body);
+  }
+  const response = await fetch(path, options);
+  if (!response.ok) {
+    let detail = "Request failed";
+    try { detail = (await response.json()).error || detail; } catch (_) {}
+    throw new Error(detail);
+  }
+  return response;
+}
+function option(value, text) {
+  const element = document.createElement("option"); element.value = value; element.textContent = text;
+  return element;
+}
+function renderComparison() {
+  const q = Number(byId("compare-question").value), filter = byId("compare-filter").value;
+  const entries = state.scripts.map(s => ({script: s, mark: state.marks[s.script_index][q]}))
+    .filter(({mark}) => filter === "all" || (filter === "unreviewed" && !mark.reviewed) ||
+      (filter === "flagged" && (mark.grading_failed || mark.moderator_flag)));
+  if (byId("compare-sort").value === "score") {
+    const score = mark => {
+      const value = mark.manual_mark != null && String(mark.manual_mark).trim() !== ""
+        ? mark.manual_mark : mark.moderated_mark;
+      return value == null || !Number.isFinite(Number(value)) ? Infinity : Number(value);
+    };
+    entries.sort((a, b) => score(a.mark) - score(b.mark) || a.script.script_index - b.script.script_index);
+  }
+  const body = byId("comparison").querySelector("tbody");
+  body.replaceChildren();
+  for (const {script: current, mark} of entries) {
+    const row = document.createElement("tr");
+    const status = (mark.reviewed ? "Reviewed" : "Not reviewed") +
+      (mark.grading_failed ? "; failed" : "") + (mark.moderator_flag ? "; flagged" : "");
+    for (const value of [current.script_index + 1, current.reviewed_id ?? "", mark.answer,
+                         mark.raw_mark ?? "", mark.moderated_mark ?? "", mark.manual_mark ?? "", status]) {
+      const cell = document.createElement("td");
+      cell.textContent = String(value); row.append(cell);
+    }
+    const action = document.createElement("td"), button = document.createElement("button");
+    button.textContent = "Open review"; button.disabled = busy;
+    button.onclick = () => {
+      if (dirty && !confirm("Discard unsaved edits?")) return;
+      script = current.script_index; section = String(q); dirty = false;
+      render().catch(e => message(e.message));
+    };
+    action.append(button); row.append(action); body.append(row);
+  }
+}
+async function image(field) {
+  const generation = ++imageGeneration;
+  imageReady = false; setBusy(busy);
+  byId("image").removeAttribute("src");
+  const response = await api(`/api/image/${script}/${byId("full-page").checked ? "full-" : ""}${field}`);
+  const blob = await response.blob();
+  if (generation !== imageGeneration) return;
+  if (imageUrl) URL.revokeObjectURL(imageUrl);
+  imageUrl = URL.createObjectURL(blob);
+  byId("image").src = imageUrl;
+  imageReady = true; setBusy(busy);
+}
+async function render() {
+  clearSuggestion();
+  byId("script").value = String(script); byId("section").value = section;
+  const current = state.scripts[script];
+  const identity = section === "id";
+  byId("script-fields").hidden = !identity; byId("mark-fields").hidden = identity;
+  if (identity) {
+    byId("ocr").textContent = `OCR ID: ${current.id_ocr} | OCR name: ${current.name_ocr ?? "unavailable"} | OCR class: ${current.class_ocr}` +
+      (current.errors.length ? " | OCR errors: " + current.errors.map(e => e.field + ": " + e.type).join(", ") : "");
+    byId("reviewed-id").replaceChildren(option("", "Choose a roster ID"));
+    for (const [id, person] of Object.entries(state.roster))
+      byId("reviewed-id").append(option(id, `${id} — ${person.name} (${person.class})`));
+    byId("reviewed-id").value = current.reviewed_id == null ? "" : String(current.reviewed_id);
+    byId("review-status").textContent = current.reviewed ? "Identity reviewed." : "Identity not yet reviewed.";
+    await image(byId("metadata-image").value);
+  } else {
+    const q = Number(section), question = state.questions[q], mark = state.marks[script][q];
+    byId("question").textContent = `Question ${question.question_number}: ${question.question_text}`;
+    byId("scheme").textContent = question.marking_scheme;
+    byId("scores").textContent = `Maximum: ${question.marks} | AI mark: ${mark.raw_mark ?? "failed"} | Moderated: ${mark.moderated_mark ?? "unavailable"} | Similarity: ${mark.similarity_score ?? "unavailable"}`;
+    byId("flags").textContent = (mark.grading_failed ? "Grading failed. " : "") +
+      (mark.moderator_flag ? "Moderation flagged. " : "") + (mark.moderator_note || "");
+    byId("answer").value = mark.answer; byId("reasoning").value = mark.reasoning;
+    byId("manual").value = mark.manual_mark == null ? "" : String(mark.manual_mark);
+    for (const key of ["x", "y", "width", "height"])
+      byId("crop-" + key).value = String(state.crops[script][q][key]);
+    byId("original").textContent = mark.original_answer;
+    byId("previous-review").hidden = !mark.previous;
+    byId("previous").textContent = mark.previous
+      ? `${mark.previous.rerun ? "Rerun question" : "Inherited draft"}\nPrevious mark: ${mark.previous.mark}\nPrevious answer: ${mark.previous.answer}\nPrevious reasoning: ${mark.previous.reasoning}` : "";
+    byId("review-status").textContent = mark.reviewed ? "Mark reviewed." : "Mark not yet reviewed.";
+    await image(section);
+  }
+}
+async function reload() {
+  clearBulk();
+  state = await (await api("/api/state")).json();
+  byId("script").replaceChildren(...state.scripts.map(s => option(String(s.script_index), `Script ${s.script_index + 1}`)));
+  byId("section").replaceChildren(option("id", "Identity"),
+    ...state.questions.map((q, i) => option(String(i), `Question ${q.question_number}`)));
+  const selectedQuestion = byId("compare-question").value;
+  byId("compare-question").replaceChildren(
+    ...state.questions.map((q, i) => option(String(i), `Question ${q.question_number}`)));
+  if (selectedQuestion !== "") byId("compare-question").value = selectedQuestion;
+  renderComparison();
+  await render();
+}
+for (const id of ["compare-question", "compare-filter", "compare-sort"])
+  byId(id).onchange = renderComparison;
+byId("compare-question").addEventListener("change", clearBulk);
+for (const id of ["bulk-threshold", "bulk-increment"])
+  byId(id).addEventListener("input", clearBulk);
+byId("refresh-comparison").onclick = async () => {
+  if (dirty && !confirm("Discard unsaved edits?")) return;
+  setBusy(true); message("Refreshing saved review...");
+  try { await reload(); dirty = false; message("Saved review refreshed; no changes were made."); }
+  catch (e) { message(e.message); } finally { setBusy(false); }
+};
+byId("bulk-preview").onclick = async () => {
+  if (dirty) { message("Save or discard the current edits before previewing."); return; }
+  clearBulk(); setBusy(true); message("Calculating saved-review suggestions...");
+  const request = {revision: state.revision, question_index: Number(byId("compare-question").value),
+                   threshold: byId("bulk-threshold").value, step: byId("bulk-increment").value};
+  try {
+    const result = await (await api("/api/bulk-preview", request)).json();
+    bulk = {...request, preview_token: result.preview_token};
+    for (const entry of result.suggestions) {
+      const label = document.createElement("label");
+      if (entry.suggestion !== null) {
+        const checkbox = document.createElement("input"); checkbox.type = "checkbox";
+        checkbox.dataset.index = String(entry.script_index); checkbox.dataset.suggestion = entry.suggestion;
+        label.append(checkbox);
+      }
+      label.append(document.createTextNode(`Script ${entry.script_index + 1}: ${entry.error || entry.suggestion}`));
+      byId("bulk-results").append(label);
+    }
+    message("Preview only; no scores have changed. Select suggestions explicitly.");
+  } catch (e) { message(e.message); } finally { setBusy(false); }
+};
+byId("bulk-apply").onclick = async () => {
+  if (dirty || bulk === null) { message("Save edits and preview again before applying."); return; }
+  const selected = [...byId("bulk-results").querySelectorAll("input:checked")]
+    .map(input => ({script_index: Number(input.dataset.index), suggestion: input.dataset.suggestion}));
+  if (!selected.length) { message("Select at least one suggestion."); return; }
+  if (!confirm(`Replace ${selected.length} manual mark(s) as unreviewed drafts?`)) return;
+  setBusy(true); message("Saving unreviewed drafts...");
+  try {
+    const result = await (await api("/api/bulk-apply", {...bulk, selected, confirmed: true})).json();
+    await reload(); message(`Saved ${result.updated} unreviewed drafts. Earlier approval is stale.`);
+  } catch (e) { message(e.message); } finally { setBusy(false); }
+};
+function change(which, value) {
+  if (dirty && !confirm("Discard unsaved edits?")) {
+    byId(which).value = which === "script" ? String(script) : section; return;
+  }
+  if (which === "script") script = Number(value); else section = value;
+  dirty = false; render().catch(e => message(e.message));
+}
+byId("script").onchange = e => change("script", e.target.value);
+byId("section").onchange = e => change("section", e.target.value);
+byId("metadata-image").onchange = e => image(e.target.value).catch(err => message(err.message));
+byId("full-page").onchange = () => image(section === "id" ? byId("metadata-image").value : section)
+  .catch(err => message(err.message));
+for (const id of ["reviewed-id", "answer", "reasoning", "manual"])
+  byId(id).addEventListener("input", () => { dirty = true; });
+for (const id of ["answer", "threshold", "increment"])
+  byId(id).addEventListener("input", clearSuggestion);
+byId("preview-crop").onclick = async () => {
+  const fields = ["x", "y", "width", "height"], coords = {};
+  for (const key of fields) {
+    const text = byId("crop-" + key).value;
+    if (!/^[0-9]+$/.test(text) || !Number.isSafeInteger(Number(text))) {
+      message("Crop coordinates must be whole numbers."); return;
+    }
+    coords[key] = Number(text);
+  }
+  const generation = ++imageGeneration;
+  imageReady = false; setBusy(true); message("Previewing crop; grading inputs are unchanged...");
+  try {
+    const response = await api("/api/preview-crop", {
+      revision: state.revision, script_index: script, question_index: Number(section), ...coords,
+    });
+    const blob = await response.blob();
+    if (generation !== imageGeneration) return;
+    if (imageUrl) URL.revokeObjectURL(imageUrl);
+    imageUrl = URL.createObjectURL(blob); byId("image").src = imageUrl;
+    byId("full-page").checked = false; imageReady = true;
+    message("Temporary visual preview only; grading inputs are unchanged.");
+  } catch (e) { message(e.message); } finally { setBusy(false); }
+};
+byId("calculate").onclick = async () => {
+  clearSuggestion();
+  if (byId("answer").value !== state.marks[script][Number(section)].original_answer) {
+    message("Similarity applies only to the original OCR answer."); return;
+  }
+  setBusy(true); message("Calculating suggestion...");
+  try {
+    const result = await (await api("/api/suggest", {
+      revision: state.revision, script_index: script, question_index: Number(section),
+      threshold: byId("threshold").value, step: byId("increment").value,
+    })).json();
+    suggestion = result.suggestion;
+    byId("suggestion").textContent = `Suggested mark: ${suggestion}`;
+    message("Suggestion only; no mark has been changed.");
+  } catch (e) { message(e.message); } finally { setBusy(false); }
+};
+byId("apply-suggestion").onclick = () => {
+  if (suggestion === null) return;
+  byId("manual").value = suggestion; dirty = true;
+  message("Suggestion copied to manual mark; save and review it to persist.");
+  clearSuggestion();
+};
+async function save(reviewed) {
+  const body = {revision: state.revision, script_index: script, reviewed};
+  if (section === "id") {
+    body.kind = "script"; body.reviewed_id = byId("reviewed-id").value;
+  } else {
+    body.kind = "mark"; body.question_index = Number(section);
+    body.answer = byId("answer").value; body.reasoning = byId("reasoning").value;
+    body.manual_mark = byId("manual").value;
+  }
+  setBusy(true); message("Saving...");
+  try {
+    await api("/api/save", body);
+    dirty = false; await reload();
+    message(reviewed ? "Saved and marked reviewed. Any earlier approval is stale." : "Draft saved; item is not reviewed.");
+  } finally { setBusy(false); }
+}
+byId("save").onclick = () => save(false).catch(e => message(e.message));
+byId("review").onclick = () => save(true).catch(e => message(e.message));
+byId("approve").onclick = async () => {
+  if (dirty) { message("Save the current item before approval."); return; }
+  if (!confirm("Approve all reviewed identities and scores?")) return;
+  setBusy(true); message("Approving...");
+  try {
+    const result = await (await api("/api/approve", {revision: state.revision, confirmed: true})).json();
+    message(`Approved ${result.students} students and ${result.marks} marks.`);
+  } catch (e) { message(e.message); } finally { setBusy(false); }
+};
+window.addEventListener("beforeunload", e => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
+(async () => {
+  setBusy(true);
+  try {
+    if (!token) throw new Error("Open the full URL printed by the review command.");
+    await reload(); message("Review each identity and every mark before approval.");
+    setBusy(false);
+  } catch (e) { message(e.message); }
+})();
+</script>
+</body>
+</html>

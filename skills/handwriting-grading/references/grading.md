@@ -1,0 +1,126 @@
+# Rubric, grading and reporting
+
+## Prerequisites
+
+- Read configuration.md and regions.md; settle the exam configuration before
+  creating approvals. Obtain user confirmation of scan order and layout.
+- Use a private, separate output directory. Never commit student data.
+- For Vertex operations, obtain explicit user approval of the project,
+  location, data transfer and costs. Authenticate separately; live model
+  availability and quality have not been verified by the offline tests.
+
+## Procedure
+
+1. Import an XLSX with `.venv/bin/handwriting-grader import-rubric --exam
+   /path/to/exam.yaml`. Its `Marking Scheme` sheet requires the columns
+   `question_number`, `question_text`, `marking_scheme`, `marks`. For a DOCX
+   use `extract-rubric` with `--model-config`, `--project` and `--location`;
+   preview first, then add `--confirm-cost` only after user approval.
+   Optional `verify-rubric` uses `models.marking_scheme` and Google Search
+   with the same target flags and a separate cost/data consent. New runs write
+   `rubric/verification/verification.xlsx` and `verification.docx` from the
+   same responses. Review source links and claims; this does not approve the
+   rubric or establish that a claim is correct.
+2. Ask the teacher to verify `output_dir/rubric/rubric.xlsx` against the
+   source. Run `approve-rubric --exam /path/to/exam.yaml --confirm-reviewed`
+   only after explicit human approval. Complete region review separately.
+3. Run `grade --exam /path/to/exam.yaml --model-config /path/to/config.yaml
+   --project PROJECT_ID --location LOCATION` to preview. Explain the request
+   count and data sent; repeat with `--confirm-cost` only after approval.
+4. Ask the teacher to run `review-grading --exam /path/to/exam.yaml` and open
+   the full printed local URL. Review identities and each answer against the
+   crop or full page, edit text and marks, then explicitly mark every item
+   reviewed. The approval button asks for confirmation and uses the same
+   validator as `approve-grading`. Do not leave spreadsheet editors open:
+   non-cooperating applications can race with saves. Prior workbook versions
+   remain in private `grading/review-history/`; edits invalidate approvals.
+   Investigate a stale `.score-review.lock` before removing it; never remove a
+   live lock. Alternatively inspect `grading/review.xlsx` against the scripts.
+   `Scripts` needs distinct roster IDs and `reviewed=yes` for each script.
+   `Marks` requires every row reviewed. Edit `answer` and `reasoning` to
+   correct the OCR or feedback. Failed or flagged grades, and any corrected
+   answer (including clearing it), require a `manual_mark`. When changing a
+   mark, also verify that the reasoning remains appropriate. Script indices
+   start at zero and images are in `grading/images`. A human must check OCR
+   and feedback, not just numbers.
+   The editor displays similarity for new runs and can calculate a per-answer
+   suggestion after the teacher enters a threshold and increment. It does
+   not use moderation and is unavailable for corrected or older answers
+   lacking similarity. Explicitly copy and save any desired manual mark;
+   calculating a suggestion does not change the grade.
+   The read-only comparison table shows one question across students; filter
+   by review status or flags, sort by script or effective mark, and open a
+   row for individual review. It shows saved values, not unsaved edits; use
+   its refresh button after external changes. It never approves or saves marks.
+   The crop controls preview pixel-coordinate adjustments on the current
+   question page without saving them or changing grading. To use changed
+   shared or per-script crops for a paid regrade, follow the separate
+   proposal, review and consent procedure in `regrading.md`.
+   The comparison table can also preview similarity-based suggestions for
+   that question. After checking the saved answers and moderation, explicitly
+   select suggestions and confirm applying them. Selected manual marks become
+   unreviewed drafts, even if they were previously reviewed; other rows remain
+   unchanged. Corrected answers and unavailable similarities are ineligible.
+   Existing approval becomes stale and the saved review history is retained.
+   Optionally run `check-grading-review --exam /path/to/exam.yaml` for
+   read-only discrepancy diagnostics; add `--run CHILD` for a child run.
+   It reports missing, duplicate, unreviewed and invalid identities or marks,
+   plus the first error from the approval validator. Output is private.
+   Exit status 1 means discrepancies or an input error; status 0 does not
+   mean the teacher has reviewed or approved the work.
+5. After explicit approval in the editor or via `approve-grading --exam
+   /path/to/exam.yaml --confirm-reviewed`, run `report --exam /path/to/exam.yaml`. Inspect the
+   workbooks and scored PDFs before sharing. The score workbook maps reviewed
+   students to numbered PDFs; samples use ranked score strata. `Answers` and
+   `Reasoning` use reviewed text; their `Raw` counterparts retain model output.
+6. For offline overall, class and question statistics run `analytics --exam
+   /path/to/exam.yaml`. It requires current approved scores and writes
+   `analytics/statistics.xlsx` and question box-plot PNGs from reviewed marks;
+   it makes no AI calls. Box plots use 1.5-IQR whiskers and show outliers,
+   with at most 20 questions per image. Pass counts and rates are blank unless
+   the corresponding overall or per-question pass settings were explicitly
+   configured. Per-question thresholds and equality behavior must be set
+   before approvals; see configuration.md.
+7. For optional AI feedback preview `ai-analysis --exam /path/to/exam.yaml
+   --model-config /path/to/config.yaml --project PROJECT_ID --location
+   LOCATION`. This sends student answers and costs money. After explicit
+   consent add `--confirm-cost`. Review and correct every row in
+   `ai-analysis/review.xlsx`, mark reviewed=yes, then explicitly run
+   `approve-analysis --exam /path/to/exam.yaml --confirm-reviewed`.
+   `advanced-report --exam /path/to/exam.yaml` writes a teacher DOCX and
+   class PPTX with a question-score chart. Review both before sharing.
+8. Optional `infographics --exam /path/to/exam.yaml --model-config
+   /path/to/config.yaml --project PROJECT_ID --location LOCATION` previews
+   use of `models.analytics_image`. Obtain separate approval for transmitting
+   reviewed analysis and image-generation cost before adding `--confirm-cost`.
+   Review images and use `advanced-report --include-infographics
+   --confirm-images-reviewed` to include them only after explicit approval;
+   the image/model and analysis approvals must remain current.
+
+For an approved parent needing one-question regrading, read
+`regrading.md`. Child-specific review, reports and later stages use `--run`
+and never replace the original run.
+
+## Validation and failure handling
+
+Approvals bind to input hashes; changes invalidate them. Reports have a
+completion marker at `reports/manifest.json` and contain the review and
+approval hashes. Reports already generated do not automatically disappear
+when input changes; never share partial or stale reports. Pass-only samples
+require both explicit pass settings before the run; no threshold is assumed.
+Failed or flagged model outputs are not silently accepted as zero.
+
+Runs refuse overwrite. Supported interrupted grading checkpoints can resume
+with `resume-grading --exam /path/to/exam.yaml`; preview the recorded target
+and obtain consent before adding `--confirm-cost`. In-flight requests can
+repeat and be billed; completed failures still need manual review. Older
+checkpoints and runs with existing review workbooks cannot be resumed.
+Investigate any stale `processing.lock` and never remove a live lock.
+Optional OCR/grading/moderation, annotation, rubric-extraction and analytics
+caches contain sensitive data.
+Shared caching needs an explicitly configured private, user-owned directory;
+it has no automatic cleanup and can become stale when model aliases change.
+Grounded verification and infographics do not use these caches. Preserve
+partial runs and never delete them automatically.
+Calls already made may be billed even if grading fails. These approvals are
+local records, not tamper-proof audit logs. Email requires separate review.

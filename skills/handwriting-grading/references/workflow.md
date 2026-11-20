@@ -1,23 +1,27 @@
-# Planned workflow and human gates
+# Workflow and human gates
 
-Preflight, optional Vertex region suggestions and manual region review exist
-in this repository. The other stages below are the migration contract, not
-currently available commands.
+Answer sheets, preflight, rubric extraction and optional search-grounded
+review, region review, grading, reports, AI analysis and gated distribution
+are implemented. Formatting and cache coverage differ from the notebooks.
 
-1. **Preflight:** verify inputs and configuration, then obtain confirmation of
-   scan order, page layout, output location and intended Vertex target.
-2. **Rubric:** extract the scheme and have a teacher approve questions,
+1. **Answer sheets:** optionally generate from a roster and DOCX before scans;
+   ask the teacher to verify identities and pagination before printing.
+2. **Preflight and attendance:** verify inputs and configuration, then obtain
+   confirmation of scan order, page layout, output location and intended
+   Vertex target. When attendance is configured, review and approve the
+   complete list separately; see `attendance.md`.
+3. **Rubric:** extract the scheme and have a teacher approve questions,
    answers and maximum marks.
-3. **Regions:** optionally request Vertex suggestions after explicit cost
+4. **Regions:** optionally request Vertex suggestions after explicit cost
    approval. Draw, move, resize, delete and label boxes in a local browser.
    Save original-image pixel coordinates in `annotations.json` and approve all
    layouts.
-4. **Grading:** request approval for paid calls before OCR, grading and
+5. **Grading:** request approval for paid calls before OCR, grading and
    moderation. A teacher reviews IDs, OCR, exceptions, moderation flags and
    mark overrides.
-5. **Reports:** reconcile the complete roster and marks, validate ranges and
+6. **Reports:** reconcile the complete present roster and marks, validate ranges and
    have the teacher approve final scores and feedback.
-6. **Distribution:** preview exact recipients, messages and attachments;
+7. **Distribution:** preview exact recipients, messages and attachments;
    require separate approval immediately before sending.
 
 Keep human approval records separate from saved edits. Bind each decision to
@@ -28,5 +32,5 @@ their own gates.
 
 Migration must account for shared page layouts, duplicate annotation labels,
 ID formatting, output path differences, stale caches and the original
-reporting cleanup order. Do not send email or make live calls to test this
-plan without explicit authorization.
+reporting cleanup order. Do not send email or make live calls without
+explicit authorization.

@@ -4,10 +4,20 @@ A skill and Python tools for planning a human-reviewed handwriting grading run.
 This project is being migrated from
 [gemini-handwriting-grader](https://github.com/wongcyrus/gemini-handwriting-grader).
 
-**Current scope:** offline preflight, manual region review and optional Vertex
-AI region suggestions are available. Grading, report generation, email and
-downstream enforcement of region approvals are not implemented. Do not use
-this repository to grade or send student results.
+**Current scope:** answer-sheet generation, preflight, rubric import or
+extraction, optional reviewed attendance, region review, Vertex OCR/grading/moderation, human score review,
+isolated targeted regrading,
+basic reports, offline statistics, search-grounded rubric review, reviewed AI
+analysis and email preview/dispatch. Advanced report formatting and cache
+coverage differ from the notebooks. Validate results before use.
+
+See [detailed workflow and notebook gaps](skills/handwriting-grading/references/flow-and-parity.md)
+for stage-by-stage inputs, human decisions, outputs and known missing behavior.
+For notebook users, the [migration and use-case guide](docs/notebook-to-python.md)
+explains changed commands, artifacts and behavior.
+The [attendance and regrading design](docs/attendance-and-regrading-design.md)
+describes their design; the executable regrading procedure is in
+[regrading.md](skills/handwriting-grading/references/regrading.md).
 
 ## Setup
 
@@ -33,7 +43,32 @@ columns, blank and duplicate IDs, PDF page count, uniform-layout confirmation
 and separation of inputs from the output directory. It does not confirm scan
 order, recover leading zeroes lost in Excel, validate the marking scheme's
 contents, check Vertex credentials, invoke models, or approve any grading.
-A passing result is not approval to grade.
+A passing result is not approval to grade. For absent students, configure and
+explicitly review attendance as described in
+[attendance.md](skills/handwriting-grading/references/attendance.md); the CSV
+must identify every roster student as present or absent.
+
+## Generate answer sheets
+
+Before scans exist, set `exam.roster`, `exam.roster_sheet`,
+`exam.answer_sheet_template` (DOCX) and `exam.output_dir`. The template must
+contain `Name:`, `Student ID:` and `Class:` in normal paragraphs, tables,
+headers or footers. Placeholders split across text runs are supported;
+placeholders in Word text boxes and hyperlink text are also supported.
+Placeholders in Word fields and multi-paragraph fields are unsupported; always
+inspect the generated PDFs. Install LibreOffice and run:
+
+```sh
+.venv/bin/handwriting-grader answer-sheets --exam exam.yaml
+```
+
+This requires neither a scanned PDF nor a marking scheme. It creates private
+individual PDFs, a roster-to-PDF mapping and `combined.pdf` in roster order
+under `output_dir/answer-sheets/`. Review names, IDs, pagination and layout
+before printing. All generated sheets must have the same page count; if
+`layout.pages_per_student` is set it must match. Existing runs are never
+overwritten, and a partial run has no completion manifest. With Snap
+LibreOffice, select an output directory it can access (often not `/tmp`).
 
 ## Review regions
 
@@ -57,8 +92,8 @@ to move, resize, relabel or delete them. Save and mark each page reviewed
 before approving. The result is `regions/annotations.json` with original-image
 pixel coordinates; `approval.json` records its hash. Subsequent saved edits
 invalidate approval. A changed exam configuration, source PDF or rendered
-page prevents continuing the run. These local records are not tamper-proof
-and no grading command consumes them yet.
+page prevents continuing the run. Grading checks these approvals; the local
+records are not tamper-proof.
 
 The editor starts with empty boxes and does not itself call Gemini. It
 validates box bounds, required metadata labels and duplicate question labels,
@@ -89,6 +124,176 @@ to the specified Vertex project when suggestions are requested.
 
 The skill is in `skills/handwriting-grading/SKILL.md`; install that directory
 using your agent's skill installation conventions.
+
+## Rubric, grading and reports
+
+Configure all settings before starting: changing `exam.yaml` invalidates
+earlier approvals. Optional pass-only samples require both `reporting.pass_mark`
+and `reporting.passing_includes_equal`; leave both null to skip those samples.
+There is no assumed passing threshold.
+
+Import an XLSX with a `Marking Scheme` sheet and `question_number`,
+`question_text`, `marking_scheme`, `marks` columns:
+
+```sh
+.venv/bin/handwriting-grader import-rubric --exam exam.yaml
+```
+
+Alternatively, extract a DOCX with `extract-rubric --exam exam.yaml
+--model-config /path/to/config.yaml --project PROJECT_ID --location LOCATION`.
+This previews the target; after explicit approval for data transfer and cost,
+add `--confirm-cost`. Review `output_dir/rubric/rubric.xlsx` against the
+original, then explicitly approve it:
+
+```sh
+# Optional paid search-grounded review; preview first, then add --confirm-cost
+.venv/bin/handwriting-grader verify-rubric --exam exam.yaml \
+  --model-config /path/to/config.yaml --project PROJECT_ID --location LOCATION
+.venv/bin/handwriting-grader approve-rubric --exam exam.yaml --confirm-reviewed
+```
+
+New verification runs write XLSX and Word reports with AI reviews and returned
+source links; this does not prove
+factual correctness or approve the rubric. Teachers must check the actual
+sources and review the marking scheme.
+
+Complete region review as above. The grading command checks that rubric and
+region labels match and that both approvals are current. Its model config
+requires `vertex_ai.use_vertexai: true` and `models.ocr`, `models.grading`,
+and `models.moderation`. Authenticate separately with Google Application
+Default Credentials. Preview the target and maximum request count:
+
+```sh
+.venv/bin/handwriting-grader grade --exam exam.yaml \
+  --model-config /path/to/config.yaml --project PROJECT_ID --location LOCATION
+```
+
+After explicit approval to send student work and incur charges, repeat with
+`--confirm-cost`. A partial failure can still incur charges. Supported
+interrupted runs can be resumed with `resume-grading --exam exam.yaml`,
+followed by `--confirm-cost` after review; in-flight requests may repeat and
+be billed. Older checkpoints and existing reviews cannot be resumed. A stale
+`processing.lock` requires manual investigation; never remove a live lock.
+The model configuration's `caching.enabled` and `caching.agents` flags opt
+into caches for `ocr`, `grading`, `moderation`, `annotation`, `marking_scheme`
+extraction and `analytics`. By default they are private to each run. To share them
+across runs, explicitly set `caching.scope: shared` and `caching.directory`
+in the model config; relative directories resolve from that config. Its
+private cache directory must be owned by the user and inaccessible to group
+or others. It contains sensitive answers and is never automatically deleted.
+Model aliases can change; avoid shared cache reuse when freshness is required.
+Grounded search verification and infographics are not cached; logging settings
+are not implemented. Cache hits never replace cost consent or human review.
+An isolated regrade can explicitly reuse its approved parent's run cache with
+`--reuse-parent-cache`; this may reuse responses instead of regenerating them.
+See [regrading.md](skills/handwriting-grading/references/regrading.md).
+
+The AI and its output can be wrong. Start the local review interface:
+
+```sh
+.venv/bin/handwriting-grader review-grading --exam exam.yaml
+```
+
+Open the full printed URL privately. Review each identity and answer crop or
+full page, edit answers, reasoning and marks, and explicitly mark every item
+reviewed. The approval button requires confirmation and performs the same
+validation as `approve-grading`. Stop the server with Ctrl+C. Keep other
+spreadsheet editors closed: edits from non-cooperating applications can race
+with saves. Each prior workbook is retained privately in `grading/review-history/`;
+saves invalidate earlier approvals. Investigate any stale `.score-review.lock`
+and never remove a live lock. Alternatively, review
+`output_dir/grading/review.xlsx`: in **Scripts** enter each roster ID and
+`yes` in `reviewed`; in **Marks** inspect and correct the `answer` and
+`reasoning` alongside the grade and moderation. Enter a `manual_mark` for
+every failed or flagged result **and whenever an answer is corrected**,
+including when it is cleared. Review the reasoning whenever a mark changes.
+Enter `yes` in `reviewed` for every row. Script indices are zero-based;
+page images are in `grading/images/`. Verify identities and scan order
+against the originals. Then:
+
+```sh
+.venv/bin/handwriting-grader approve-grading --exam exam.yaml --confirm-reviewed
+.venv/bin/handwriting-grader report --exam exam.yaml
+.venv/bin/handwriting-grader analytics --exam exam.yaml
+```
+
+Reports are written under `output_dir/reports/`: score and detail workbooks,
+numbered individual PDFs, a combined PDF and, when enough scripts exist,
+stratified samples. The workbook maps each student to a numbered PDF. Review
+the PDFs and scores before sharing. The detail workbook's `Answers` and
+`Reasoning` sheets use reviewed text; `AnswersRaw` and `ReasoningRaw` preserve
+the original model output. A `manifest.json` marks completion and
+records the grading approval and review hashes; partial reports have no
+completion marker. Existing reports are not automatically deleted or
+invalidated if inputs later change. Do not distribute stale or partial output.
+`analytics/statistics.xlsx` contains offline overall, class and question
+statistics, question means and a score-distribution chart from approved marks.
+`analytics/question-boxplots-*.png` shows reviewed question-score distributions
+in groups of up to 20 questions, with 1.5-IQR whiskers and outlier points.
+Overall and per-question pass counts and rates are blank unless their
+respective thresholds and equality policies were explicitly configured.
+Commands refuse to overwrite existing runs; preserve and inspect them before
+choosing how to restart. The implementation and SDK request shapes have been
+tested with synthetic data and a local fake service, not live Vertex inference.
+
+## Optional AI analysis
+
+After approving grading, preview `ai-analysis --exam exam.yaml --model-config
+/path/to/config.yaml --project PROJECT_ID --location LOCATION`. It requires
+`models.analytics`, sends answers and marking schemes, and may incur charges.
+After explicit approval, repeat with `--confirm-cost`. Review every row of
+`ai-analysis/review.xlsx` (Students, Questions and Class), edit inaccurate
+feedback, and set each `reviewed` cell to `yes`. Then:
+
+```sh
+.venv/bin/handwriting-grader approve-analysis --exam exam.yaml --confirm-reviewed
+.venv/bin/handwriting-grader advanced-report --exam exam.yaml
+```
+
+The reports include a teacher Word report and a PowerPoint with a question
+mean chart. Optionally, after analysis approval, preview `infographics --exam
+exam.yaml --model-config /path/to/config.yaml --project PROJECT_ID --location
+LOCATION`; it uses `models.analytics_image` and sends reviewed analysis.
+After separate cost/data consent, rerun with `--confirm-cost`, review the
+images, then add `--include-infographics --confirm-images-reviewed` to `advanced-report`. Reports
+contain sensitive information and must be reviewed before sharing. Later edits
+invalidate approval; existing reports do not automatically disappear.
+
+## Optional email distribution
+
+Create private email settings and a separate recipient CSV outside the output
+directory. Do not put credentials in the settings or command line:
+
+```yaml
+sender: teacher@example.test
+smtp_host: smtp.example.test
+smtp_port: 587
+smtp_username: teacher
+subject: "{exam} result"
+body: "Dear {name}, your score is {marks}.\n{feedback}"
+```
+
+The CSV must have exactly `ID,EMAIL` headers and one unique address for every
+present student; without an attendance list it must cover the entire roster.
+Addresses are never guessed. `{feedback}` is optional and requires
+approved AI analysis; omit it if no feedback is wanted. Set
+`HANDWRITING_SMTP_PASSWORD` in the local environment, not in Git.
+
+```sh
+.venv/bin/handwriting-grader preview-email --exam exam.yaml \
+  --settings /private/email-settings.yaml --recipients /private/recipients.csv
+.venv/bin/handwriting-grader approve-email --exam exam.yaml --confirm-reviewed
+.venv/bin/handwriting-grader send-email --exam exam.yaml --confirm-send
+```
+
+Inspect every recipient, body and attached PDF in `email/preview.json` and the
+individual `.eml` files before approving. Sending requires the separate
+confirmation shown above and uses SMTP STARTTLS. Input, approval or PDF
+changes invalidate the preview. `email/delivery.json` records accepted and
+in-flight messages; an interrupted or ambiguous attempt is never automatically
+retried. Reconcile with the SMTP provider and recipients before deciding what
+to do. SMTP acceptance does not guarantee delivery. Only mocked SMTP has been
+tested; no real messages were sent.
 
 ## Tests
 

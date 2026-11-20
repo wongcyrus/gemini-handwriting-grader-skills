@@ -7,20 +7,50 @@ local copy outside version control. Relative paths resolve from its directory.
 |---|---|
 | `exam.name` | User identifies the exam. |
 | `exam.roster`, `exam.roster_sheet` | Select the workbook and sheet; preflight requires ID, NAME and CLASS columns. |
+| `exam.attendance` | Optional reviewed `ID,STATUS` CSV; see attendance.md. Without it every roster entry is expected to have a complete script. |
+| `exam.answer_sheet_template` | DOCX template for optional personalized answer sheets, usable before scans exist. |
 | `exam.scanned_pdf` | Select the combined scan; verify its page count and human-confirmed ordering. |
 | `exam.marking_scheme` | Select the source file; current preflight checks existence only. |
 | `exam.output_dir` | Select a separate location; inspect any existing outputs before writing. |
-| `layout.pages_per_student` | User confirms a positive integer; preflight compares it with the PDF and roster counts. |
+| `layout.pages_per_student` | User confirms a positive integer; preflight compares it with the PDF and present-student counts. |
 | `layout.same_layout_for_all` | User explicitly confirms the current shared-layout assumption. Unsupported otherwise. |
-| `reporting.pass_mark`, `reporting.passing_includes_equal` | Needed for pass-based reports; don't infer a threshold or comparison. |
-| `reporting.advanced_analysis` | User decides whether to request AI analysis and accept associated cost. |
-| `email.enabled` | Disabled by default. Distribution is not implemented. |
+| `reporting.pass_mark`, `reporting.passing_includes_equal` | Both needed for pass-only samples; configure before starting. Never infer a threshold or comparison. |
+| `reporting.question_pass_marks`, `reporting.question_passing_includes_equal` | Optional per-question mark thresholds and explicit equality policy for analytics. Supply both; unset questions have blank pass statistics. Configure before approvals. |
+| `reporting.advanced_analysis` | Not used as an automatic trigger; run AI analysis explicitly after consent. |
+| `email.enabled` | Not an automatic send trigger; distribution requires separate settings and explicit approval. |
 
-Use the original project's `config.yaml` for Vertex mode and annotation model
-selection. `suggest-regions` reads `vertex_ai.use_vertexai` and
-`models.annotation`; it does not currently apply its logging or cache
-settings. Credentials must remain outside configuration and Git. Preflight
-does not contact Vertex AI or confirm model access.
+For optional per-question analytics, set explicit thresholds and a comparison
+policy before creating approvals, for example:
+
+```yaml
+reporting:
+  question_pass_marks:
+    "Q1": 1.5
+    "Q2": 2
+  question_passing_includes_equal: true
+```
+
+Thresholds are marks, not percentages; each must be within its question's
+maximum. Only listed questions receive pass counts and rates. Both fields
+must be supplied together, and canonical question labels must be unique.
+
+Use the original project's `config.yaml` for Vertex mode and model selection:
+`models.annotation` for suggestions, `models.marking_scheme` for DOCX
+extraction and search review, `models.ocr`, `models.grading`,
+`models.moderation` for grading, `models.analytics` for AI analysis and
+`models.analytics_image` for optional infographics. `vertex_ai.use_vertexai`
+must be true. Enabled caches apply to `ocr`, `grading`, `moderation`,
+`annotation`, `marking_scheme` extraction and `analytics`; they
+default to one run. Cross-run reuse requires explicit `caching.scope: shared`
+and `caching.directory`, relative to the model configuration. The directory
+must be private and user-owned; it contains sensitive answers and has no
+automatic retention policy. Model aliases can change without cache-key
+changes, so do not reuse cached results when freshness is required. Grounded
+verification and infographics are not cached; logging settings are not applied.
+Cache hits never substitute for cost consent or review. Credentials must remain
+outside configuration and Git.
+Preflight does not contact Vertex AI or confirm model access. Changing any
+exam configuration invalidates existing approvals, so settle settings first.
 
 Excel may store an ID as a number even when it is displayed with leading
 zeroes. Confirm IDs against the original roster; do not assume the displayed

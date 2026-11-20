@@ -1,6 +1,7 @@
 """Generate optional Vertex AI region proposals without modifying drafts."""
 
 import json
+import hashlib
 import os
 import tempfile
 from pathlib import Path
@@ -11,6 +12,7 @@ from google.genai import types
 from pydantic import BaseModel, StrictInt, StrictStr
 
 from .regions import file_hash, validate_annotations, verify_run
+from .cache import CachedGrader, cache_directory, enabled_agents
 
 
 class SuggestedBox(BaseModel):
@@ -34,7 +36,7 @@ the box dimensions. Ensure all boxes lie entirely inside the page. Return
 an empty list if no regions can be identified."""
 
 
-def load_model_settings(path):
+def load_model_settings(path, agent="annotation"):
     path = Path(path)
     with path.open(encoding="utf-8") as file:
         settings = yaml.safe_load(file)
@@ -44,9 +46,9 @@ def load_model_settings(path):
     models = settings.get("models")
     if not isinstance(vertex, dict) or vertex.get("use_vertexai") is not True:
         raise ValueError("Model configuration must enable Vertex AI")
-    model = models.get("annotation") if isinstance(models, dict) else None
+    model = models.get(agent) if isinstance(models, dict) else None
     if not isinstance(model, str) or not model.strip():
-        raise ValueError("Model configuration needs models.annotation")
+        raise ValueError(f"Model configuration needs models.{agent}")
     return model.strip()
 
 
@@ -83,31 +85,37 @@ def generate_suggestions(config, config_dir, config_path, model_config_path, pro
     if output.exists():
         raise ValueError("AI suggestions already exist; do not overwrite them")
     suggestions = {}
+    agents = [name for name in enabled_agents(model_path) if name == "annotation"]
+    cache = CachedGrader(None, cache_directory(model_path, root) if agents else root / "cache", agents,
+                         {"annotation": model}, project, location, source_files=["suggestions.py", "regions.py"])
     options = types.HttpOptions(timeout=120_000, retry_options=types.HttpRetryOptions(attempts=1))
     with genai.Client(vertexai=True, project=project, location=location, http_options=options) as client:
         for index, page in enumerate(manifest["pages"]):
             image = (root / "images" / f"{index}.jpg").read_bytes()
-            response = client.models.generate_content(
-                model=model,
-                contents=[PROMPT, types.Part.from_bytes(data=image, mime_type="image/jpeg")],
-                config=types.GenerateContentConfig(
-                    temperature=0,
-                    max_output_tokens=8192,
-                    response_mime_type="application/json",
-                    response_schema=SuggestedBoxes,
-                ),
-            )
-            if response.parsed is not None:
-                parsed = SuggestedBoxes.model_validate(response.parsed)
-            else:
-                parsed = SuggestedBoxes.model_validate_json(response.text)
+            def compute():
+                response = client.models.generate_content(
+                    model=model,
+                    contents=[PROMPT, types.Part.from_bytes(data=image, mime_type="image/jpeg")],
+                    config=types.GenerateContentConfig(
+                        temperature=0, max_output_tokens=8192,
+                        response_mime_type="application/json", response_schema=SuggestedBoxes,
+                    ),
+                )
+                return (SuggestedBoxes.model_validate(response.parsed) if response.parsed is not None
+                        else SuggestedBoxes.model_validate_json(response.text)).model_dump()
+
+            def validate(value):
+                parsed = SuggestedBoxes.model_validate(value)
+                for box in parsed.boxes:
+                    if (box.x < 0 or box.y < 0 or box.width <= 0 or box.height <= 0
+                            or box.x + box.width > 1000 or box.y + box.height > 1000):
+                        raise ValueError(f"Vertex returned an invalid normalized box on page {index + 1}")
+                return parsed.model_dump()
+
+            parsed = SuggestedBoxes.model_validate(cache.call(
+                "annotation", {"image_sha256": hashlib.sha256(image).hexdigest()}, compute, validate))
             boxes = []
             for box in parsed.boxes:
-                if (
-                    box.x < 0 or box.y < 0 or box.width <= 0 or box.height <= 0
-                    or box.x + box.width > 1000 or box.y + box.height > 1000
-                ):
-                    raise ValueError(f"Vertex returned an invalid normalized box on page {index + 1}")
                 left = round(box.x * page["width"] / 1000)
                 top = round(box.y * page["height"] / 1000)
                 right = round((box.x + box.width) * page["width"] / 1000)

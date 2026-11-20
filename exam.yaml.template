@@ -2,6 +2,8 @@ exam:
   name: null
   roster: null
   roster_sheet: null
+  attendance: null
+  answer_sheet_template: null
   scanned_pdf: null
   marking_scheme: null
   output_dir: null
@@ -13,6 +15,8 @@ layout:
 reporting:
   pass_mark: null
   passing_includes_equal: null
+  question_pass_marks: null
+  question_passing_includes_equal: null
   advanced_analysis: false
 
 email:

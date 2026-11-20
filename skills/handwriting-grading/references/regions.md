@@ -34,12 +34,12 @@
 
 ## Limits
 
-There are no rubric-coverage checks yet. The user must compare labels with
-the rubric and verify the layout applies to
-all scripts. Duplicate canonical labels are blocked because the original
+The editor does not compare the rubric, but grading requires the approved
+labels to match it. The user must verify the layout applies to all scripts.
+Duplicate canonical labels are blocked because the original
 grader cannot safely process them. The editor is local-only, not a hosted
 multi-user application. Its approval record is not a tamper-proof audit log,
-and no grading stage currently enforces it. The Vertex path has been tested
+and grading enforces it. The Vertex path has been tested
 against a local fake service, not with a live model.
 
 If preparation detects an existing run, stop and ask the user to choose a new
