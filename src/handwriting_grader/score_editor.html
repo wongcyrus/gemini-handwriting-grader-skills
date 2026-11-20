@@ -3,101 +3,267 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Review grades</title>
+<title>Scoring forms - Review grades</title>
 <style>
-body { font: 16px system-ui, sans-serif; margin: 1.2rem; color: #172033; }
-button, input, select, textarea { font: inherit; margin: .2rem; padding: .35rem; }
-button { cursor: pointer; }
-.bar { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
-#status { padding: .6rem; background: #e9f2fb; white-space: pre-wrap; }
-#image { max-width: min(100%, 1000px); max-height: 60vh; border: 1px solid #576b7e; }
-textarea { display: block; width: min(100%, 70rem); min-height: 7rem; }
-pre { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 70rem; }
-label { display: block; }
-.warning { color: #a00000; font-weight: bold; }
-.table-wrap { overflow-x: auto; }
-table { border-collapse: collapse; width: 100%; }
-th, td { border: 1px solid #aeb9c4; padding: .35rem; text-align: left; vertical-align: top; }
-td { white-space: pre-wrap; overflow-wrap: anywhere; }
+* { box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 1rem 1.5rem; color: #212529; background-color: #f8f9fa; }
+header { margin-bottom: 1rem; border-bottom: 1px solid #dee2e6; padding-bottom: .8rem; }
+h1 { font-size: 1.5rem; margin: 0 0 .4rem 0; color: #1a202c; }
+p { margin: 0 0 .5rem 0; line-height: 1.4; color: #4a5568; }
+
+.scheme-box { background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #3182ce; padding: .75rem 1rem; border-radius: 4px; margin-bottom: 1rem; font-size: .95rem; }
+.scheme-box pre { margin: .4rem 0 0 0; white-space: pre-wrap; font-family: inherit; color: #2d3748; }
+
+/* Navigation Tabs */
+.nav-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin-bottom: .75rem; }
+.nav-tab { padding: .45rem .85rem; border: 1px solid #cbd5e0; background: #fff; border-radius: 4px; font-weight: 500; cursor: pointer; text-decoration: none; color: #4a5568; font-size: .9rem; transition: all .15s ease; }
+.nav-tab:hover { background: #edf2f7; border-color: #a0aec0; }
+.nav-tab.active { background: #3182ce; color: #fff; border-color: #2b6cb0; }
+.nav-tab.metadata { background: #ebf8ff; border-color: #bee3f8; color: #2b6cb0; }
+.nav-tab.metadata.active { background: #2b6cb0; color: #fff; }
+
+.top-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .6rem; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: .6rem 1rem; margin-bottom: .8rem; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+
+.toolbar { background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: .6rem 1rem; margin-bottom: 1rem; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+.toolbar-group { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+.toolbar label { display: flex; align-items: center; gap: .35rem; font-size: .88rem; font-weight: 500; color: #4a5568; }
+.toolbar input[type="number"], .toolbar select, select, input, textarea { padding: .3rem .45rem; border: 1px solid #cbd5e0; border-radius: 4px; font-size: .88rem; font-family: inherit; }
+.toolbar input[type="range"] { vertical-align: middle; cursor: pointer; width: 80px; }
+
+/* Buttons */
+button { font: inherit; cursor: pointer; padding: .35rem .75rem; border-radius: 4px; border: 1px solid #cbd5e0; background: #fff; color: #2d3748; font-weight: 500; font-size: .88rem; transition: all .15s ease; }
+button:hover:not(:disabled) { background: #edf2f7; border-color: #a0aec0; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+button.primary { background: #3182ce; color: #fff; border-color: #2b6cb0; }
+button.primary:hover:not(:disabled) { background: #2b6cb0; }
+button.success { background: #38a169; color: #fff; border-color: #2f855a; }
+button.success:hover:not(:disabled) { background: #2f855a; }
+button.toggle-btn { padding: .2rem .5rem; font-size: .8rem; }
+button.toggle-btn.active { background: #38a169; color: #fff; border-color: #2f855a; }
+
+/* Status alert */
+#status { padding: .6rem 1rem; background: #ebf8ff; border: 1px solid #bee3f8; border-radius: 4px; color: #2b6cb0; font-size: .9rem; margin-bottom: 1rem; white-space: pre-wrap; font-weight: 500; }
+.warning { color: #c53030; font-weight: 600; }
+
+/* Table styling */
+.table-wrap { overflow-x: auto; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,.05); margin-bottom: 1.5rem; }
+table.marksheet, table#comparison { border-collapse: collapse; width: 100%; font-size: .9rem; }
+table.marksheet th, table.marksheet td, table#comparison th, table#comparison td { border: 1px solid #e2e8f0; padding: .6rem .75rem; vertical-align: top; text-align: left; }
+table.marksheet th, table#comparison th { background: #f7fafc; color: #4a5568; font-weight: 600; position: sticky; top: 0; z-index: 2; }
+table.marksheet tr:hover, table#comparison tr:hover { background-color: #f7fafc; }
+table.marksheet tr.active-row { background-color: #ebf8ff; border-left: 3px solid #3182ce; }
+
+/* Cropped Image */
+.img-container { overflow: hidden; background: #edf2f7; border: 1px solid #cbd5e0; border-radius: 4px; display: inline-block; cursor: pointer; }
+.img-container:hover { border-color: #3182ce; }
+.img-container img { display: block; max-height: 180px; max-width: 320px; object-fit: contain; }
+.mark-input { width: 75px; font-size: 1.25rem; font-weight: bold; padding: .25rem; text-align: center; border: 2px solid #cbd5e0; border-radius: 4px; color: #2d3748; }
+.mark-input:focus { border-color: #3182ce; outline: none; }
+.mark-input.locked { border-color: #dd6b20; background: #fffaf0; }
+.lock-badge { display: inline-block; font-size: .75rem; color: #dd6b20; font-weight: 600; margin-top: .2rem; }
+textarea.answer-input, textarea.reasoning-input { width: 100%; min-width: 200px; min-height: 60px; padding: .35rem; border: 1px solid #cbd5e0; border-radius: 4px; font-family: inherit; font-size: .88rem; resize: vertical; }
+.moderator-note { margin-top: .4rem; padding: .3rem .5rem; background: #fffaf0; border-left: 3px solid #dd6b20; font-size: .82rem; color: #9c4221; }
+.badge { display: inline-block; padding: .2rem .45rem; border-radius: 3px; font-size: .75rem; font-weight: 600; }
+.badge-success { background: #c6f6d5; color: #22543d; }
+.badge-warning { background: #feebc8; color: #7b341e; }
+.badge-danger { background: #fed7d7; color: #742a2a; }
+
+/* Modal for Image Preview */
+.modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.75); z-index: 100; align-items: center; justify-content: center; padding: 2rem; }
+.modal-overlay.active { display: flex; }
+.modal-content { background: #fff; padding: 1rem; border-radius: 6px; max-width: 90vw; max-height: 90vh; overflow: auto; text-align: center; }
+.modal-content img { max-width: 100%; max-height: 80vh; border: 1px solid #ccc; }
+
+/* Inspector Card */
+.inspector-card { background: #fff; border: 1px solid #cbd5e0; border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+.inspector-card h2 { font-size: 1.15rem; margin: 0 0 .75rem 0; color: #2d3748; }
+.inspector-card textarea { width: 100%; max-width: 70rem; min-height: 5rem; display: block; margin-top: .2rem; }
+.inspector-card img#image { max-width: min(100%, 800px); max-height: 50vh; border: 1px solid #a0aec0; border-radius: 4px; margin-top: .5rem; display: block; }
 </style>
 </head>
 <body>
-<h1>Review grades</h1>
-<p>Verify every identity and answer against the image. Correct the answer and reasoning where needed.
+
+<header>
+  <h1>Scoring forms - Review grades</h1>
+  <p>Verify every identity and answer against the image. Correct the answer and reasoning where needed.
 Failed or flagged grades and corrected answers require a manual mark. Save each item as reviewed.
 Keep this URL private and close spreadsheet editors while using this interface.</p>
-<div class="bar">
-<label>Script <select id="script"></select></label>
-<label>Review <select id="section"></select></label>
-<button id="save">Save draft</button><button id="review">Save and mark reviewed</button>
-<button id="approve">Approve all grading</button>
+</header>
+
+<!-- Action & Selection Top Bar -->
+<div class="top-bar">
+  <div class="bar">
+    <label>Script <select id="script"></select></label>
+    <label>Review <select id="section"></select></label>
+  </div>
+  <div class="bar">
+    <button id="save">Save draft</button>
+    <button id="review" class="success">Save and mark reviewed</button>
+    <button id="approve" class="primary">Approve all grading</button>
+  </div>
 </div>
+
 <div id="status" role="status">Connecting...</div>
-<details>
-<summary>Compare students by question</summary>
-<p>Read-only snapshot of saved reviews. Open a row to check its image and edit it;
+
+<!-- Comparison Table Accordion -->
+<details style="margin-bottom:1rem; background:#fff; border:1px solid #e2e8f0; border-radius:6px; padding:.6rem 1rem;">
+  <summary style="font-weight:600; cursor:pointer; color:#2b6cb0;">Compare students by question</summary>
+  <p style="margin-top:.4rem; font-size:.88rem; color:#718096;">Read-only snapshot of saved reviews. Open a row to check its image and edit it;
 this table does not review or approve scores. Reload after external changes.</p>
-<div class="bar">
-<label>Question <select id="compare-question"></select></label>
-<label>Filter <select id="compare-filter"><option value="all">All</option><option value="unreviewed">Not reviewed</option><option value="flagged">Failed or flagged</option></select></label>
-<label>Sort <select id="compare-sort"><option value="script">Script order</option><option value="score">Mark, low to high</option></select></label>
-<button id="refresh-comparison">Refresh saved review</button>
-</div>
-<div class="table-wrap">
-<table id="comparison">
-<thead><tr><th>Script</th><th>Roster ID</th><th>Answer</th><th>AI</th><th>Moderated</th><th>Manual</th><th>Review status</th><th>Action</th></tr></thead>
-<tbody></tbody>
-</table>
-</div>
-<details>
-<summary>Preview bulk similarity suggestions</summary>
-<p>Uses saved original OCR answers and ignores moderation. Select suggestions to replace manual
+  <div class="bar" style="margin:.5rem 0;">
+    <label>Question <select id="compare-question"></select></label>
+    <label>Filter <select id="compare-filter"><option value="all">All</option><option value="unreviewed">Not reviewed</option><option value="flagged">Failed or flagged</option></select></label>
+    <label>Sort <select id="compare-sort"><option value="script">Script order</option><option value="score">Mark, low to high</option></select></label>
+    <button id="refresh-comparison">Refresh saved review</button>
+  </div>
+  <div class="table-wrap">
+    <table id="comparison">
+      <thead><tr><th>Script</th><th>Roster ID</th><th>Answer</th><th>AI</th><th>Moderated</th><th>Manual</th><th>Review status</th><th>Action</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <details style="margin-top:.5rem;">
+    <summary style="cursor:pointer; font-weight:500;">Preview bulk similarity suggestions</summary>
+    <p style="font-size:.85rem; color:#718096;">Uses saved original OCR answers and ignores moderation. Select suggestions to replace manual
 marks as <strong>unreviewed drafts</strong>; previously reviewed marks will need review again.</p>
-<label>Similarity threshold <input id="bulk-threshold" inputmode="decimal"></label>
-<label>Mark increment <input id="bulk-increment" inputmode="decimal"></label>
-<button id="bulk-preview">Preview suggestions</button>
-<button id="bulk-apply" disabled>Apply selected as drafts</button>
-<div id="bulk-results"></div>
+    <label>Similarity threshold <input id="bulk-threshold" inputmode="decimal"></label>
+    <label>Mark increment <input id="bulk-increment" inputmode="decimal"></label>
+    <button id="bulk-preview">Preview suggestions</button>
+    <button id="bulk-apply" disabled>Apply selected as drafts</button>
+    <div id="bulk-results" style="margin-top:.4rem;"></div>
+  </details>
 </details>
-</details>
-<label><input id="full-page" type="checkbox"> Show entire page instead of crop</label>
-<div id="script-fields">
-<p id="ocr"></p>
-<label>Reviewed roster ID <select id="reviewed-id"></select></label>
-<label>Metadata image <select id="metadata-image"><option value="id">ID</option><option value="name">Name</option><option value="class">Class</option></select></label>
+
+<!-- Question Tabs Navigation -->
+<div class="nav-bar" id="question-tabs">
+  <button type="button" class="nav-tab metadata" data-tab="id" id="tab-id">ID</button>
+  <button type="button" class="nav-tab metadata" data-tab="name" id="tab-name">Name</button>
+  <button type="button" class="nav-tab metadata" data-tab="class" id="tab-class">Class</button>
+  <span style="border-left: 1px solid #cbd5e0; height: 24px; margin: 0 .2rem;"></span>
+  <!-- Question tabs will be populated dynamically -->
 </div>
-<div id="mark-fields">
-<p id="question"></p><pre id="scheme"></pre><p id="scores"></p><p id="flags" class="warning"></p>
-<label>Reviewed answer <textarea id="answer"></textarea></label>
-<label>Reviewed reasoning <textarea id="reasoning"></textarea></label>
-<label>Manual mark (optional unless required) <input id="manual" inputmode="decimal"></label>
-<details>
-<summary>Adjust crop for visual inspection</summary>
-<p>Coordinates are pixels on the approved question page. This preview is temporary;
+
+<!-- Question Scheme Header -->
+<div class="scheme-box" id="scheme-box">
+  <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+    <div>
+      <strong id="current-q-title" style="font-size:1.05rem;">Question</strong>
+      <pre id="scheme"></pre>
+    </div>
+    <div style="text-align:right;">
+      <div style="display:flex; gap:.4rem; margin-top:.4rem;">
+        <button type="button" id="prev-q-btn">← Previous</button>
+        <button type="button" id="next-q-btn">Next →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Question Controls (from original project) -->
+<div class="toolbar" id="toolbar">
+  <div class="toolbar-group">
+    <label>Full mark: <input type="number" id="fullMark" min="1" max="100" style="width:55px;"></label>
+    <label>Similarity: 
+      <input type="range" id="minimumSimilarity" min="0.1" max="1" step="0.01" value="0.80"> 
+      <span id="currentSimilarity" style="min-width:32px;">0.80</span>
+    </label>
+    <label>Granularity: 
+      <input type="range" id="granularity" min="0.25" max="5" step="0.25" value="1.0"> 
+      <span id="currentGranularity" style="min-width:28px;">1.0</span>
+    </label>
+    <label>Zoom: 
+      <input type="range" id="zoom" min="0.5" max="2.5" step="0.1" value="1.0"> 
+      <span id="currentZoom" style="min-width:28px;">1.0x</span>
+    </label>
+    <button type="button" id="apply-sliders-btn">Recalculate Marks</button>
+  </div>
+  <div class="toolbar-group">
+    <span style="font-weight:600; font-size:.85rem; color:#4a5568;">Show/Hide:</span>
+    <button type="button" class="toggle-btn active" data-col="col-image">Image</button>
+    <button type="button" class="toggle-btn active" data-col="col-answer">Answer</button>
+    <button type="button" class="toggle-btn active" data-col="col-mark">Mark</button>
+    <button type="button" class="toggle-btn active" data-col="col-similarity">Similarity</button>
+    <button type="button" class="toggle-btn active" data-col="col-reasoning">Reasoning</button>
+  </div>
+</div>
+
+<!-- Main Question Table -->
+<div class="table-wrap">
+  <table class="marksheet" id="marksheet">
+    <thead>
+      <tr id="table-head">
+        <th style="width: 45px;">Row</th>
+        <th class="col-student" style="width: 140px;">Student</th>
+        <th class="col-image" style="width: 280px;">Image</th>
+        <th class="col-answer">Answer</th>
+        <th class="col-mark" style="width: 110px;">Mark</th>
+        <th class="col-similarity" style="width: 85px;">Similarity</th>
+        <th class="col-reasoning">Reasoning</th>
+        <th style="width: 120px;">Review</th>
+      </tr>
+    </thead>
+    <tbody id="table-body">
+      <!-- Populated dynamically -->
+    </tbody>
+  </table>
+</div>
+
+<!-- Active Script Inspector & Editor Card -->
+<div class="inspector-card">
+  <h2>Active Script Inspector & Overrides</h2>
+  <label><input id="full-page" type="checkbox"> Show entire page instead of crop</label>
+  <div id="script-fields">
+    <p id="ocr"></p>
+    <label>Reviewed roster ID <select id="reviewed-id"></select></label>
+    <label>Metadata image <select id="metadata-image"><option value="id">ID</option><option value="name">Name</option><option value="class">Class</option></select></label>
+  </div>
+  <div id="mark-fields">
+    <p id="question"></p>
+    <p id="scores"></p>
+    <p id="flags" class="warning"></p>
+    <label>Reviewed answer <textarea id="answer"></textarea></label>
+    <label>Reviewed reasoning <textarea id="reasoning"></textarea></label>
+    <label>Manual mark (optional unless required) <input id="manual" inputmode="decimal"></label>
+    <details style="margin:.5rem 0;">
+      <summary style="cursor:pointer; font-weight:500;">Adjust crop for visual inspection</summary>
+      <p style="font-size:.85rem; color:#718096;">Coordinates are pixels on the approved question page. This preview is temporary;
 it does not change model inputs, review data, region approvals or reports.</p>
-<div class="bar">
-<label>X <input id="crop-x" type="number" min="0" step="1"></label>
-<label>Y <input id="crop-y" type="number" min="0" step="1"></label>
-<label>Width <input id="crop-width" type="number" min="1" step="1"></label>
-<label>Height <input id="crop-height" type="number" min="1" step="1"></label>
-<button id="preview-crop">Preview crop</button>
-</div>
-</details>
-<details>
-<summary>Similarity-based mark suggestion</summary>
-<p>Uses the original OCR answer and ignores moderation. Enter your chosen threshold (0–1) and mark increment.
+      <div class="bar">
+        <label>X <input id="crop-x" type="number" min="0" step="1"></label>
+        <label>Y <input id="crop-y" type="number" min="0" step="1"></label>
+        <label>Width <input id="crop-width" type="number" min="1" step="1"></label>
+        <label>Height <input id="crop-height" type="number" min="1" step="1"></label>
+        <button id="preview-crop">Preview crop</button>
+      </div>
+    </details>
+    <details style="margin:.5rem 0;">
+      <summary style="cursor:pointer; font-weight:500;">Similarity-based mark suggestion</summary>
+      <p style="font-size:.85rem; color:#718096;">Uses the original OCR answer and ignores moderation. Enter your chosen threshold (0–1) and mark increment.
 At or above the threshold, the suggestion is full marks; otherwise it is similarity times full marks,
 rounded down to the increment. Check the answer and moderated mark before deciding whether to apply it.</p>
-<label>Similarity threshold <input id="threshold" inputmode="decimal"></label>
-<label>Mark increment <input id="increment" inputmode="decimal"></label>
-<button id="calculate">Calculate suggestion</button> <span id="suggestion"></span>
-<button id="apply-suggestion" disabled>Use suggestion as manual mark</button>
-</details>
-<details><summary>Original OCR answer</summary><pre id="original"></pre></details>
-<details id="previous-review" hidden><summary>Previous approved review</summary><pre id="previous"></pre></details>
+      <label>Similarity threshold <input id="threshold" inputmode="decimal"></label>
+      <label>Mark increment <input id="increment" inputmode="decimal"></label>
+      <button id="calculate">Calculate suggestion</button> <span id="suggestion"></span>
+      <button id="apply-suggestion" disabled>Use suggestion as manual mark</button>
+    </details>
+    <details style="margin:.5rem 0;"><summary style="cursor:pointer;">Original OCR answer</summary><pre id="original"></pre></details>
+    <details id="previous-review" hidden style="margin:.5rem 0;"><summary style="cursor:pointer;">Previous approved review</summary><pre id="previous"></pre></details>
+  </div>
+  <p id="review-status" style="font-weight:600; margin-top:.5rem;"></p>
+  <img id="image" alt="Selected answer or metadata crop">
 </div>
-<p id="review-status"></p>
-<img id="image" alt="Selected answer or metadata crop">
+
+<!-- Image Modal -->
+<div class="modal-overlay" id="img-modal" onclick="closeModal()">
+  <div class="modal-content" onclick="event.stopPropagation()">
+    <img id="modal-img" src="" alt="Enlarged view">
+    <div style="margin-top:.5rem;">
+      <button type="button" onclick="closeModal()">Close</button>
+    </div>
+  </div>
+</div>
+
 <script>
 "use strict";
 let token = location.hash.slice(1);
@@ -110,27 +276,47 @@ if (token) {
 const byId = id => document.getElementById(id);
 let state, script = 0, section = "id", dirty = false, imageUrl = null, imageGeneration = 0;
 let busy = false, imageReady = false, suggestion = null, bulk = null;
+let currentZoom = 1.0;
+const imageCache = new Map();
+
 function message(text) { byId("status").textContent = text; }
+
 function setBusy(value) {
   busy = value;
   for (const id of ["script", "section", "metadata-image", "full-page", "save", "approve",
                     "reviewed-id", "answer", "reasoning", "manual", "threshold", "increment", "calculate",
                     "compare-question", "compare-filter", "compare-sort", "refresh-comparison",
                     "bulk-threshold", "bulk-increment", "bulk-preview", "crop-x", "crop-y",
-                    "crop-width", "crop-height", "preview-crop"])
-    byId(id).disabled = busy;
-  for (const button of byId("comparison").querySelectorAll("button")) button.disabled = busy;
-  for (const input of byId("bulk-results").querySelectorAll("input")) input.disabled = busy;
+                    "crop-width", "crop-height", "preview-crop", "fullMark", "minimumSimilarity",
+                    "granularity", "apply-sliders-btn"]) {
+    const el = byId(id);
+    if (el) el.disabled = busy;
+  }
+  for (const btn of document.querySelectorAll("button")) btn.disabled = busy;
+  for (const input of document.querySelectorAll("input, textarea, select")) input.disabled = busy;
   byId("review").disabled = busy || !imageReady;
-  byId("apply-suggestion").disabled = busy || suggestion === null;
-  byId("bulk-apply").disabled = busy || bulk === null;
+  byId("save").disabled = busy;
+  byId("approve").disabled = busy;
+  const applySug = byId("apply-suggestion");
+  if (applySug) applySug.disabled = busy || suggestion === null;
+  const bulkApp = byId("bulk-apply");
+  if (bulkApp) bulkApp.disabled = busy || bulk === null;
 }
+
 function clearSuggestion() {
-  suggestion = null; byId("suggestion").textContent = ""; setBusy(busy);
+  suggestion = null; 
+  const el = byId("suggestion");
+  if (el) el.textContent = ""; 
+  setBusy(busy);
 }
+
 function clearBulk() {
-  bulk = null; byId("bulk-results").replaceChildren(); setBusy(busy);
+  bulk = null; 
+  const el = byId("bulk-results");
+  if (el) el.replaceChildren(); 
+  setBusy(busy);
 }
+
 async function api(path, body) {
   const options = {headers: {"Authorization": "Bearer " + token}};
   if (body !== undefined) {
@@ -145,10 +331,324 @@ async function api(path, body) {
   }
   return response;
 }
+
 function option(value, text) {
   const element = document.createElement("option"); element.value = value; element.textContent = text;
   return element;
 }
+
+async function fetchImageBlob(scriptIdx, fieldKey) {
+  const cacheKey = `${scriptIdx}:${fieldKey}:${byId("full-page").checked}`;
+  if (imageCache.has(cacheKey)) return imageCache.get(cacheKey);
+  const path = `/api/image/${scriptIdx}/${byId("full-page").checked ? "full-" : ""}${fieldKey}`;
+  const response = await api(path);
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  imageCache.set(cacheKey, url);
+  return url;
+}
+
+function openModal(src) {
+  byId("modal-img").src = src;
+  byId("img-modal").classList.add("active");
+}
+function closeModal() {
+  byId("img-modal").classList.remove("active");
+}
+
+/* Question-Centric Main Table Rendering */
+async function renderQuestionTable() {
+  const tbody = byId("table-body");
+  tbody.replaceChildren();
+  const isMeta = section === "id" || section === "name" || section === "class";
+
+  // Update tabs
+  document.querySelectorAll(".nav-tab").forEach(tab => {
+    tab.classList.toggle("active", tab.dataset.tab === section);
+  });
+
+  if (isMeta) {
+    byId("scheme-box").style.display = "none";
+    byId("toolbar").style.display = "none";
+    byId("table-head").innerHTML = `
+      <th style="width: 45px;">Row</th>
+      <th style="width: 140px;">Student Name</th>
+      <th style="width: 280px;">Image (${section.toUpperCase()})</th>
+      <th>OCR Recognized</th>
+      <th style="width: 260px;">Matched Roster Student</th>
+      <th style="width: 110px;">Status</th>
+      <th style="width: 90px;">Action</th>
+    `;
+
+    for (let i = 0; i < state.scripts.length; i++) {
+      const s = state.scripts[i];
+      const tr = document.createElement("tr");
+      if (i === script) tr.classList.add("active-row");
+
+      const imgContainer = document.createElement("div");
+      imgContainer.className = "img-container";
+      const img = document.createElement("img");
+      img.alt = `Script ${i+1} ${section}`;
+      imgContainer.append(img);
+      imgContainer.onclick = () => openModal(img.src);
+      fetchImageBlob(i, section).then(url => { img.src = url; }).catch(() => {});
+
+      const selectRoster = document.createElement("select");
+      selectRoster.style.width = "100%";
+      selectRoster.append(option("", "Choose a roster ID"));
+      for (const [id, person] of Object.entries(state.roster)) {
+        selectRoster.append(option(id, `${id} — ${person.name} (${person.class})`));
+      }
+      selectRoster.value = s.reviewed_id == null ? "" : String(s.reviewed_id);
+      selectRoster.onchange = () => {
+        dirty = true;
+        s.reviewed_id = selectRoster.value;
+        if (i === script) byId("reviewed-id").value = selectRoster.value;
+      };
+
+      const statusBadge = document.createElement("span");
+      statusBadge.className = `badge ${s.reviewed ? "badge-success" : "badge-warning"}`;
+      statusBadge.textContent = s.reviewed ? "Reviewed" : "Not reviewed";
+
+      const saveBtn = document.createElement("button");
+      saveBtn.textContent = "Save";
+      saveBtn.onclick = async () => {
+        script = i;
+        byId("reviewed-id").value = selectRoster.value;
+        await save(true);
+      };
+
+      const tdRow = document.createElement("td"); tdRow.textContent = String(i + 1);
+      const tdName = document.createElement("td"); tdName.textContent = s.name_ocr || `Script ${i + 1}`;
+      const tdImg = document.createElement("td"); tdImg.append(imgContainer);
+      const tdOcr = document.createElement("td"); 
+      tdOcr.textContent = (section === "id" ? s.id_ocr : (section === "name" ? s.name_ocr : s.class_ocr)) || "N/A";
+      const tdRoster = document.createElement("td"); tdRoster.append(selectRoster);
+      const tdStatus = document.createElement("td"); tdStatus.append(statusBadge);
+      const tdAction = document.createElement("td"); tdAction.append(saveBtn);
+
+      tr.append(tdRow, tdName, tdImg, tdOcr, tdRoster, tdStatus, tdAction);
+      tr.onclick = (e) => {
+        if (e.target.tagName !== "SELECT" && e.target.tagName !== "BUTTON" && e.target.tagName !== "INPUT") {
+          script = i;
+          renderSyncInspector();
+        }
+      };
+      tbody.append(tr);
+    }
+  } else {
+    // Graded Question View
+    byId("scheme-box").style.display = "block";
+    byId("toolbar").style.display = "flex";
+    const q = Number(section);
+    const question = state.questions[q];
+
+    byId("current-q-title").textContent = `Question ${question.question_number}: ${question.question_text || ""}`;
+    byId("scheme").textContent = `Marking Scheme: ${question.marking_scheme}\nFull Marks: ${question.marks}`;
+    byId("fullMark").value = question.marks;
+
+    byId("table-head").innerHTML = `
+      <th style="width: 45px;">Row</th>
+      <th class="col-student" style="width: 140px;">Student</th>
+      <th class="col-image" style="width: 280px;">Image</th>
+      <th class="col-answer">Answer</th>
+      <th class="col-mark" style="width: 110px;">Mark</th>
+      <th class="col-similarity" style="width: 85px;">Similarity</th>
+      <th class="col-reasoning">Reasoning</th>
+      <th style="width: 120px;">Review</th>
+    `;
+
+    for (let i = 0; i < state.scripts.length; i++) {
+      const s = state.scripts[i];
+      const m = state.marks[i][q];
+      const tr = document.createElement("tr");
+      if (i === script) tr.classList.add("active-row");
+
+      const imgContainer = document.createElement("div");
+      imgContainer.className = "img-container";
+      const img = document.createElement("img");
+      img.alt = `Script ${i+1} Q${question.question_number}`;
+      imgContainer.append(img);
+      imgContainer.onclick = () => openModal(img.src);
+      fetchImageBlob(i, String(q)).then(url => { img.src = url; }).catch(() => {});
+
+      const answerArea = document.createElement("textarea");
+      answerArea.className = "answer-input";
+      answerArea.value = m.answer || "";
+      answerArea.oninput = () => {
+        dirty = true;
+        m.answer = answerArea.value;
+        if (i === script) byId("answer").value = answerArea.value;
+      };
+
+      const markInput = document.createElement("input");
+      markInput.type = "number";
+      markInput.className = `mark-input ${m.manual_mark != null && String(m.manual_mark).trim() !== "" ? "locked" : ""}`;
+      markInput.min = "0";
+      markInput.max = String(question.marks);
+      markInput.step = byId("granularity").value;
+      const currentVal = m.manual_mark != null && String(m.manual_mark).trim() !== "" 
+        ? m.manual_mark : (m.moderated_mark != null ? m.moderated_mark : (m.raw_mark != null ? m.raw_mark : ""));
+      markInput.value = currentVal != null ? String(currentVal) : "";
+
+      const lockBadge = document.createElement("div");
+      lockBadge.className = "lock-badge";
+      lockBadge.textContent = m.manual_mark != null && String(m.manual_mark).trim() !== "" ? "Manual Mark" : "AI Mark";
+
+      markInput.oninput = () => {
+        dirty = true;
+        m.manual_mark = markInput.value;
+        markInput.classList.add("locked");
+        lockBadge.textContent = "Manual Mark";
+        if (i === script) byId("manual").value = markInput.value;
+      };
+
+      const reasoningDiv = document.createElement("div");
+      const reasoningArea = document.createElement("textarea");
+      reasoningArea.className = "reasoning-input";
+      reasoningArea.value = m.reasoning || "";
+      reasoningArea.oninput = () => {
+        dirty = true;
+        m.reasoning = reasoningArea.value;
+        if (i === script) byId("reasoning").value = reasoningArea.value;
+      };
+      reasoningDiv.append(reasoningArea);
+
+      if (m.moderator_flag || m.grading_failed) {
+        const flagBox = document.createElement("div");
+        flagBox.className = "moderator-note";
+        let note = "";
+        if (m.grading_failed) note += "⚠️ AI grading failed. Manual mark required.\n";
+        if (m.moderator_flag) {
+          note += `Moderation Note: ${m.moderator_note || "Flagged"}`;
+          if (m.raw_mark !== m.moderated_mark) {
+            note += ` (Adjusted from ${m.raw_mark} to ${m.moderated_mark})`;
+          }
+        }
+        flagBox.textContent = note;
+        reasoningDiv.append(flagBox);
+      }
+
+      const statusBadge = document.createElement("span");
+      statusBadge.className = `badge ${m.reviewed ? "badge-success" : (m.grading_failed ? "badge-danger" : "badge-warning")}`;
+      statusBadge.textContent = m.reviewed ? "Reviewed" : "Not reviewed";
+
+      const saveBtn = document.createElement("button");
+      saveBtn.textContent = "Review";
+      saveBtn.onclick = async () => {
+        script = i;
+        byId("answer").value = answerArea.value;
+        byId("reasoning").value = reasoningArea.value;
+        byId("manual").value = markInput.value;
+        await save(true);
+      };
+
+      const markTd = document.createElement("td");
+      markTd.className = "col-mark";
+      markTd.append(markInput, lockBadge);
+
+      const simTd = document.createElement("td");
+      simTd.className = "col-similarity";
+      simTd.textContent = m.similarity_score != null ? Number(m.similarity_score).toFixed(2) : "N/A";
+
+      const tdRow = document.createElement("td"); tdRow.textContent = String(i + 1);
+      const tdStudent = document.createElement("td"); 
+      tdStudent.className = "col-student";
+      tdStudent.textContent = `${s.reviewed_id || s.id_ocr || "Script " + (i+1)}`;
+      const tdImg = document.createElement("td"); tdImg.className = "col-image"; tdImg.append(imgContainer);
+      const tdAnswer = document.createElement("td"); tdAnswer.className = "col-answer"; tdAnswer.append(answerArea);
+      const tdReason = document.createElement("td"); tdReason.className = "col-reasoning"; tdReason.append(reasoningDiv);
+      const tdAction = document.createElement("td"); tdAction.append(statusBadge, document.createElement("br"), saveBtn);
+
+      tr.append(tdRow, tdStudent, tdImg, tdAnswer, markTd, simTd, tdReason, tdAction);
+      tr.onclick = (e) => {
+        if (e.target.tagName !== "TEXTAREA" && e.target.tagName !== "INPUT" && e.target.tagName !== "BUTTON") {
+          script = i;
+          renderSyncInspector();
+        }
+      };
+      tbody.append(tr);
+    }
+  }
+}
+
+/* Original Project Granularity & Similarity Recalculate */
+function applySimilarityFormula() {
+  if (section === "id" || section === "name" || section === "class") return;
+  const q = Number(section);
+  const question = state.questions[q];
+  const fullMark = Number(byId("fullMark").value) || question.marks;
+  const minSim = Number(byId("minimumSimilarity").value);
+  const gran = Number(byId("granularity").value) || 1.0;
+
+  for (let i = 0; i < state.scripts.length; i++) {
+    const m = state.marks[i][q];
+    // If manually overridden, do not overwrite unless blank
+    if (m.manual_mark != null && String(m.manual_mark).trim() !== "") continue;
+    const sim = m.similarity_score != null ? Number(m.similarity_score) : 0;
+    let markVal;
+    if (sim >= minSim) {
+      markVal = fullMark;
+    } else {
+      markVal = Math.floor((fullMark * sim) / gran) * gran;
+    }
+    m.manual_mark = String(markVal);
+    dirty = true;
+  }
+  renderQuestionTable().catch(e => message(e.message));
+  message(`Recalculated marks with full mark ${fullMark}, similarity >= ${minSim}, step ${gran}.`);
+}
+
+byId("apply-sliders-btn").onclick = applySimilarityFormula;
+byId("minimumSimilarity").oninput = e => {
+  byId("currentSimilarity").textContent = Number(e.target.value).toFixed(2);
+};
+byId("granularity").oninput = e => {
+  byId("currentGranularity").textContent = Number(e.target.value).toFixed(2);
+};
+byId("zoom").oninput = e => {
+  currentZoom = Number(e.target.value);
+  byId("currentZoom").textContent = currentZoom.toFixed(1) + "x";
+  document.querySelectorAll(".img-container img").forEach(img => {
+    img.style.maxHeight = `${180 * currentZoom}px`;
+    img.style.maxWidth = `${320 * currentZoom}px`;
+  });
+};
+
+/* Column Visibility Toggles (matches original project) */
+document.querySelectorAll(".toggle-btn").forEach(btn => {
+  btn.onclick = () => {
+    const colClass = btn.dataset.col;
+    const active = btn.classList.toggle("active");
+    document.querySelectorAll("." + colClass).forEach(el => {
+      el.style.display = active ? "" : "none";
+    });
+  };
+});
+
+/* Question Navigation */
+function navigateQuestion(delta) {
+  if (dirty && !confirm("Discard unsaved edits?")) return;
+  dirty = false;
+  if (section === "id" && delta > 0) section = "name";
+  else if (section === "name" && delta > 0) section = "class";
+  else if (section === "class" && delta > 0) section = "0";
+  else if (section === "class" && delta < 0) section = "name";
+  else if (section === "name" && delta < 0) section = "id";
+  else if (section === "0" && delta < 0) section = "class";
+  else if (!isNaN(Number(section))) {
+    const nextQ = Number(section) + delta;
+    if (nextQ >= 0 && nextQ < state.questions.length) {
+      section = String(nextQ);
+    }
+  }
+  renderQuestionTable().then(renderSyncInspector).catch(e => message(e.message));
+}
+
+byId("prev-q-btn").onclick = () => navigateQuestion(-1);
+byId("next-q-btn").onclick = () => navigateQuestion(1);
+
+/* Comparison Table */
 function renderComparison() {
   const q = Number(byId("compare-question").value), filter = byId("compare-filter").value;
   const entries = state.scripts.map(s => ({script: s, mark: state.marks[s.script_index][q]}))
@@ -178,28 +678,17 @@ function renderComparison() {
     button.onclick = () => {
       if (dirty && !confirm("Discard unsaved edits?")) return;
       script = current.script_index; section = String(q); dirty = false;
-      render().catch(e => message(e.message));
+      renderQuestionTable().then(renderSyncInspector).catch(e => message(e.message));
     };
     action.append(button); row.append(action); body.append(row);
   }
 }
-async function image(field) {
-  const generation = ++imageGeneration;
-  imageReady = false; setBusy(busy);
-  byId("image").removeAttribute("src");
-  const response = await api(`/api/image/${script}/${byId("full-page").checked ? "full-" : ""}${field}`);
-  const blob = await response.blob();
-  if (generation !== imageGeneration) return;
-  if (imageUrl) URL.revokeObjectURL(imageUrl);
-  imageUrl = URL.createObjectURL(blob);
-  byId("image").src = imageUrl;
-  imageReady = true; setBusy(busy);
-}
-async function render() {
+
+async function renderSyncInspector() {
   clearSuggestion();
   byId("script").value = String(script); byId("section").value = section;
   const current = state.scripts[script];
-  const identity = section === "id";
+  const identity = section === "id" || section === "name" || section === "class";
   byId("script-fields").hidden = !identity; byId("mark-fields").hidden = identity;
   if (identity) {
     byId("ocr").textContent = `OCR ID: ${current.id_ocr} | OCR name: ${current.name_ocr ?? "unavailable"} | OCR class: ${current.class_ocr}` +
@@ -229,30 +718,84 @@ async function render() {
     await image(section);
   }
 }
+
+async function image(field) {
+  const generation = ++imageGeneration;
+  imageReady = false; setBusy(busy);
+  byId("image").removeAttribute("src");
+  const response = await api(`/api/image/${script}/${byId("full-page").checked ? "full-" : ""}${field}`);
+  const blob = await response.blob();
+  if (generation !== imageGeneration) return;
+  if (imageUrl) URL.revokeObjectURL(imageUrl);
+  imageUrl = URL.createObjectURL(blob);
+  byId("image").src = imageUrl;
+  imageReady = true; setBusy(busy);
+}
+
 async function reload() {
   clearBulk();
   state = await (await api("/api/state")).json();
+
+  // Populate dynamic question tabs
+  const tabContainer = byId("question-tabs");
+  tabContainer.querySelectorAll(".q-tab").forEach(e => e.remove());
+  state.questions.forEach((q, i) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "nav-tab q-tab";
+    btn.dataset.tab = String(i);
+    btn.textContent = `Q${q.question_number}`;
+    btn.onclick = () => {
+      if (dirty && !confirm("Discard unsaved edits?")) return;
+      dirty = false;
+      section = String(i);
+      renderQuestionTable().then(renderSyncInspector).catch(e => message(e.message));
+    };
+    tabContainer.append(btn);
+  });
+
+  // Setup metadata tab handlers
+  ["id", "name", "class"].forEach(key => {
+    byId(`tab-${key}`).onclick = () => {
+      if (dirty && !confirm("Discard unsaved edits?")) return;
+      dirty = false;
+      section = key;
+      renderQuestionTable().then(renderSyncInspector).catch(e => message(e.message));
+    };
+  });
+
   byId("script").replaceChildren(...state.scripts.map(s => option(String(s.script_index), `Script ${s.script_index + 1}`)));
-  byId("section").replaceChildren(option("id", "Identity"),
-    ...state.questions.map((q, i) => option(String(i), `Question ${q.question_number}`)));
+  byId("section").replaceChildren(
+    option("id", "Identity"),
+    option("name", "Name"),
+    option("class", "Class"),
+    ...state.questions.map((q, i) => option(String(i), `Question ${q.question_number}`))
+  );
+
   const selectedQuestion = byId("compare-question").value;
   byId("compare-question").replaceChildren(
-    ...state.questions.map((q, i) => option(String(i), `Question ${q.question_number}`)));
+    ...state.questions.map((q, i) => option(String(i), `Question ${q.question_number}`))
+  );
   if (selectedQuestion !== "") byId("compare-question").value = selectedQuestion;
+
   renderComparison();
-  await render();
+  await renderQuestionTable();
+  await renderSyncInspector();
 }
+
 for (const id of ["compare-question", "compare-filter", "compare-sort"])
   byId(id).onchange = renderComparison;
 byId("compare-question").addEventListener("change", clearBulk);
 for (const id of ["bulk-threshold", "bulk-increment"])
   byId(id).addEventListener("input", clearBulk);
+
 byId("refresh-comparison").onclick = async () => {
   if (dirty && !confirm("Discard unsaved edits?")) return;
   setBusy(true); message("Refreshing saved review...");
   try { await reload(); dirty = false; message("Saved review refreshed; no changes were made."); }
   catch (e) { message(e.message); } finally { setBusy(false); }
 };
+
 byId("bulk-preview").onclick = async () => {
   if (dirty) { message("Save or discard the current edits before previewing."); return; }
   clearBulk(); setBusy(true); message("Calculating saved-review suggestions...");
@@ -274,6 +817,7 @@ byId("bulk-preview").onclick = async () => {
     message("Preview only; no scores have changed. Select suggestions explicitly.");
   } catch (e) { message(e.message); } finally { setBusy(false); }
 };
+
 byId("bulk-apply").onclick = async () => {
   if (dirty || bulk === null) { message("Save edits and preview again before applying."); return; }
   const selected = [...byId("bulk-results").querySelectorAll("input:checked")]
@@ -286,22 +830,30 @@ byId("bulk-apply").onclick = async () => {
     await reload(); message(`Saved ${result.updated} unreviewed drafts. Earlier approval is stale.`);
   } catch (e) { message(e.message); } finally { setBusy(false); }
 };
+
 function change(which, value) {
   if (dirty && !confirm("Discard unsaved edits?")) {
     byId(which).value = which === "script" ? String(script) : section; return;
   }
   if (which === "script") script = Number(value); else section = value;
-  dirty = false; render().catch(e => message(e.message));
+  dirty = false;
+  renderQuestionTable().then(renderSyncInspector).catch(e => message(e.message));
 }
+
 byId("script").onchange = e => change("script", e.target.value);
 byId("section").onchange = e => change("section", e.target.value);
 byId("metadata-image").onchange = e => image(e.target.value).catch(err => message(err.message));
-byId("full-page").onchange = () => image(section === "id" ? byId("metadata-image").value : section)
-  .catch(err => message(err.message));
+byId("full-page").onchange = () => {
+  imageCache.clear();
+  image(section === "id" || section === "name" || section === "class" ? byId("metadata-image").value : section).catch(err => message(err.message));
+  renderQuestionTable().catch(() => {});
+};
+
 for (const id of ["reviewed-id", "answer", "reasoning", "manual"])
   byId(id).addEventListener("input", () => { dirty = true; });
 for (const id of ["answer", "threshold", "increment"])
   byId(id).addEventListener("input", clearSuggestion);
+
 byId("preview-crop").onclick = async () => {
   const fields = ["x", "y", "width", "height"], coords = {};
   for (const key of fields) {
@@ -325,6 +877,7 @@ byId("preview-crop").onclick = async () => {
     message("Temporary visual preview only; grading inputs are unchanged.");
   } catch (e) { message(e.message); } finally { setBusy(false); }
 };
+
 byId("calculate").onclick = async () => {
   clearSuggestion();
   if (byId("answer").value !== state.marks[script][Number(section)].original_answer) {
@@ -341,15 +894,18 @@ byId("calculate").onclick = async () => {
     message("Suggestion only; no mark has been changed.");
   } catch (e) { message(e.message); } finally { setBusy(false); }
 };
+
 byId("apply-suggestion").onclick = () => {
   if (suggestion === null) return;
   byId("manual").value = suggestion; dirty = true;
   message("Suggestion copied to manual mark; save and review it to persist.");
   clearSuggestion();
+  renderQuestionTable().catch(() => {});
 };
+
 async function save(reviewed) {
   const body = {revision: state.revision, script_index: script, reviewed};
-  if (section === "id") {
+  if (section === "id" || section === "name" || section === "class") {
     body.kind = "script"; body.reviewed_id = byId("reviewed-id").value;
   } else {
     body.kind = "mark"; body.question_index = Number(section);
@@ -363,8 +919,10 @@ async function save(reviewed) {
     message(reviewed ? "Saved and marked reviewed. Any earlier approval is stale." : "Draft saved; item is not reviewed.");
   } finally { setBusy(false); }
 }
+
 byId("save").onclick = () => save(false).catch(e => message(e.message));
 byId("review").onclick = () => save(true).catch(e => message(e.message));
+
 byId("approve").onclick = async () => {
   if (dirty) { message("Save the current item before approval."); return; }
   if (!confirm("Approve all reviewed identities and scores?")) return;
@@ -374,7 +932,9 @@ byId("approve").onclick = async () => {
     message(`Approved ${result.students} students and ${result.marks} marks.`);
   } catch (e) { message(e.message); } finally { setBusy(false); }
 };
+
 window.addEventListener("beforeunload", e => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
+
 (async () => {
   setBusy(true);
   try {
