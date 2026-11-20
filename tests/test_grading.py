@@ -368,9 +368,8 @@ class GradingTests(unittest.TestCase):
                 for index, student in enumerate(("001", "002")):
                     page.locator("#script").select_option(str(index))
                     page.locator("#section").select_option("id")
-                    page.locator("#reviewed-id").select_option(student)
-                    page.locator("#review").click()
-                    page.get_by_text("Saved and marked reviewed. Any earlier approval is stale.").wait_for()
+                    page.locator("#marksheet-tbody select").nth(index).select_option(student)
+                    page.get_by_text(f"Script #{index + 1} identity saved and reviewed.").wait_for()
                     page.locator("#section").select_option("0")
                     if index == 0:
                         page.get_by_text("Similarity-based mark suggestion").click()
