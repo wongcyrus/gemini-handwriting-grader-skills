@@ -11,6 +11,18 @@ version: 1
 
 # Human-reviewed handwriting grading
 
+## Prerequisites
+
+For ADK-style agent workflows, telemetry, and live progress tracing, ensure the Google Agent Development Kit (ADK) skills suite is installed:
+```bash
+uvx google-agents-cli setup
+```
+Or install the python package directly into your environment:
+```bash
+pip install google-adk
+```
+This skill leverages ADK patterns for structured execution, token/cost auditing (`cost-report`), and real-time step progress updates.
+
 ## Scope and availability
 
 Use the Python tools in this repository, not notebooks. Answer sheets, preflight, rubric

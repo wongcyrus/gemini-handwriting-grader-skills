@@ -10,6 +10,9 @@ from openpyxl import load_workbook
 from pypdf import PdfReader
 
 
+from .telemetry import TelemetryTracker, set_active_tracker, get_active_tracker
+
+
 def load_config(path):
     with path.open(encoding="utf-8") as file:
         config = yaml.safe_load(file)
@@ -260,6 +263,8 @@ def main(argv=None):
     advanced_report.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     advanced_report.add_argument("--include-infographics", action="store_true", help="Include current AI images")
     advanced_report.add_argument("--confirm-images-reviewed", action="store_true", help="Confirm infographic review")
+    cost_report = commands.add_parser("cost-report", help="Generate or display token, model and cost breakdown")
+    cost_report.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     email_preview = commands.add_parser("preview-email", help="Create a private recipient and attachment preview")
     email_preview.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     email_preview.add_argument("--settings", required=True, type=Path, help="Path to email settings YAML")
@@ -271,7 +276,7 @@ def main(argv=None):
     email_send.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     email_send.add_argument("--confirm-send", action="store_true", help="Explicitly confirm dispatch")
     for selected in (resume, grade_review, grade_check, grade_approve, report, analytics, ai_analysis, analysis_approve,
-                     infographics, advanced_report, email_preview, email_approve, email_send):
+                     infographics, advanced_report, cost_report, email_preview, email_approve, email_send):
         selected.add_argument("--run", help="Child run ID (default: original run)")
     args = parser.parse_args(argv)
     try:
@@ -537,15 +542,22 @@ def main(argv=None):
         if not args.confirm_cost:
             print("No request sent. Obtain user approval and rerun with --confirm-cost.", file=sys.stderr)
             return 1
+        output_dir = resolve_path(path.parent, config["exam"]["output_dir"]) / "grading"
+        tracker = TelemetryTracker(log_dir=output_dir / "telemetry")
+        set_active_tracker(tracker)
         try:
             output = grade_exam(
                 config, path.parent, path, args.model_config, args.project.strip(),
                 args.location.strip(), summary,
             )
+            tracker.write_cost_report(output)
         except Exception as exc:
+            tracker.write_cost_report(output_dir)
             print(f"Grading failed ({type(exc).__name__}); requests may have incurred charges. "
                   "Inspect any partial run before choosing a new output directory.", file=sys.stderr)
             return 1
+        finally:
+            set_active_tracker(None)
         print(f"Grading results and review workbook saved to {output}. Human review is required.")
         return 0
     if args.command == "review-grading":
@@ -680,12 +692,19 @@ def main(argv=None):
         if not args.confirm_cost:
             print("No request sent. Obtain user approval and rerun with --confirm-cost.", file=sys.stderr)
             return 1
+        analysis_dir = validated[0].parent / "ai-analysis"
+        tracker = TelemetryTracker(log_dir=analysis_dir / "telemetry")
+        set_active_tracker(tracker)
         try:
             output = create_analysis(config, path.parent, path, args.model_config, args.project, args.location,
                                      run_id=args.run)
+            tracker.write_cost_report(output)
         except Exception as exc:
+            tracker.write_cost_report(analysis_dir)
             print(f"AI analysis failed ({type(exc).__name__}); requests may have incurred charges.", file=sys.stderr)
             return 1
+        finally:
+            set_active_tracker(None)
         print(f"AI analyses saved to {output}. Human review is required.")
         return 0
     if args.command == "approve-analysis":
@@ -725,13 +744,19 @@ def main(argv=None):
         if not args.confirm_cost:
             print("No request sent. Obtain user approval and rerun with --confirm-cost.", file=sys.stderr)
             return 1
+        tracker = TelemetryTracker(log_dir=root / "telemetry")
+        set_active_tracker(tracker)
         try:
             output = create_infographics(config, path.parent, path, args.model_config, args.project, args.location,
                                          run_id=args.run)
+            tracker.write_cost_report(root)
         except Exception as exc:
+            tracker.write_cost_report(root)
             print(f"Infographic generation failed ({type(exc).__name__}); requests may have incurred charges.",
                   file=sys.stderr)
             return 1
+        finally:
+            set_active_tracker(None)
         print(f"Infographics saved to {output}. Review them before sharing.")
         return 0
     if args.command == "advanced-report":
@@ -744,6 +769,49 @@ def main(argv=None):
             print(f"Advanced reporting failed: {exc}", file=sys.stderr)
             return 1
         print(f"Advanced reports saved to {output}. Review them before sharing.")
+        return 0
+    if args.command == "cost-report":
+        from .run_context import run_directory
+
+        try:
+            grading_dir = run_directory(config, path.parent, args.run) / "grading"
+            telemetry_file = grading_dir / "telemetry" / "gemini_usage.jsonl"
+            ai_telemetry_file = grading_dir.parent / "ai-analysis" / "telemetry" / "gemini_usage.jsonl"
+            
+            tracker = TelemetryTracker(log_dir=grading_dir / "telemetry")
+            if telemetry_file.exists():
+                tracker.load_existing_log(telemetry_file)
+            if ai_telemetry_file.exists():
+                tracker.load_existing_log(ai_telemetry_file)
+
+            if not tracker.traces:
+                print(f"No telemetry logs found in {grading_dir / 'telemetry'} or {grading_dir.parent / 'ai-analysis' / 'telemetry'}.")
+                return 0
+
+            summary = tracker.get_summary()
+            cost_file = tracker.write_cost_report(grading_dir)
+            print("============================================================")
+            print("                ADK GEMINI USAGE & COST REPORT              ")
+            print("============================================================")
+            print(f"Total API Calls:    {summary['total_calls']}")
+            print(f"Total Input Tokens: {summary['total_input_tokens']:,}")
+            print(f"Total Output Tokens:{summary['total_output_tokens']:,}")
+            print(f"Cached Tokens:      {summary['total_cached_tokens']:,}")
+            print(f"Images Generated:   {summary['total_images']}")
+            print(f"Estimated Cost:     ${summary['total_cost_usd']:.4f} USD")
+            print("------------------------------------------------------------")
+            print("By Phase Breakdown:")
+            for phase, p_stat in summary.get("by_phase", {}).items():
+                print(f"  - {phase:15}: {p_stat['calls']} calls, {p_stat['total_tokens']:,} tokens, ${p_stat['cost_usd']:.4f}")
+            print("------------------------------------------------------------")
+            print("By Model Breakdown:")
+            for model, m_stat in summary.get("by_model", {}).items():
+                print(f"  - {model:20}: {m_stat['calls']} calls, {m_stat['total_tokens']:,} tokens, ${m_stat['cost_usd']:.4f}")
+            print("============================================================")
+            print(f"Detailed Excel and JSON reports written to: {cost_file.parent}")
+        except Exception as exc:
+            print(f"Failed to generate cost report: {exc}", file=sys.stderr)
+            return 1
         return 0
     if args.command == "preview-email":
         from .distribution import preview_email

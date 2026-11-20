@@ -6,6 +6,7 @@ import math
 import shutil
 import subprocess
 import tempfile
+import time
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -21,6 +22,7 @@ from .regions import (
 )
 from .rubric import question_key, read_approved_rubric
 from .suggestions import load_model_settings
+from .telemetry import get_active_tracker
 
 
 class GradeResponse(BaseModel):
@@ -128,11 +130,22 @@ class VertexGrader:
             f"Extract only the handwritten {field} from this image. "
             "Preserve text and line breaks. Return an empty response if blank; do not guess."
         )
+        tracker = get_active_tracker()
+        start = time.perf_counter()
         response = self.client.models.generate_content(
             model=self.models["ocr"],
             contents=[prompt, types.Part.from_bytes(data=image, mime_type="image/png")],
             config=types.GenerateContentConfig(temperature=0, max_output_tokens=4096),
         )
+        duration = time.perf_counter() - start
+        if tracker:
+            tracker.record_call(
+                phase="ocr",
+                step_label=f"OCR field: {field}",
+                model=self.models["ocr"],
+                usage_metadata=getattr(response, "usage_metadata", None),
+                duration_sec=duration,
+            )
         if response.text is None:
             if getattr(response, "candidates", None):
                 return ""
@@ -157,6 +170,8 @@ class VertexGrader:
             contents.append(types.Part.from_bytes(data=image, mime_type="image/png"))
         elif answer:
             contents.append(f"Student answer: {answer}")
+        tracker = get_active_tracker()
+        start = time.perf_counter()
         response = self.client.models.generate_content(
             model=self.models["grading"], contents=contents,
             config=types.GenerateContentConfig(
@@ -164,6 +179,15 @@ class VertexGrader:
                 response_schema=GradeResponse,
             ),
         )
+        duration = time.perf_counter() - start
+        if tracker:
+            tracker.record_call(
+                phase="grading",
+                step_label=f"Grade Q{question.get('question_number')}",
+                model=self.models["grading"],
+                usage_metadata=getattr(response, "usage_metadata", None),
+                duration_sec=duration,
+            )
         result = (GradeResponse.model_validate(response.parsed) if response.parsed is not None
                   else GradeResponse.model_validate_json(response.text))
         if (not math.isfinite(result.mark) or not 0 <= result.mark <= question["marks"]
@@ -179,6 +203,8 @@ class VertexGrader:
             + json.dumps({"question": question["question_text"], "scheme": question["marking_scheme"],
                           "maximum": question["marks"], "entries": entries}, ensure_ascii=False)
         )
+        tracker = get_active_tracker()
+        start = time.perf_counter()
         response = self.client.models.generate_content(
             model=self.models["moderation"], contents=prompt,
             config=types.GenerateContentConfig(
@@ -186,6 +212,15 @@ class VertexGrader:
                 response_schema=ModerationResponse,
             ),
         )
+        duration = time.perf_counter() - start
+        if tracker:
+            tracker.record_call(
+                phase="moderation",
+                step_label=f"Moderate Q{question.get('question_number')}",
+                model=self.models["moderation"],
+                usage_metadata=getattr(response, "usage_metadata", None),
+                duration_sec=duration,
+            )
         result = (ModerationResponse.model_validate(response.parsed) if response.parsed is not None
                   else ModerationResponse.model_validate_json(response.text))
         expected = {entry["script_index"] for entry in entries}
@@ -251,6 +286,7 @@ def continue_grading(target, results, questions, boxes, summary, stride, models,
     image_dir = target / "images"
     if metadata_fields not in (["ID", "CLASS"], ["ID", "CLASS", "NAME"]):
         raise ValueError("Grading checkpoint has invalid metadata fields")
+    tracker = get_active_tracker()
     with provider_factory(models, project, location) as underlying:
         provider = CachedGrader(underlying, cache_root, cache_agents, models, project, location)
         for script_index in range(summary["students"]):
@@ -268,13 +304,29 @@ def continue_grading(target, results, questions, boxes, summary, stride, models,
                 attendance_guard()
             results["scripts"].append(metadata)
             atomic_json(target / "results.json", results)
-            print(f"[Metadata {script_index + 1}/{summary['students']}] Extracted student identifiers", flush=True)
+            if tracker:
+                tracker.show_progress(
+                    phase="metadata_ocr",
+                    current=script_index + 1,
+                    total=summary["students"],
+                    item_label=f"Script #{script_index + 1} identifiers",
+                )
+            else:
+                print(f"[Metadata {script_index + 1}/{summary['students']}] Extracted student identifiers", flush=True)
         total_q = len(questions)
         for q_index, question in enumerate(questions):
             key = question_key(question["question_number"])
             page, box = boxes[key]
             rows = []
-            print(f"[{q_index + 1}/{total_q}] Grading question {question['question_number']} ({summary['students']} scripts)...", flush=True)
+            if tracker:
+                tracker.show_progress(
+                    phase="grading_question",
+                    current=q_index + 1,
+                    total=total_q,
+                    item_label=f"Starting Q{question['question_number']} ({summary['students']} scripts)",
+                )
+            else:
+                print(f"[{q_index + 1}/{total_q}] Grading question {question['question_number']} ({summary['students']} scripts)...", flush=True)
             for script_index in range(summary["students"]):
                 box = (effective_crops or {}).get(key, [])[script_index] if key in (effective_crops or {}) else boxes[key][1]
                 row = marks.get((script_index, key))
@@ -303,6 +355,13 @@ def continue_grading(target, results, questions, boxes, summary, stride, models,
                     attendance_guard()
                     results["marks"].append(row)
                     atomic_json(target / "results.json", results)
+                    if tracker:
+                        tracker.show_progress(
+                            phase="grading_script",
+                            current=script_index + 1,
+                            total=summary["students"],
+                            item_label=f"Q{question['question_number']} Script #{script_index + 1}",
+                        )
                 rows.append(row)
             if key in moderated:
                 continue
@@ -330,7 +389,15 @@ def continue_grading(target, results, questions, boxes, summary, stride, models,
                         row["moderator_note"] = "moderation_skipped_due_to_grading_failure"
             moderated.append(key)
             atomic_json(target / "results.json", results)
-            print(f"[{q_index + 1}/{total_q}] Question {question['question_number']} complete (graded & moderated)", flush=True)
+            if tracker:
+                tracker.show_progress(
+                    phase="moderation_done",
+                    current=q_index + 1,
+                    total=total_q,
+                    item_label=f"Q{question['question_number']} completed & moderated",
+                )
+            else:
+                print(f"[{q_index + 1}/{total_q}] Question {question['question_number']} complete (graded & moderated)", flush=True)
 
 
 @contextmanager
@@ -370,6 +437,9 @@ def finish_grading(config, config_dir, config_path, target, manifest, results):
     results["completed"] = True
     atomic_json(target / "results.json", results)
     write_review(target / "review.xlsx", results)
+    tracker = get_active_tracker()
+    if tracker:
+        tracker.write_cost_report(target)
 
 
 def resume_grading(config, config_dir, config_path, summary, provider_factory=VertexGrader):

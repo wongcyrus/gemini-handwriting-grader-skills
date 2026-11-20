@@ -27,6 +27,11 @@
 3. Run `grade --exam /path/to/exam.yaml --model-config /path/to/config.yaml
    --project PROJECT_ID --location LOCATION` to preview. Explain the request
    count and data sent; repeat with `--confirm-cost` only after approval.
+   During grading, real-time step progress and token usage are monitored
+   following ADK observability conventions.
+   To inspect model usage, token count, and cost breakdown at any time, run:
+   `.venv/bin/handwriting-grader cost-report --exam /path/to/exam.yaml`
+   (generates `cost_report.xlsx` and `cost_summary.json` in the run directory).
 4. Ask the teacher to run `review-grading --exam /path/to/exam.yaml` and open
    the full printed local URL. The score editor presents a one-page blind
    marksheet per question (hiding student IDs during question review), groups
