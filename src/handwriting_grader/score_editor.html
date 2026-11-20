@@ -267,11 +267,16 @@ dialog#image-modal img {
 </head>
 <body>
 
-<header>
-  <h1>Review grades</h1>
-  <p class="instructions">Verify every identity and answer against the image. Correct the answer and reasoning where needed.
+<header style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.75rem;">
+  <div>
+    <h1>Review grades</h1>
+    <p class="instructions">Verify every identity and answer against the image. Correct the answer and reasoning where needed.
 Failed or flagged grades and corrected answers require a manual mark. Save each item as reviewed.
 Keep this URL private and close spreadsheet editors while using this interface.</p>
+  </div>
+  <div class="bar" style="padding-top:0.2rem;">
+    <button id="approve" class="btn-success" title="Validates and approves all student identities and all questions for the whole assignment">Approve Entire Assignment</button>
+  </div>
 </header>
 
 <div class="top-nav-row">
@@ -283,7 +288,6 @@ Keep this URL private and close spreadsheet editors while using this interface.<
       <button id="save">Save draft</button>
       <button id="review" class="btn-primary">Save and mark reviewed</button>
     </span>
-    <button id="approve" class="btn-success">Approve all grading</button>
   </div>
 </div>
 <div id="questions-drawer" class="questions-drawer" hidden></div>
