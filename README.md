@@ -29,6 +29,23 @@ python3 -m venv .venv
 cp exam.yaml.template exam.yaml
 ```
 
+### Cross-platform compatibility (Windows, macOS, Linux)
+
+PDF rendering is powered by pure-Python `pypdfium2` (Google PDFium engine bundled inside wheels), working out of the box across Windows, macOS, and Linux without requiring system Poppler or `pdftoppm` installations. (If `pdftoppm` is present, it is automatically used as a transparent fallback).
+
+For optional answer sheet generation (`answer-sheets`), LibreOffice (`soffice`) is required to convert Word templates to PDF.
+
+### Google Agent Development Kit (ADK) skills
+
+For ADK-style agent workflows, real-time step progress tracking, and model/token cost auditing:
+```sh
+uvx google-agents-cli setup
+```
+Or install directly:
+```sh
+pip install google-adk
+```
+
 Edit `exam.yaml` locally. Relative paths are resolved relative to that file.
 Never commit actual exam configurations, student files, results, credentials,
 cache entries or saved notebook output. The ignore rules are a precaution,
@@ -72,7 +89,7 @@ LibreOffice, select an output directory it can access (often not `/tmp`).
 
 ## Review regions
 
-Install Poppler (`pdftoppm` must be on `PATH`). After confirming scan order,
+PDF pages are rendered automatically at 200 DPI via `pypdfium2` (cross-platform). After confirming scan order,
 page count and the shared-layout assumption:
 
 ```sh
@@ -170,11 +187,18 @@ Default Credentials. Preview the target and maximum request count:
 ```
 
 After explicit approval to send student work and incur charges, repeat with
-`--confirm-cost`. A partial failure can still incur charges. Supported
+`--confirm-cost`. During execution, real-time step progress and token usage
+are displayed following ADK conventions. A partial failure can still incur charges. Supported
 interrupted runs can be resumed with `resume-grading --exam exam.yaml`,
 followed by `--confirm-cost` after review; in-flight requests may repeat and
 be billed. Older checkpoints and existing reviews cannot be resumed. A stale
 `processing.lock` requires manual investigation; never remove a live lock.
+
+To inspect token consumption, model breakdown, and estimated costs at any time:
+```sh
+.venv/bin/handwriting-grader cost-report --exam exam.yaml
+```
+This generates `cost_report.xlsx` (Summary and API Audit Log sheets) and `cost_summary.json` inside the run directory.
 The model configuration's `caching.enabled` and `caching.agents` flags opt
 into caches for `ocr`, `grading`, `moderation`, `annotation`, `marking_scheme`
 extraction and `analytics`. By default they are private to each run. To share them

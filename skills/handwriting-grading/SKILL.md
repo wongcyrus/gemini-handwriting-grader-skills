@@ -23,6 +23,9 @@ pip install google-adk
 ```
 This skill leverages ADK patterns for structured execution, token/cost auditing (`cost-report`), and real-time step progress updates.
 
+### Cross-platform support
+PDF page rendering is powered by pure-Python `pypdfium2` and works out of the box across Windows, macOS, and Linux without external Poppler or `pdftoppm` installs.
+
 ## Scope and availability
 
 Use the Python tools in this repository, not notebooks. Answer sheets, preflight, rubric
