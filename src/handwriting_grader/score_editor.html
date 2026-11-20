@@ -459,7 +459,6 @@ it does not change model inputs, review data, region approvals or reports.</p>
     <div class="bar">
       <label style="font-size:0.82rem;">View:
         <select id="lightbox-mode">
-          <option value="">Crop</option>
           <option value="ctx-">+Context</option>
           <option value="full-">Full Page</option>
         </select>
@@ -987,13 +986,13 @@ function createTableRow(item, isId, qIdx) {
   img.decoding = "async";
   img.dataset.script = String(sIdx);
   img.dataset.field = isId ? (byId("metadata-image").value || "id") : String(qIdx);
-  img.title = "Click to zoom & pan (or press Z)";
+  img.title = "Click to zoom & pan (+Context) (or press Z)";
   img.onclick = () => openImageModal(
-    img.src,
+    null,
     `Script #${sIdx + 1} - ${isId ? "Identity" : state.questions[qIdx].question_number}`,
     sIdx,
     img.dataset.field,
-    byId("table-image-mode").value || ""
+    byId("table-image-mode").value === "full-" ? "full-" : "ctx-"
   );
   cellImg.append(img);
   row.append(cellImg);
@@ -1410,7 +1409,7 @@ async function loadLightboxImage(sIdx, field, mode) {
 
 function openImageModal(src, title, sIdx, field, mode) {
   if (!src && sIdx == null) return;
-  const activeMode = mode != null ? mode : (byId("table-image-mode").value || "");
+  const activeMode = mode === "full-" ? "full-" : "ctx-";
   lightboxState = {
     script: sIdx != null ? sIdx : script,
     field: field != null ? field : (section === "id" ? byId("metadata-image").value : section),
@@ -1421,12 +1420,7 @@ function openImageModal(src, title, sIdx, field, mode) {
   byId("modal-title").textContent = title || `Script #${lightboxState.script + 1}`;
   const dialog = byId("image-modal");
   if (!dialog.open) dialog.showModal();
-  if (src && mode == null) {
-    byId("modal-img").onload = () => setLightboxZoom(lightboxState.zoom);
-    byId("modal-img").src = src;
-  } else {
-    loadLightboxImage(lightboxState.script, lightboxState.field, activeMode).catch(e => message(e.message));
-  }
+  loadLightboxImage(lightboxState.script, lightboxState.field, activeMode).catch(e => message(e.message));
 }
 
 byId("lightbox-mode").onchange = e => {
@@ -1876,7 +1870,7 @@ document.addEventListener("keydown", e => {
     e.preventDefault();
     const f = section === "id" ? (byId("metadata-image").value || "id") : section;
     const label = section === "id" ? "Identity" : state.questions[Number(section)].question_number;
-    openImageModal(null, `Script #${script + 1} - ${label}`, script, f, byId("table-image-mode").value || "");
+    openImageModal(null, `Script #${script + 1} - ${label}`, script, f, byId("table-image-mode").value === "full-" ? "full-" : "ctx-");
     return;
   }
 
