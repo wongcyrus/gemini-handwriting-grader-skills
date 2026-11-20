@@ -20,7 +20,8 @@ are implemented. Formatting and cache coverage differ from the notebooks.
    moderation. A teacher reviews IDs, OCR, exceptions, moderation flags and
    mark overrides.
 6. **Reports:** reconcile the complete present roster and marks, validate ranges and
-   have the teacher approve final scores and feedback.
+   have the teacher approve final scores and feedback. After reporting, prompt
+   the user if they want to archive or clean intermediate grading runs with `clean`.
 7. **Distribution:** preview exact recipients, messages and attachments;
    require separate approval immediately before sending.
 

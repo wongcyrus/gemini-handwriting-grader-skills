@@ -265,6 +265,11 @@ def main(argv=None):
     advanced_report.add_argument("--confirm-images-reviewed", action="store_true", help="Confirm infographic review")
     cost_report = commands.add_parser("cost-report", help="Generate or display token, model and cost breakdown")
     cost_report.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    clean = commands.add_parser("clean", help="Safely archive or purge output runs after human confirmation")
+    clean.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    clean.add_argument("--no-archive", action="store_true", help="Skip creating backup tar.gz archive before cleaning")
+    clean.add_argument("--purge-reports", action="store_true", help="Also delete final reports and analytics (default: preserved)")
+    clean.add_argument("--confirm-delete", action="store_true", help="Explicit human confirmation to delete files")
     email_preview = commands.add_parser("preview-email", help="Create a private recipient and attachment preview")
     email_preview.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     email_preview.add_argument("--settings", required=True, type=Path, help="Path to email settings YAML")
@@ -276,7 +281,7 @@ def main(argv=None):
     email_send.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     email_send.add_argument("--confirm-send", action="store_true", help="Explicitly confirm dispatch")
     for selected in (resume, grade_review, grade_check, grade_approve, report, analytics, ai_analysis, analysis_approve,
-                     infographics, advanced_report, cost_report, email_preview, email_approve, email_send):
+                     infographics, advanced_report, cost_report, clean, email_preview, email_approve, email_send):
         selected.add_argument("--run", help="Child run ID (default: original run)")
     args = parser.parse_args(argv)
     try:
@@ -811,6 +816,39 @@ def main(argv=None):
             print(f"Detailed Excel and JSON reports written to: {cost_file.parent}")
         except Exception as exc:
             print(f"Failed to generate cost report: {exc}", file=sys.stderr)
+            return 1
+        return 0
+    if args.command == "clean":
+        from .cleanup import inspect_cleanup_targets, archive_and_clean
+
+        try:
+            info = inspect_cleanup_targets(config, path.parent, run_id=args.run)
+            print(f"Target directory: {info['output_dir']} (run: {info['run_id']})")
+            if not info["items"]:
+                print("Output directory is empty or does not exist. Nothing to clean.")
+                return 0
+            print("Target contents:")
+            for item in info["items"]:
+                print(f"  - {item['name']} ({item['type']}, {item['size']:,} bytes, {item['files']} files)")
+            print(f"Total size: {info['total_bytes']:,} bytes")
+            if not args.confirm_delete:
+                archive_note = "An archive (.tar.gz) will be created first." if not args.no_archive else "NO ARCHIVE will be created (--no-archive)."
+                preserve_note = "Final reports and analytics will be preserved." if not args.purge_reports else "ALL reports and analytics will be deleted."
+                print(f"\nSafety gate: {archive_note} {preserve_note}")
+                print("No files were deleted. Obtain explicit user confirmation and rerun with --confirm-delete.", file=sys.stderr)
+                return 1
+            result = archive_and_clean(
+                config, path.parent, run_id=args.run,
+                archive=not args.no_archive,
+                preserve_reports=not args.purge_reports,
+            )
+            if result.get("archive_path"):
+                print(f"Backup archive created: {result['archive_path']}")
+            print(f"Cleaned items: {', '.join(result['deleted_items'])}")
+            if result.get("preserved_reports"):
+                print("Final reports/ and analytics/ directories were preserved.")
+        except Exception as exc:
+            print(f"Cleanup failed: {exc}", file=sys.stderr)
             return 1
         return 0
     if args.command == "preview-email":

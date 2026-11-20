@@ -83,6 +83,12 @@ execute a notebook as a workaround, or claim a human approval occurred.
       `approve-rubric --exam /path/to/exam.yaml --confirm-reviewed`.
 8. For grading, reporting and AI analysis read `references/grading.md`.
    Obtain the specified human confirmations; never infer approval.
+   After grading and reporting are complete, always inform the user that results
+   and review history have been preserved, and ask if they would like to clean
+   or archive intermediate output using:
+   `.venv/bin/handwriting-grader clean --exam /path/to/exam.yaml`
+   (which creates a `.tar.gz` archive backup by default, preserves `reports/`
+   and `analytics/`, and requires explicit `--confirm-delete`).
 9. For distribution read `references/email.md`; never send without reviewing
    the exact preview and separate dispatch approval.
    For targeted regrading read `references/regrading.md`; require a current
