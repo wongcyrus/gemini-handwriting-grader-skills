@@ -13,11 +13,15 @@ coverage differ from the notebooks. Validate results before use.
 
 See [detailed workflow and notebook gaps](skills/handwriting-grading/references/flow-and-parity.md)
 for stage-by-stage inputs, human decisions, outputs and known missing behavior.
-For notebook users, the [migration and use-case guide](docs/notebook-to-python.md)
-explains changed commands, artifacts and behavior.
-The [attendance and regrading design](docs/attendance-and-regrading-design.md)
-describes their design; the executable regrading procedure is in
-[regrading.md](skills/handwriting-grading/references/regrading.md).
+
+### Technical & Architecture Documentation
+- [Cross-Platform Architecture](docs/cross-platform-architecture.md): Pure Python PDF rendering with `pypdfium2`, sub-pixel dimension parity, and universal Windows/Mac/Linux support.
+- [Self-Contained Multi-Assignment Design](docs/multi-assignment-design.md): Managing multiple independent exam/homework folders without workspace coupling or collisions.
+- [ADK Telemetry & Cost Reporting](docs/telemetry-and-cost-reporting.md): Real-time sub-step progress tracking, Gemini token accounting, and `cost-report` generation.
+- [Cleanup, Archival & Retention Design](docs/cleanup-and-retention-design.md): Student data protection principles, automatic cross-platform `.zip` backups, and gated cleanup.
+- [Migration & Parity Guide](docs/notebook-to-python.md): Detailed comparison between legacy notebook workflows and modern Python CLI tools.
+- [Attendance & Regrading Architecture](docs/attendance-and-regrading-design.md): Detailed lineage tracking for isolated one-question regrades.
+- [Agent Skill Testing](docs/testing-skills.md): Testing across Antigravity CLI, Copilot CLI, and Gemini CLI.
 
 ## Setup
 
