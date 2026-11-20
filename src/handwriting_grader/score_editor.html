@@ -8,63 +8,42 @@
 * { box-sizing: border-box; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  margin: 0; padding: 0 1rem 3rem 1rem;
+  margin: 0; padding: 0 1.25rem 3rem 1.25rem;
   color: #1a202c; background-color: #f8fafc;
 }
 
-header {
-  margin: 1rem 0 0.5rem 0;
-}
-h1 {
-  font-size: 1.4rem; font-weight: 700; margin: 0 0 0.35rem 0; color: #1e293b;
-}
-p.instructions {
-  font-size: 0.85rem; color: #475569; margin: 0 0 0.75rem 0; line-height: 1.4;
-}
+header { margin: 0.85rem 0 0.5rem 0; }
+h1 { font-size: 1.3rem; font-weight: 700; margin: 0 0 0.25rem 0; color: #1e293b; }
+p.instructions { font-size: 0.82rem; color: #475569; margin: 0 0 0.6rem 0; line-height: 1.4; }
 
-/* Question Tabs Navigation */
-.nav-tabs {
-  display: flex; gap: 0.35rem; align-items: center; flex-wrap: wrap;
-  margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 2px solid #e2e8f0;
+/* Question Tabs & Global Actions */
+.top-nav-row {
+  display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;
+  margin-bottom: 0.65rem; padding-bottom: 0.5rem; border-bottom: 2px solid #e2e8f0;
 }
+.nav-tabs { display: flex; gap: 0.35rem; align-items: center; flex-wrap: wrap; }
 .nav-tab {
-  padding: 0.4rem 0.85rem; border: 1px solid #cbd5e1; background: #ffffff;
-  border-radius: 5px; font-size: 0.85rem; font-weight: 600; color: #334155;
-  cursor: pointer; text-decoration: none; transition: all 0.15s ease;
+  padding: 0.35rem 0.8rem; border: 1px solid #cbd5e1; background: #ffffff;
+  border-radius: 5px; font-size: 0.84rem; font-weight: 600; color: #334155;
+  cursor: pointer; text-decoration: none; transition: all 0.12s ease;
 }
 .nav-tab:hover { background: #f1f5f9; border-color: #94a3b8; }
 .nav-tab.active { background: #2563eb; color: #ffffff; border-color: #1d4ed8; }
 .nav-tab.metadata { background: #f8fafc; color: #0284c7; border-color: #bae6fd; }
 .nav-tab.metadata.active { background: #0284c7; color: #ffffff; border-color: #0369a1; }
 
-/* Sticky / Prominent Control Form */
-.controls-bar {
-  background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px;
-  padding: 0.75rem 1rem; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-  display: flex; flex-direction: column; gap: 0.6rem;
-}
-.controls-row {
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem;
-}
-.controls-group {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem;
-}
-.controls-group label {
-  display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.85rem; font-weight: 600; color: #334155;
-}
+.global-actions { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
 
 /* Inputs & Buttons */
-input, select, textarea, button {
-  font: inherit; font-size: 0.85rem;
-}
+input, select, textarea, button { font: inherit; font-size: 0.84rem; }
 input[type="number"], input[type="text"], select {
-  padding: 0.3rem 0.5rem; border: 1px solid #cbd5e1; border-radius: 4px; background: #ffffff;
+  padding: 0.28rem 0.5rem; border: 1px solid #cbd5e1; border-radius: 4px; background: #ffffff;
 }
 input[type="range"] { vertical-align: middle; }
 button {
-  cursor: pointer; padding: 0.35rem 0.75rem; border-radius: 4px;
+  cursor: pointer; padding: 0.32rem 0.7rem; border-radius: 4px;
   border: 1px solid #cbd5e1; background: #ffffff; color: #334155; font-weight: 600;
-  transition: all 0.15s ease;
+  transition: all 0.12s ease;
 }
 button:hover:not(:disabled) { background: #f1f5f9; border-color: #94a3b8; }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -74,38 +53,46 @@ button.btn-success { background: #16a34a; color: #ffffff; border-color: #15803d;
 button.btn-success:hover:not(:disabled) { background: #15803d; }
 
 .toggle-vis {
-  padding: 0.2rem 0.55rem; font-size: 0.78rem; border-radius: 4px;
-  border: 1px solid #cbd5e1; background: #ffffff; color: #475569;
+  padding: 0.2rem 0.5rem; font-size: 0.78rem; border-radius: 4px;
+  border: 1px solid #cbd5e1; background: #ffffff; color: #64748b;
 }
 .toggle-vis.active { background: #16a34a; color: #ffffff; border-color: #15803d; }
 
-/* Status message */
 #status {
-  padding: 0.5rem 1rem; background: #eff6ff; border: 1px solid #bfdbfe;
-  border-radius: 5px; color: #1d4ed8; font-size: 0.85rem; font-weight: 500;
-  margin-bottom: 0.75rem; white-space: pre-wrap;
+  padding: 0.45rem 0.85rem; background: #eff6ff; border: 1px solid #bfdbfe;
+  border-radius: 5px; color: #1d4ed8; font-size: 0.84rem; font-weight: 500;
+  margin-bottom: 0.65rem; white-space: pre-wrap;
 }
 
 /* Question Banner */
 .question-banner {
-  background: #f1f5f9; border-left: 4px solid #2563eb; padding: 0.75rem 1rem;
-  border-radius: 0 6px 6px 0; margin-bottom: 1rem; font-size: 0.88rem;
+  background: #ffffff; border: 1px solid #cbd5e1; border-left: 4px solid #2563eb;
+  padding: 0.65rem 1rem; border-radius: 0 6px 6px 0; margin-bottom: 0.75rem; font-size: 0.85rem;
 }
 .question-banner strong { color: #1e293b; }
 .question-banner pre {
-  margin: 0.35rem 0 0 0; font-family: inherit; white-space: pre-wrap; color: #475569; font-size: 0.82rem;
+  margin: 0.3rem 0 0 0; font-family: inherit; white-space: pre-wrap; color: #475569; font-size: 0.8rem;
 }
 
-/* Marksheet Table (Full cohort scan in one page) */
+/* Compact Controls Bar */
+.controls-bar {
+  background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px;
+  padding: 0.55rem 0.85rem; margin-bottom: 0.75rem;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.6rem;
+}
+.controls-group { display: flex; flex-wrap: wrap; align-items: center; gap: 0.65rem; }
+.controls-group label {
+  display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.82rem; font-weight: 600; color: #334155;
+}
+
+/* Marksheet Table */
 .table-container {
   background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.04); overflow-x: auto; margin-bottom: 1.5rem;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.03); overflow-x: auto; margin-bottom: 1.25rem;
 }
-table.marksheet {
-  border-collapse: collapse; width: 100%; font-size: 0.85rem;
-}
+table.marksheet { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
 table.marksheet th, table.marksheet td {
-  border: 1px solid #e2e8f0; padding: 0.5rem 0.75rem; vertical-align: middle; text-align: left;
+  border: 1px solid #e2e8f0; padding: 0.5rem 0.65rem; vertical-align: middle; text-align: left;
 }
 table.marksheet th {
   background: #f8fafc; font-weight: 600; color: #334155; position: sticky; top: 0; z-index: 5;
@@ -113,49 +100,83 @@ table.marksheet th {
 table.marksheet tr:hover { background-color: #f8fafc; }
 table.marksheet tr.row-flagged { background-color: #fff7ed; }
 table.marksheet tr.row-failed { background-color: #fef2f2; }
+table.marksheet tr.row-selected { outline: 2px solid #2563eb; outline-offset: -2px; }
 
-/* Group Divider Row */
 tr.group-divider td {
   background: #e2e8f0; font-weight: 700; color: #1e293b;
-  padding: 0.5rem 0.75rem; border-top: 2px solid #cbd5e1; border-bottom: 2px solid #cbd5e1;
+  padding: 0.4rem 0.65rem; border-top: 2px solid #cbd5e1; border-bottom: 2px solid #cbd5e1;
+  font-size: 0.82rem;
 }
 .group-badge {
   display: inline-block; background: #2563eb; color: #ffffff;
-  padding: 0.15rem 0.5rem; border-radius: 12px; font-size: 0.75rem; margin-right: 0.5rem;
+  padding: 0.1rem 0.45rem; border-radius: 10px; font-size: 0.74rem; margin-right: 0.4rem;
 }
 
-/* Image Thumbnails in Table */
 .answer-crop-img {
-  max-width: 220px; max-height: 90px; object-fit: contain;
+  max-width: 240px; max-height: 95px; object-fit: contain;
   background: #ffffff; border: 1px solid #cbd5e1; border-radius: 3px;
-  cursor: pointer; display: block; transition: transform 0.1s;
+  cursor: pointer; display: block;
 }
-.answer-crop-img:hover {
-  transform: scale(1.04); border-color: #2563eb; box-shadow: 0 2px 6px rgba(0,0,0,0.15);
-}
+.answer-crop-img:hover { border-color: #2563eb; box-shadow: 0 2px 6px rgba(0,0,0,0.15); }
 
-/* Inline Mark Inputs */
 input.mark-input {
-  width: 70px; font-size: 1rem; font-weight: 700; text-align: center;
-  padding: 0.25rem 0.4rem; border: 1.5px solid #cbd5e1; border-radius: 4px;
+  width: 68px; font-size: 1rem; font-weight: 700; text-align: center;
+  padding: 0.25rem 0.35rem; border: 1.5px solid #cbd5e1; border-radius: 4px;
 }
-input.mark-input.locked {
-  border-color: #ea580c; background-color: #fff7ed;
-}
+input.mark-input.locked { border-color: #ea580c; background-color: #fff7ed; }
 .lock-indicator {
   cursor: pointer; font-size: 0.72rem; color: #ea580c; font-weight: 600; display: block; margin-top: 0.15rem;
 }
 
-/* Similarity Badges */
 .sim-badge {
-  display: inline-block; padding: 0.2rem 0.45rem; border-radius: 4px;
-  font-weight: 700; font-size: 0.8rem;
+  display: inline-block; padding: 0.15rem 0.45rem; border-radius: 4px;
+  font-weight: 700; font-size: 0.78rem;
 }
 .sim-high { background: #dcfce7; color: #15803d; }
 .sim-mid { background: #fef9c3; color: #854d0e; }
 .sim-low { background: #f1f5f9; color: #64748b; }
 
-/* Large Image Modal */
+/* Selected Script Quick-Edit Card (Flat, no nested panels) */
+.quick-edit-card {
+  background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px;
+  padding: 0.85rem 1rem; margin-bottom: 1rem;
+  display: flex; flex-direction: column; gap: 0.6rem;
+}
+.quick-edit-header {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem;
+  padding-bottom: 0.45rem; border-bottom: 1px solid #e2e8f0;
+}
+.quick-edit-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; align-items: start;
+}
+@media (max-width: 900px) { .quick-edit-grid { grid-template-columns: 1fr; } }
+textarea {
+  display: block; width: 100%; min-height: 4.5rem;
+  padding: 0.35rem 0.5rem; border: 1px solid #cbd5e1; border-radius: 4px;
+}
+#image { max-width: 100%; max-height: 32vh; border: 1px solid #94a3b8; border-radius: 4px; }
+.warning { color: #dc2626; font-weight: 700; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+
+/* Accordions (single level only) */
+details {
+  background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px;
+  margin-bottom: 0.65rem; overflow: hidden;
+}
+details summary {
+  padding: 0.5rem 0.85rem; font-size: 0.84rem; font-weight: 600; color: #334155;
+  cursor: pointer; background: #f8fafc; user-select: none;
+}
+details summary:hover { background: #f1f5f9; }
+details[open] summary { border-bottom: 1px solid #e2e8f0; }
+.details-content { padding: 0.75rem 0.85rem; }
+
+.table-wrap { overflow-x: auto; }
+table#comparison { border-collapse: collapse; width: 100%; font-size: 0.82rem; }
+table#comparison th, table#comparison td { border: 1px solid #cbd5e1; padding: 0.35rem 0.5rem; text-align: left; }
+table#comparison th { background: #f8fafc; }
+
+/* Image Lightbox Modal */
 .modal-overlay {
   display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
   background: rgba(15, 23, 42, 0.8); z-index: 1000;
@@ -166,40 +187,7 @@ input.mark-input.locked {
   background: #ffffff; padding: 1rem; border-radius: 8px; max-width: 90vw; max-height: 90vh;
   display: flex; flex-direction: column; gap: 0.5rem; text-align: center; overflow: hidden;
 }
-.modal-box img {
-  max-width: 100%; max-height: 78vh; object-fit: contain; border: 1px solid #cbd5e1;
-}
-
-/* Details & Comparison Sections */
-details {
-  background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px;
-  margin-bottom: 0.85rem; overflow: hidden;
-}
-details summary {
-  padding: 0.6rem 1rem; font-size: 0.88rem; font-weight: 600; color: #334155;
-  cursor: pointer; background: #f8fafc; user-select: none;
-}
-details summary:hover { background: #f1f5f9; }
-details[open] summary { border-bottom: 1px solid #e2e8f0; }
-.details-content { padding: 1rem; }
-
-/* Single Script Inspector Form (Fully compatible with tests) */
-.inspector-form {
-  display: flex; flex-direction: column; gap: 0.75rem;
-}
-.form-row {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
-}
-textarea {
-  display: block; width: min(100%, 70rem); min-height: 5.5rem;
-  padding: 0.4rem 0.6rem; border: 1px solid #cbd5e1; border-radius: 4px;
-}
-#image {
-  max-width: min(100%, 1000px); max-height: 50vh; border: 1px solid #576b7e; border-radius: 4px;
-}
-.warning { color: #dc2626; font-weight: 700; }
-.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
-.table-wrap { overflow-x: auto; }
+.modal-box img { max-width: 100%; max-height: 78vh; object-fit: contain; border: 1px solid #cbd5e1; }
 </style>
 </head>
 <body>
@@ -211,63 +199,17 @@ Failed or flagged grades and corrected answers require a manual mark. Save each 
 Keep this URL private and close spreadsheet editors while using this interface.</p>
 </header>
 
-<!-- Question Tabs -->
-<nav class="nav-tabs" id="question-tabs">
-  <!-- Rendered dynamically -->
-</nav>
-
-<!-- Controls Bar: Grouping, Similarity Slider, Granularity, Column Visibility -->
-<div class="controls-bar">
-  <!-- First Row: Similarity Sliders & Sort/Group -->
-  <div class="controls-row">
-    <div class="controls-group">
-      <label>Full mark: <input type="number" id="fullMark" min="0" max="100" style="width: 55px;"></label>
-      <label>Similarity: <input type="range" id="minimumSimilarity" min="0" max="1" step="0.01" value="0.8"> <span id="currentSimilarity" style="min-width: 32px; font-weight: 700; color: #2563eb;">0.80</span></label>
-      <label>Granularity: <input type="range" id="granularity" min="0.1" max="1" step="0.25" value="1"> <span id="currentGranularity" style="min-width: 25px; font-weight: 700; color: #2563eb;">1</span></label>
-    </div>
-    <div class="controls-group">
-      <label>Group & Sort:
-        <select id="marksheet-sort">
-          <option value="group">📌 Group by Similar Answers</option>
-          <option value="similarity">Similarity (High to Low)</option>
-          <option value="score">Mark (Low to High)</option>
-          <option value="score-desc">Mark (High to Low)</option>
-          <option value="script">Script Order (1 to N)</option>
-        </select>
-      </label>
-      <label>Filter:
-        <select id="marksheet-filter">
-          <option value="all">All Students</option>
-          <option value="unreviewed">Not Reviewed</option>
-          <option value="flagged">⚠️ Failed or Flagged</option>
-        </select>
-      </label>
-    </div>
-  </div>
-
-  <!-- Second Row: Column Visibility & Global Actions -->
-  <div class="controls-row">
-    <div class="controls-group">
-      <span style="font-weight: 600; font-size: 0.82rem; color: #475569;">Show/Hide:</span>
-      <button type="button" class="toggle-vis active" data-col="img">Image</button>
-      <button type="button" class="toggle-vis active" data-col="ans">Answer</button>
-      <button type="button" class="toggle-vis active" data-col="mark">Mark</button>
-      <button type="button" class="toggle-vis active" data-col="sim">Similarity</button>
-      <button type="button" class="toggle-vis active" data-col="reason">Reasoning</button>
-    </div>
-    <div class="controls-group">
-      <label>Script <select id="script"></select></label>
-      <label>Review <select id="section"></select></label>
-      <button id="save">Save draft</button>
-      <button id="review" class="btn-primary">Save and mark reviewed</button>
-      <button id="approve" class="btn-success">Approve all grading</button>
-    </div>
+<div class="top-nav-row">
+  <nav class="nav-tabs" id="question-tabs"></nav>
+  <div class="global-actions">
+    <button id="save">Save draft</button>
+    <button id="review" class="btn-primary">Save and mark reviewed</button>
+    <button id="approve" class="btn-success">Approve all grading</button>
   </div>
 </div>
 
 <div id="status" role="status">Connecting...</div>
 
-<!-- Question Criteria Banner -->
 <div class="question-banner" id="q-banner">
   <div style="display: flex; justify-content: space-between; align-items: baseline;">
     <strong id="q-banner-title">Question Info</strong>
@@ -276,37 +218,131 @@ Keep this URL private and close spreadsheet editors while using this interface.<
   <pre id="q-banner-scheme"></pre>
 </div>
 
-<!-- ========================================================================= -->
-<!-- MAIN TABLE: All student answers in ONE PAGE with similarity grouping    -->
-<!-- ========================================================================= -->
+<!-- Marksheet Controls -->
+<div class="controls-bar" id="marksheet-controls">
+  <div class="controls-group">
+    <label>Full mark: <input type="number" id="fullMark" min="0" max="100" style="width: 55px;"></label>
+    <label>Similarity: <input type="range" id="minimumSimilarity" min="0" max="1" step="0.01" value="0.8"> <span id="currentSimilarity" style="min-width: 32px; font-weight: 700; color: #2563eb;">0.80</span></label>
+    <label>Granularity: <input type="range" id="granularity" min="0.1" max="1" step="0.25" value="1"> <span id="currentGranularity" style="min-width: 25px; font-weight: 700; color: #2563eb;">1</span></label>
+    <label>Sort:
+      <select id="marksheet-sort">
+        <option value="group">Similar Answers Grouped</option>
+        <option value="similarity">Similarity (High to Low)</option>
+        <option value="score">Mark (Low to High)</option>
+        <option value="score-desc">Mark (High to Low)</option>
+        <option value="script">Script Order (1 to N)</option>
+      </select>
+    </label>
+    <label>Filter:
+      <select id="marksheet-filter">
+        <option value="all">All Students</option>
+        <option value="unreviewed">Not Reviewed</option>
+        <option value="flagged">Flagged / Failed</option>
+      </select>
+    </label>
+  </div>
+  <div class="controls-group">
+    <span style="font-weight: 600; font-size: 0.8rem; color: #475569;">Show/Hide:</span>
+    <button type="button" class="toggle-vis active" data-col="img">Image</button>
+    <button type="button" class="toggle-vis active" data-col="ans">Answer</button>
+    <button type="button" class="toggle-vis active" data-col="mark">Mark</button>
+    <button type="button" class="toggle-vis active" data-col="sim">Similarity</button>
+    <button type="button" class="toggle-vis active" data-col="reason">Reasoning</button>
+  </div>
+</div>
+
+<!-- One-Page Marksheet Table -->
 <div class="table-container">
   <table id="marksheet" class="marksheet">
     <thead>
       <tr>
-        <th style="width: 70px;">Script</th>
-        <th class="col-img" style="width: 230px;">Image</th>
+        <th style="width: 85px;">Script</th>
+        <th class="col-img" style="width: 250px;">Image</th>
         <th class="col-ans">Answer</th>
-        <th class="col-mark" style="width: 130px;">Mark</th>
-        <th class="col-sim" style="width: 100px;">Similarity</th>
-        <th class="col-reason">Reasoning & Moderation</th>
-        <th style="width: 120px;">Review</th>
+        <th class="col-mark" style="width: 110px;">Mark</th>
+        <th class="col-sim" style="width: 90px;">Similarity</th>
+        <th class="col-reason">Reasoning</th>
+        <th style="width: 115px;">Status</th>
       </tr>
     </thead>
-    <tbody id="marksheet-tbody">
-      <!-- Injected dynamically -->
-    </tbody>
+    <tbody id="marksheet-tbody"></tbody>
   </table>
 </div>
 
-<!-- ========================================================================= -->
-<!-- COMPARISON & BULK SIMILARITY DETAILS (Required by automated tests & specs) -->
-<!-- ========================================================================= -->
+<!-- Flat Selected-Script Editor (Required for ID matching, detailed edits & tests) -->
+<div class="quick-edit-card">
+  <div class="quick-edit-header">
+    <div class="bar">
+      <label>Script <select id="script"></select></label>
+      <label>Review <select id="section"></select></label>
+      <span id="review-status" style="font-weight: 600; color: #475569; margin-left: 0.5rem;"></span>
+    </div>
+    <label><input id="full-page" type="checkbox"> Show entire page instead of crop</label>
+  </div>
+
+  <div class="quick-edit-grid">
+    <div>
+      <img id="image" alt="Selected answer or metadata crop">
+    </div>
+    <div>
+      <div id="script-fields">
+        <p id="ocr" style="margin-top: 0;"></p>
+        <div class="bar">
+          <label>Reviewed roster ID <select id="reviewed-id"></select></label>
+          <label>Metadata image <select id="metadata-image"><option value="id">ID</option><option value="name">Name</option><option value="class">Class</option></select></label>
+        </div>
+      </div>
+
+      <div id="mark-fields">
+        <p id="question" style="margin: 0 0 0.25rem 0; font-weight: 600;"></p>
+        <pre id="scheme" hidden></pre>
+        <p id="scores" style="margin: 0 0 0.25rem 0; font-size: 0.82rem; color: #2563eb; font-weight: 600;"></p>
+        <p id="flags" class="warning" style="margin: 0 0 0.4rem 0;"></p>
+        <label style="display:block; margin-bottom:0.4rem; font-weight:600;">Reviewed answer <textarea id="answer"></textarea></label>
+        <label style="display:block; margin-bottom:0.4rem; font-weight:600;">Reviewed reasoning <textarea id="reasoning"></textarea></label>
+        <label style="display:inline-flex; align-items:center; gap:0.4rem; font-weight:600;">Manual mark (optional unless required) <input id="manual" inputmode="decimal" style="width: 90px;"></label>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Single-level collapsed accordions (No nested panels!) -->
+<details id="similarity-details">
+  <summary>Similarity-based mark suggestion</summary>
+  <div class="details-content">
+    <p style="margin-top:0;">Uses the original OCR answer and ignores moderation. Enter your chosen threshold (0–1) and mark increment.
+A suggestion is made only when a reviewed student with equal or higher similarity has a manual mark,
+and all such students share that same manual mark.</p>
+    <div class="bar">
+      <label>Similarity threshold <input id="threshold" inputmode="decimal" style="width: 80px;"></label>
+      <label>Mark increment <input id="increment" inputmode="decimal" style="width: 80px;"></label>
+      <button id="calculate">Calculate suggestion</button> <span id="suggestion" style="font-weight:600;"></span>
+      <button id="apply-suggestion" disabled>Use suggestion as manual mark</button>
+    </div>
+  </div>
+</details>
+
+<details>
+  <summary>Adjust crop for visual inspection</summary>
+  <div class="details-content">
+    <p style="margin-top:0;">Coordinates are pixels on the approved question page. This preview is temporary;
+it does not change model inputs, review data, region approvals or reports.</p>
+    <div class="bar">
+      <label>X <input id="crop-x" type="number" min="0" step="1" style="width: 75px;"></label>
+      <label>Y <input id="crop-y" type="number" min="0" step="1" style="width: 75px;"></label>
+      <label>Width <input id="crop-width" type="number" min="1" step="1" style="width: 75px;"></label>
+      <label>Height <input id="crop-height" type="number" min="1" step="1" style="width: 75px;"></label>
+      <button id="preview-crop">Preview crop</button>
+    </div>
+  </div>
+</details>
+
 <details id="comparison-details">
   <summary>Compare students by question</summary>
   <div class="details-content">
-    <p>Read-only snapshot of saved reviews. Open a row to check its image and edit it;
+    <p style="margin-top:0;">Read-only snapshot of saved reviews. Open a row to check its image and edit it;
 this table does not review or approve scores. Reload after external changes.</p>
-    <div class="bar">
+    <div class="bar" style="margin-bottom: 0.5rem;">
       <label>Question <select id="compare-question"></select></label>
       <label>Filter <select id="compare-filter"><option value="all">All</option><option value="unreviewed">Not reviewed</option><option value="flagged">Failed or flagged</option></select></label>
       <label>Sort <select id="compare-sort"><option value="script">Script order</option><option value="score">Mark, low to high</option></select></label>
@@ -318,80 +354,26 @@ this table does not review or approve scores. Reload after external changes.</p>
         <tbody></tbody>
       </table>
     </div>
-    <details style="margin-top: 0.75rem;">
-      <summary>Preview bulk similarity suggestions</summary>
-      <div class="details-content">
-        <p>Uses saved original OCR answers and ignores moderation. Select suggestions to replace manual
+  </div>
+</details>
+
+<details>
+  <summary>Preview bulk similarity suggestions</summary>
+  <div class="details-content">
+    <p style="margin-top:0;">Uses saved original OCR answers and ignores moderation. Select suggestions to replace manual
 marks as <strong>unreviewed drafts</strong>; previously reviewed marks will need review again.</p>
-        <div class="bar">
-          <label>Similarity threshold <input id="bulk-threshold" inputmode="decimal"></label>
-          <label>Mark increment <input id="bulk-increment" inputmode="decimal"></label>
-          <button id="bulk-preview">Preview suggestions</button>
-          <button id="bulk-apply" disabled>Apply selected as drafts</button>
-        </div>
-        <div id="bulk-results"></div>
-      </div>
-    </details>
+    <div class="bar">
+      <label>Similarity threshold <input id="bulk-threshold" inputmode="decimal" style="width: 80px;"></label>
+      <label>Mark increment <input id="bulk-increment" inputmode="decimal" style="width: 80px;"></label>
+      <button id="bulk-preview">Preview suggestions</button>
+      <button id="bulk-apply" disabled>Apply selected as drafts</button>
+    </div>
+    <div id="bulk-results"></div>
   </div>
 </details>
 
-<!-- ========================================================================= -->
-<!-- SINGLE SCRIPT INSPECTOR & METADATA (Required for single-script grading)   -->
-<!-- ========================================================================= -->
-<details id="inspector-details" open>
-  <summary>Script Inspector & Visual Crop</summary>
-  <div class="details-content inspector-form">
-    <label><input id="full-page" type="checkbox"> Show entire page instead of crop</label>
-    <img id="image" alt="Selected answer or metadata crop">
-
-    <div id="script-fields">
-      <p id="ocr"></p>
-      <label>Reviewed roster ID <select id="reviewed-id"></select></label>
-      <label>Metadata image <select id="metadata-image"><option value="id">ID</option><option value="name">Name</option><option value="class">Class</option></select></label>
-    </div>
-
-    <div id="mark-fields">
-      <p id="question"></p><pre id="scheme"></pre><p id="scores"></p><p id="flags" class="warning"></p>
-      <label>Reviewed answer <textarea id="answer"></textarea></label>
-      <label>Reviewed reasoning <textarea id="reasoning"></textarea></label>
-      <label>Manual mark (optional unless required) <input id="manual" inputmode="decimal"></label>
-
-      <details>
-        <summary>Adjust crop for visual inspection</summary>
-        <div class="details-content">
-          <p>Coordinates are pixels on the approved question page. This preview is temporary;
-it does not change model inputs, review data, region approvals or reports.</p>
-          <div class="bar">
-            <label>X <input id="crop-x" type="number" min="0" step="1"></label>
-            <label>Y <input id="crop-y" type="number" min="0" step="1"></label>
-            <label>Width <input id="crop-width" type="number" min="1" step="1"></label>
-            <label>Height <input id="crop-height" type="number" min="1" step="1"></label>
-            <button id="preview-crop">Preview crop</button>
-          </div>
-        </div>
-      </details>
-
-      <details id="similarity-details">
-        <summary>Similarity-based mark suggestion</summary>
-        <div class="details-content">
-          <p>Uses the original OCR answer and ignores moderation. Enter your chosen threshold (0–1) and mark increment.
-A suggestion is made only when a reviewed student with equal or higher similarity has a manual mark,
-and all such students share that same manual mark.</p>
-          <div class="bar">
-            <label>Similarity threshold <input id="threshold" inputmode="decimal"></label>
-            <label>Mark increment <input id="increment" inputmode="decimal"></label>
-            <button id="calculate">Calculate suggestion</button> <span id="suggestion"></span>
-            <button id="apply-suggestion" disabled>Use suggestion as manual mark</button>
-          </div>
-        </div>
-      </details>
-
-      <details><summary>Original OCR answer</summary><pre id="original"></pre></details>
-      <details id="previous-review" hidden><summary>Previous approved review</summary><pre id="previous"></pre></details>
-    </div>
-    <p id="review-status" style="font-weight: 600;"></p>
-  </div>
-</details>
+<details><summary>Original OCR answer</summary><div class="details-content"><pre id="original" style="margin:0;"></pre></div></details>
+<details id="previous-review" hidden><summary>Previous approved review</summary><div class="details-content"><pre id="previous" style="margin:0;"></pre></div></details>
 
 <!-- Image Lightbox Modal -->
 <div class="modal-overlay" id="image-modal">
@@ -418,7 +400,7 @@ if (token) {
 const byId = id => document.getElementById(id);
 let state, script = 0, section = "id", dirty = false, imageUrl = null, imageGeneration = 0;
 let busy = false, imageReady = false, suggestion = null, bulk = null;
-const tableImageUrls = new Map(); // Cache object URLs for table images
+const tableImageUrls = new Map();
 
 function message(text) { byId("status").textContent = text; }
 
@@ -468,17 +450,19 @@ async function api(path, body) {
   return response;
 }
 
-/* ========================================================================= */
-/* Marksheet Table Rendering with Similar Answer Grouping                    */
-/* ========================================================================= */
-
-// Normalize text for grouping
 function normalizeAnswer(text) {
   if (!text) return "";
-  return text.toLowerCase()
-    .replace(/[^\w\s]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  return text.toLowerCase().replace(/[^\w\s]/g, "").replace(/\s+/g, " ").trim();
+}
+
+// Compute token Jaccard similarity between two normalized strings for fuzzy grouping
+function textSimilarity(a, b) {
+  if (a === b) return 1;
+  if (!a || !b) return 0;
+  const setA = new Set(a.split(" ")), setB = new Set(b.split(" "));
+  let inter = 0;
+  for (const w of setA) if (setB.has(w)) inter++;
+  return inter / (setA.size + setB.size - inter);
 }
 
 function renderTabs() {
@@ -495,7 +479,8 @@ function renderTabs() {
     state.questions.forEach((q, i) => {
       const tab = document.createElement("a");
       tab.className = "nav-tab" + (section === String(i) ? " active" : "");
-      tab.textContent = `Q${q.question_number} (${q.marks}m)`;
+      const qLabel = String(q.question_number).startsWith("Q") ? q.question_number : `Q${q.question_number}`;
+      tab.textContent = `${qLabel} (${q.marks}m)`;
       tab.onclick = () => change("section", String(i));
       nav.append(tab);
     });
@@ -511,7 +496,6 @@ async function renderMarksheetTable() {
   const qIdx = isId ? 0 : Number(section);
   const qData = isId ? null : state.questions[qIdx];
 
-  // Update banner
   if (isId) {
     byId("q-banner-title").textContent = "Student Identity Matching";
     byId("q-banner-scheme").textContent = "Verify handwritten ID, Name, and Class against student roster.";
@@ -519,7 +503,7 @@ async function renderMarksheetTable() {
     byId("fullMark").value = "";
     byId("fullMark").disabled = true;
   } else {
-    byId("q-banner-title").textContent = `Question ${qData.question_number}: ${qData.question_text || ""}`;
+    byId("q-banner-title").textContent = `${qData.question_number}: ${qData.question_text || ""}`;
     byId("q-banner-scheme").textContent = `Marking Scheme: ${qData.marking_scheme || "(No marking scheme)"}`;
     byId("fullMark").value = qData.marks;
     byId("fullMark").disabled = false;
@@ -528,7 +512,6 @@ async function renderMarksheetTable() {
   const sortMode = byId("marksheet-sort").value;
   const filterMode = byId("marksheet-filter").value;
 
-  // Build entry list
   let entries = state.scripts.map(s => {
     const mark = isId ? null : state.marks[s.script_index][qIdx];
     const rawScore = mark ? (mark.manual_mark != null && String(mark.manual_mark).trim() !== "" ? mark.manual_mark : mark.moderated_mark ?? mark.raw_mark) : 0;
@@ -550,80 +533,86 @@ async function renderMarksheetTable() {
     };
   });
 
-  // Apply filter
   if (filterMode === "unreviewed") {
     entries = entries.filter(e => !e.reviewed);
   } else if (filterMode === "flagged") {
     entries = entries.filter(e => e.flagged);
   }
 
-  // Update stats
   const reviewedCount = entries.filter(e => e.reviewed).length;
   if (!isId) {
     byId("q-banner-stats").textContent = `Reviewed: ${reviewedCount} / ${entries.length} | Max Marks: ${qData.marks}`;
   }
 
-  // Grouping or Sorting
   if (sortMode === "group" && !isId) {
-    // Cluster by similar / identical normalized answer
-    const groups = new Map();
+    // Cluster answers by fuzzy similarity (>= 0.65 token overlap)
+    const clusters = [];
     for (const e of entries) {
-      const key = e.normAnswer || "(empty answer)";
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(e);
+      let placed = false;
+      for (const cluster of clusters) {
+        if (textSimilarity(e.normAnswer, cluster.repNorm) >= 0.65) {
+          cluster.items.push(e);
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) {
+        clusters.push({repNorm: e.normAnswer, repText: e.answer, items: [e]});
+      }
     }
 
-    // Sort groups: largest group first, or by similarity
-    const sortedGroupKeys = [...groups.keys()].sort((a, b) => {
-      const gA = groups.get(a), gB = groups.get(b);
-      return gB.length - gA.length || gB[0].similarity - gA[0].similarity;
+    // Sort clusters: largest cluster first, then highest similarity
+    clusters.sort((a, b) => {
+      if (b.items.length !== a.items.length) return b.items.length - a.items.length;
+      const simA = a.items.reduce((acc, i) => acc + i.similarity, 0) / a.items.length;
+      const simB = b.items.reduce((acc, i) => acc + i.similarity, 0) / b.items.length;
+      return simB - simA;
     });
 
-    let groupIndex = 1;
-    for (const key of sortedGroupKeys) {
-      const groupItems = groups.get(key);
-      const repAnswer = groupItems[0].answer || "(empty)";
-      const avgSim = (groupItems.reduce((acc, it) => acc + it.similarity, 0) / groupItems.length).toFixed(2);
-      const avgScore = (groupItems.reduce((acc, it) => acc + it.score, 0) / groupItems.length).toFixed(1);
+    let groupNum = 1;
+    for (const cluster of clusters) {
+      // Only show group divider row when 2 or more students share a group (avoid 1-student clutter!)
+      if (cluster.items.length >= 2) {
+        const avgSim = (cluster.items.reduce((acc, it) => acc + it.similarity, 0) / cluster.items.length).toFixed(2);
+        const avgScore = (cluster.items.reduce((acc, it) => acc + it.score, 0) / cluster.items.length).toFixed(1);
+        const rep = cluster.repText || "(empty)";
 
-      // Create Group Divider Row safely without innerHTML
-      const divRow = document.createElement("tr");
-      divRow.className = "group-divider";
-      const divCell = document.createElement("td");
-      divCell.colSpan = 7;
+        const divRow = document.createElement("tr");
+        divRow.className = "group-divider";
+        const divCell = document.createElement("td");
+        divCell.colSpan = 7;
 
-      const badge = document.createElement("span");
-      badge.className = "group-badge";
-      badge.textContent = `Group ${groupIndex}`;
-      divCell.append(badge);
+        const badge = document.createElement("span");
+        badge.className = "group-badge";
+        badge.textContent = `Similar Group ${groupNum}`;
+        divCell.append(badge);
 
-      const strongCount = document.createElement("strong");
-      strongCount.textContent = `${groupItems.length} students`;
-      divCell.append(strongCount, document.createTextNode(" · Avg Similarity: "));
+        const strongCount = document.createElement("strong");
+        strongCount.textContent = `${cluster.items.length} students`;
+        divCell.append(strongCount, document.createTextNode(" · Avg Similarity: "));
 
-      const strongSim = document.createElement("strong");
-      strongSim.textContent = avgSim;
-      divCell.append(strongSim, document.createTextNode(" · Current Mark: "));
+        const strongSim = document.createElement("strong");
+        strongSim.textContent = avgSim;
+        divCell.append(strongSim, document.createTextNode(" · Avg Mark: "));
 
-      const strongMark = document.createElement("strong");
-      strongMark.textContent = avgScore;
-      divCell.append(strongMark, document.createTextNode(" · "));
+        const strongMark = document.createElement("strong");
+        strongMark.textContent = avgScore;
+        divCell.append(strongMark, document.createTextNode(" · "));
 
-      const emAnswer = document.createElement("em");
-      emAnswer.textContent = `"${repAnswer.slice(0, 100)}${repAnswer.length > 100 ? '...' : ''}"`;
-      divCell.append(emAnswer);
+        const emAnswer = document.createElement("em");
+        emAnswer.textContent = `"${rep.slice(0, 90)}${rep.length > 90 ? '...' : ''}"`;
+        divCell.append(emAnswer);
 
-      divRow.append(divCell);
-      tbody.append(divRow);
+        divRow.append(divCell);
+        tbody.append(divRow);
+        groupNum++;
+      }
 
-      // Render each row in group
-      for (const item of groupItems) {
+      for (const item of cluster.items) {
         tbody.append(createTableRow(item, isId, qIdx));
       }
-      groupIndex++;
     }
   } else {
-    // Regular sorting
     if (sortMode === "similarity") {
       entries.sort((a, b) => b.similarity - a.similarity || a.script.script_index - b.script.script_index);
     } else if (sortMode === "score") {
@@ -639,20 +628,27 @@ async function renderMarksheetTable() {
     }
   }
 
-  // Lazy-load images in viewport
   loadTableImages();
 }
 
 function createTableRow(item, isId, qIdx) {
   const row = document.createElement("tr");
-  if (item.flagged) row.className = item.mark && item.mark.grading_failed ? "row-failed" : "row-flagged";
-
   const s = item.script;
   const m = item.mark;
   const sIdx = s.script_index;
 
+  if (item.flagged) row.className = m && m.grading_failed ? "row-failed" : "row-flagged";
+  if (sIdx === script) row.classList.add("row-selected");
+
   // 1. Script / ID
   const cellId = document.createElement("td");
+  cellId.style.cursor = "pointer";
+  cellId.title = "Click to select in editor";
+  cellId.onclick = () => {
+    if (dirty && !confirm("Discard unsaved edits?")) return;
+    script = sIdx; dirty = false;
+    render().catch(e => message(e.message));
+  };
   const strongId = document.createElement("strong");
   strongId.textContent = `#${sIdx + 1}`;
   const br = document.createElement("br");
@@ -671,7 +667,7 @@ function createTableRow(item, isId, qIdx) {
   img.dataset.script = String(sIdx);
   img.dataset.field = isId ? (byId("metadata-image").value || "id") : String(qIdx);
   img.title = "Click to enlarge";
-  img.onclick = () => openImageModal(img.src, `Script ${sIdx + 1} - ${isId ? 'Identity' : 'Question ' + (qIdx + 1)}`);
+  img.onclick = () => openImageModal(img.src, `Script ${sIdx + 1} - ${isId ? 'Identity' : state.questions[qIdx].question_number}`);
   cellImg.append(img);
   row.append(cellImg);
 
@@ -688,7 +684,7 @@ function createTableRow(item, isId, qIdx) {
   if (isId) {
     const spanMeta = document.createElement("span");
     spanMeta.style.color = "#64748b";
-    spanMeta.style.fontSize = "0.75rem";
+    spanMeta.style.fontSize = "0.78rem";
     spanMeta.textContent = `${s.name_ocr || ""} (${s.class_ocr || ""})`;
     cellMark.append(spanMeta);
   } else {
@@ -706,7 +702,6 @@ function createTableRow(item, isId, qIdx) {
     markInput.dataset.script = String(sIdx);
     markInput.dataset.similarity = String(item.similarity);
 
-    // Save on change
     markInput.onchange = async () => {
       markInput.classList.add("locked");
       await saveInlineMark(sIdx, qIdx, markInput.value, false);
@@ -715,7 +710,8 @@ function createTableRow(item, isId, qIdx) {
     const lockSpan = document.createElement("span");
     lockSpan.id = `inline-lock-${sIdx}`;
     lockSpan.className = "lock-indicator";
-    lockSpan.textContent = isLocked ? "🔒 Locked (Click to unlock)" : "";
+    lockSpan.textContent = isLocked ? "🔒 Locked" : "";
+    lockSpan.title = "Click to unlock";
     lockSpan.onclick = async () => {
       markInput.classList.remove("locked");
       lockSpan.textContent = "";
@@ -741,62 +737,41 @@ function createTableRow(item, isId, qIdx) {
   }
   row.append(cellSim);
 
-  // 6. Reasoning & Moderation
+  // 6. Reasoning
   const cellReason = document.createElement("td");
   cellReason.className = "col-reason";
   if (isId) {
     cellReason.textContent = s.errors && s.errors.length ? s.errors.map(e => e.field + ": " + e.type).join(", ") : "OK";
   } else {
     let text = m.reasoning || "";
-    if (m.moderator_flag) {
-      text += `\n⚠️ Moderator Note: ${m.moderator_note || "Flagged"}`;
-    }
-    if (m.grading_failed) {
-      text += `\n❌ Grading failed; manual mark required.`;
-    }
+    if (m.moderator_flag) text += `\n⚠️ Moderator: ${m.moderator_note || "Flagged"}`;
+    if (m.grading_failed) text += `\n❌ Grading failed; manual mark required.`;
     cellReason.textContent = text;
   }
   row.append(cellReason);
 
-  // 7. Review Action
+  // 7. Review Status
   const cellAction = document.createElement("td");
   const revBtn = document.createElement("button");
   revBtn.className = item.reviewed ? "btn-success" : "";
-  revBtn.style.padding = "0.25rem 0.5rem";
+  revBtn.style.padding = "0.25rem 0.55rem";
   revBtn.style.fontSize = "0.78rem";
   revBtn.textContent = item.reviewed ? "Reviewed ✓" : "Review & Save";
   revBtn.onclick = async () => {
     if (isId) {
-      script = sIdx;
-      section = "id";
+      script = sIdx; section = "id";
       await save(true);
     } else {
       const input = byId(`inline-mark-${sIdx}`);
       await saveInlineMark(sIdx, qIdx, input ? input.value : "", true);
     }
   };
-
-  const inspBtn = document.createElement("button");
-  inspBtn.textContent = "🔍 Inspect";
-  inspBtn.style.padding = "0.25rem 0.5rem";
-  inspBtn.style.fontSize = "0.78rem";
-  inspBtn.style.marginTop = "0.25rem";
-  inspBtn.onclick = () => {
-    script = sIdx;
-    section = isId ? "id" : String(qIdx);
-    dirty = false;
-    render().catch(e => message(e.message));
-    byId("inspector-details").open = true;
-    byId("inspector-details").scrollIntoView({behavior: "smooth"});
-  };
-
-  cellAction.append(revBtn, document.createElement("br"), inspBtn);
+  cellAction.append(revBtn);
   row.append(cellAction);
 
   return row;
 }
 
-// Save an inline mark directly from table row
 async function saveInlineMark(sIdx, qIdx, markValue, markReviewed) {
   setBusy(true); message("Saving mark...");
   try {
@@ -822,7 +797,6 @@ async function saveInlineMark(sIdx, qIdx, markValue, markReviewed) {
   }
 }
 
-// Bulk similarity threshold update across all un-overridden marks
 function refreshMarksBySimilarity() {
   const fullMark = Number(byId("fullMark").value);
   const minSim = Number(byId("minimumSimilarity").value);
@@ -831,7 +805,7 @@ function refreshMarksBySimilarity() {
   document.querySelectorAll("input.mark-input").forEach(input => {
     const sIdx = Number(input.dataset.script);
     const lockSpan = byId(`inline-lock-${sIdx}`);
-    if (lockSpan && lockSpan.textContent !== "") return; // Locked
+    if (lockSpan && lockSpan.textContent !== "") return;
 
     const sim = Number(input.dataset.similarity) || 0;
     if (sim >= minSim) {
@@ -844,7 +818,6 @@ function refreshMarksBySimilarity() {
   });
 }
 
-// Lazy-load images in the table
 async function loadTableImages() {
   const images = document.querySelectorAll("img.answer-crop-img");
   for (const img of images) {
@@ -854,7 +827,6 @@ async function loadTableImages() {
       img.src = tableImageUrls.get(key);
       continue;
     }
-    // Fetch blob
     api(`/api/image/${s}/${f}`).then(res => res.blob()).then(blob => {
       const url = URL.createObjectURL(blob);
       tableImageUrls.set(key, url);
@@ -873,9 +845,6 @@ function openImageModal(src, title) {
 byId("modal-close").onclick = () => byId("image-modal").classList.remove("active");
 byId("image-modal").onclick = e => { if (e.target === byId("image-modal")) byId("image-modal").classList.remove("active"); };
 
-/* ========================================================================= */
-/* Column Visibility Toggles                                                */
-/* ========================================================================= */
 document.querySelectorAll(".toggle-vis").forEach(btn => {
   btn.onclick = () => {
     btn.classList.toggle("active");
@@ -887,9 +856,6 @@ document.querySelectorAll(".toggle-vis").forEach(btn => {
   };
 });
 
-/* ========================================================================= */
-/* Similarity Slider Events                                                  */
-/* ========================================================================= */
 byId("minimumSimilarity").oninput = e => {
   byId("currentSimilarity").textContent = Number(e.target.value).toFixed(2);
   refreshMarksBySimilarity();
@@ -903,10 +869,6 @@ byId("granularity").oninput = e => {
 byId("fullMark").onchange = refreshMarksBySimilarity;
 byId("marksheet-sort").onchange = renderMarksheetTable;
 byId("marksheet-filter").onchange = renderMarksheetTable;
-
-/* ========================================================================= */
-/* Single Inspector & Comparison Table (Compatible with tests)               */
-/* ========================================================================= */
 
 function renderComparison() {
   const q = Number(byId("compare-question").value), filter = byId("compare-filter").value;
@@ -977,7 +939,7 @@ async function render() {
     await image(byId("metadata-image").value);
   } else {
     const q = Number(section), question = state.questions[q], mark = state.marks[script][q];
-    byId("question").textContent = `Question ${question.question_number}: ${question.question_text}`;
+    byId("question").textContent = `Script ${script + 1} · ${question.question_number}`;
     byId("scheme").textContent = question.marking_scheme;
     byId("scores").textContent = `Maximum: ${question.marks} | AI mark: ${mark.raw_mark ?? "failed"} | Moderated: ${mark.moderated_mark ?? "unavailable"} | Similarity: ${mark.similarity_score ?? "unavailable"}`;
     byId("flags").textContent = (mark.grading_failed ? "Grading failed. " : "") +
