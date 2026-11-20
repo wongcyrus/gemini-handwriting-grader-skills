@@ -318,6 +318,7 @@ Keep this URL private and close spreadsheet editors while using this interface.<
     <button type="button" class="toggle-vis active" data-col="mark">Mark</button>
     <button type="button" class="toggle-vis active" data-col="sim">Similarity</button>
     <button type="button" class="toggle-vis active" data-col="reason">Reasoning</button>
+    <button type="button" id="mark-question-reviewed" class="btn-success" style="margin-left: 0.35rem;">Mark all unflagged reviewed ✓</button>
   </div>
 </div>
 
@@ -487,7 +488,7 @@ function setBusy(value) {
                     "compare-question", "compare-filter", "compare-sort", "refresh-comparison",
                     "bulk-threshold", "bulk-increment", "bulk-preview", "preview-crop",
                     "minimumSimilarity", "granularity", "fullMark", "marksheet-filter",
-                    "img-size"]) {
+                    "img-size", "mark-question-reviewed"]) {
     const el = byId(id);
     if (el) el.disabled = busy;
   }
@@ -895,7 +896,7 @@ function createTableRow(item, isId, qIdx) {
 
     markInput.onchange = async () => {
       markInput.classList.add("locked");
-      await saveInlineMark(sIdx, qIdx, markInput.value, false);
+      await saveInlineMark(sIdx, qIdx, markInput.value, true);
     };
 
     const lockSpan = document.createElement("span");
@@ -944,6 +945,7 @@ function createTableRow(item, isId, qIdx) {
   // 7. Review Status
   const cellAction = document.createElement("td");
   const revBtn = document.createElement("button");
+  revBtn.id = `inline-rev-${sIdx}`;
   revBtn.className = item.reviewed ? "btn-success" : "";
   revBtn.style.padding = "0.25rem 0.55rem";
   revBtn.style.fontSize = "0.78rem";
@@ -977,9 +979,22 @@ async function saveInlineMark(sIdx, qIdx, markValue, markReviewed) {
       reasoning: currentMark.reasoning,
       manual_mark: markValue,
     };
-    await api("/api/save", body);
+    const res = await (await api("/api/save", body)).json();
+    state.revision = res.revision;
+    currentMark.manual_mark = markValue === "" ? null : markValue;
+    currentMark.reviewed = markReviewed;
     dirty = false;
-    await reload();
+    const lockSpan = byId(`inline-lock-${sIdx}`);
+    if (lockSpan) lockSpan.textContent = markValue !== "" ? "🔒 Locked" : "";
+    const revBtn = byId(`inline-rev-${sIdx}`);
+    if (revBtn) {
+      revBtn.className = markReviewed ? "btn-success" : "";
+      revBtn.textContent = markReviewed ? "Reviewed ✓" : "Review & Save";
+    }
+    renderTabs();
+    renderComparison();
+    const revCount = state.scripts.filter(s => state.marks[s.script_index][qIdx]?.reviewed).length;
+    byId("q-banner-stats").textContent = `Reviewed: ${revCount} / ${state.scripts.length} | Max Marks: ${state.questions[qIdx].marks}`;
     message(markReviewed ? `Script #${sIdx + 1} saved and reviewed.` : `Script #${sIdx + 1} mark saved.`);
   } catch (e) {
     message(e.message);
@@ -987,6 +1002,59 @@ async function saveInlineMark(sIdx, qIdx, markValue, markReviewed) {
     setBusy(false);
   }
 }
+
+byId("mark-question-reviewed").onclick = async () => {
+  if (section === "id" || !state) return;
+  const qIdx = Number(section);
+  const targets = state.scripts.filter(s => {
+    const m = state.marks[s.script_index][qIdx];
+    return m && !m.reviewed && !m.grading_failed && !m.moderator_flag;
+  });
+  const flaggedRemaining = state.scripts.filter(s => {
+    const m = state.marks[s.script_index][qIdx];
+    return m && !m.reviewed && (m.grading_failed || m.moderator_flag);
+  }).length;
+  if (targets.length === 0) {
+    if (flaggedRemaining > 0) {
+      byId("marksheet-filter").value = "flagged";
+      renderMarksheetTable();
+      message(`${flaggedRemaining} flagged/failed item(s) still require a manual mark.`);
+    } else {
+      message("All items in this question are already reviewed.");
+    }
+    return;
+  }
+  setBusy(true); message(`Marking ${targets.length} unflagged item(s) reviewed...`);
+  try {
+    for (const s of targets) {
+      const m = state.marks[s.script_index][qIdx];
+      const res = await (await api("/api/save", {
+        revision: state.revision,
+        script_index: s.script_index,
+        reviewed: true,
+        kind: "mark",
+        question_index: qIdx,
+        answer: m.answer,
+        reasoning: m.reasoning,
+        manual_mark: m.manual_mark == null ? "" : String(m.manual_mark),
+      })).json();
+      state.revision = res.revision;
+    }
+    dirty = false;
+    await reload();
+    if (flaggedRemaining > 0) {
+      byId("marksheet-filter").value = "flagged";
+      await renderMarksheetTable();
+      message(`Marked ${targets.length} unflagged item(s) reviewed. ${flaggedRemaining} flagged/failed item(s) still need a manual mark.`);
+    } else {
+      message(`Marked all ${targets.length} item(s) in this question reviewed.`);
+    }
+  } catch (e) {
+    message(e.message);
+  } finally {
+    setBusy(false);
+  }
+};
 
 function refreshMarksBySimilarity() {
   const fullMark = Number(byId("fullMark").value);
@@ -1149,6 +1217,7 @@ async function render() {
   const identity = section === "id";
   byId("script-fields").style.display = identity ? "flex" : "none";
   byId("global-save-slot").hidden = !identity;
+  byId("mark-question-reviewed").hidden = identity;
   byId("mark-fields").hidden = identity;
 
   renderTabs();
