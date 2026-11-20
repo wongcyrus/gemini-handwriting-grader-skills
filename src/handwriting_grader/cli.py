@@ -265,9 +265,9 @@ def main(argv=None):
     advanced_report.add_argument("--confirm-images-reviewed", action="store_true", help="Confirm infographic review")
     cost_report = commands.add_parser("cost-report", help="Generate or display token, model and cost breakdown")
     cost_report.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
-    clean = commands.add_parser("clean", help="Safely archive or purge output runs after human confirmation")
+    clean = commands.add_parser("clean", help="Safely archive (.zip) or purge output runs after human confirmation")
     clean.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
-    clean.add_argument("--no-archive", action="store_true", help="Skip creating backup tar.gz archive before cleaning")
+    clean.add_argument("--no-archive", action="store_true", help="Skip creating backup .zip archive before cleaning")
     clean.add_argument("--purge-reports", action="store_true", help="Also delete final reports and analytics (default: preserved)")
     clean.add_argument("--confirm-delete", action="store_true", help="Explicit human confirmation to delete files")
     email_preview = commands.add_parser("preview-email", help="Create a private recipient and attachment preview")
@@ -832,7 +832,7 @@ def main(argv=None):
                 print(f"  - {item['name']} ({item['type']}, {item['size']:,} bytes, {item['files']} files)")
             print(f"Total size: {info['total_bytes']:,} bytes")
             if not args.confirm_delete:
-                archive_note = "An archive (.tar.gz) will be created first." if not args.no_archive else "NO ARCHIVE will be created (--no-archive)."
+                archive_note = "A cross-platform archive (.zip) will be created first." if not args.no_archive else "NO ARCHIVE will be created (--no-archive)."
                 preserve_note = "Final reports and analytics will be preserved." if not args.purge_reports else "ALL reports and analytics will be deleted."
                 print(f"\nSafety gate: {archive_note} {preserve_note}")
                 print("No files were deleted. Obtain explicit user confirmation and rerun with --confirm-delete.", file=sys.stderr)

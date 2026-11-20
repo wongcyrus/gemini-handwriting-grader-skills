@@ -34,6 +34,7 @@ class TestCleanup(unittest.TestCase):
         self.assertEqual(result["status"], "cleaned")
         self.assertTrue(result["preserved_reports"])
         self.assertTrue(Path(result["archive_path"]).exists())
+        self.assertTrue(result["archive_path"].endswith(".zip"))
         # reports should still exist
         self.assertTrue((self.output / "reports").exists())
         # grading should be deleted

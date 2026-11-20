@@ -1,7 +1,7 @@
 """Safe, gated cleanup and archival of grading outputs."""
 
 import shutil
-import tarfile
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -53,10 +53,13 @@ def archive_and_clean(
     archive_path = None
     if archive:
         ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        archive_name = f"grading_archive_{run_id or 'all'}_{ts}.tar.gz"
+        archive_name = f"grading_archive_{run_id or 'all'}_{ts}.zip"
         archive_path = output_root.parent / archive_name
-        with tarfile.open(archive_path, "w:gz") as tar:
-            tar.add(target_dir, arcname=target_dir.name)
+        with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as zipf:
+            for file_path in target_dir.rglob("*"):
+                if file_path.is_file():
+                    arcname = file_path.relative_to(target_dir.parent)
+                    zipf.write(file_path, arcname=arcname)
 
     deleted_items: List[str] = []
     # If run_id is given, we can delete the child run directory

@@ -87,7 +87,7 @@ execute a notebook as a workaround, or claim a human approval occurred.
    and review history have been preserved, and ask if they would like to clean
    or archive intermediate output using:
    `.venv/bin/handwriting-grader clean --exam /path/to/exam.yaml`
-   (which creates a `.tar.gz` archive backup by default, preserves `reports/`
+   (which creates a cross-platform `.zip` archive backup by default, preserves `reports/`
    and `analytics/`, and requires explicit `--confirm-delete`).
 9. For distribution read `references/email.md`; never send without reviewing
    the exact preview and separate dispatch approval.
