@@ -61,21 +61,192 @@ need Google Chrome and the optional dependency:
 Missing optional tools cause relevant tests to be skipped, not verified. Do
 not use actual student data or credentials in test fixtures.
 
-## 3. Try a synthetic exam
+## 3. Test the included sample
 
-For a manual workflow test, prepare a **new private directory** with a
-synthetic roster, scan and rubric. Copy `exam.yaml.template` there and set
-its input and output paths; do not overwrite an existing exam or output.
-Run the read-only preflight:
+The original notebook's fake example files are in `examples/notebook-sample/`.
+They include a roster, scanned PDF, answer-sheet template, marking scheme,
+exam document and prior verification document. The original workbook's extra
+verification sheets and the Word verification document are not new approvals.
+The example configuration uses four roster entries and eight scan pages, or
+two pages per student. The sample rubric has five questions, `Q1` through
+`Q5`. All commands below run from the skills repository root.
+
+To test the agent as well as the tools, first register the skill as in step 1,
+start Copilot from this directory, and ask:
+
+> Use the handwriting-grading skill to guide me through testing
+> `examples/notebook-sample/example.yaml`. Start with preflight. Explain each
+> operation and wait for my approval before creating output, calling Vertex,
+> approving scores or sending email.
+
+You can run the commands below yourself instead. Don't run an output-producing
+command twice if Copilot already ran it: stages refuse to overwrite outputs.
+
+### A. Preflight and inspect
+
+Open the sample PDF and roster, and confirm the scan order, two pages per
+script and shared layout. Then run:
 
 ```sh
-.venv/bin/handwriting-grader preflight --exam /path/to/private/exam.yaml
+.venv/bin/handwriting-grader preflight --exam examples/notebook-sample/example.yaml
 ```
 
-Preflight makes no Vertex calls and does not create output. It does not verify
-scan order, rubric correctness, credentials or model availability, and passing
-it is not grading approval. Follow the [README](../README.md) for subsequent
-rubric, region and review steps.
+Expected: `Preflight passed: 4 students, 0 absent, 8 pages, 2 pages per
+script.` Preflight makes no Vertex calls and creates no output. It does not
+verify scan order, rubric correctness, credentials or model availability, and
+passing it is not grading approval.
+
+Later stages write to `examples/notebook-sample/output/`, which is ignored by
+Git. They refuse to overwrite existing stage outputs. Inspect and preserve any
+existing outputs before testing; see **Repeat or troubleshoot** below.
+
+### B. Optional: generate answer sheets without AI
+
+Install LibreOffice, then run:
+
+```sh
+.venv/bin/handwriting-grader answer-sheets --exam examples/notebook-sample/example.yaml
+```
+
+Inspect `output/answer-sheets/combined.pdf`, the individual PDFs and the
+roster mapping under `examples/notebook-sample/`. Check all four identities,
+the layout and page counts. This does not grade the existing scan.
+
+### C. Import and review the sample rubric
+
+```sh
+.venv/bin/handwriting-grader import-rubric --exam examples/notebook-sample/example.yaml
+```
+
+Compare `examples/notebook-sample/output/rubric/rubric.xlsx` with the original
+sample marking scheme. Check all five questions, criteria and maximum marks.
+The copied workbook and original verification document are not approvals.
+Only after you have reviewed and accepted the rubric, run:
+
+```sh
+.venv/bin/handwriting-grader approve-rubric --exam examples/notebook-sample/example.yaml --confirm-reviewed
+```
+
+These steps use the existing XLSX and do not call AI. Close the workbook after
+review and before approving.
+
+### D. Draw and review regions
+
+Install Poppler (`pdftoppm`), then prepare and open the local editor:
+
+```sh
+.venv/bin/handwriting-grader prepare-regions --exam examples/notebook-sample/example.yaml
+.venv/bin/handwriting-grader review-regions --exam examples/notebook-sample/example.yaml
+```
+
+Open the full URL printed by the second command; keep its token private. The
+editor displays the first script's two pages. For each page:
+
+1. Click **New box**, enter a label, and drag around the corresponding field
+   or complete answer area. On page 1, draw `NAME`, `ID` and `CLASS` boxes,
+   using those exact uppercase labels. These fields also appear on page 2,
+   but do not draw them again: labels must be unique across both pages.
+2. Draw `Q1`, `Q2` and `Q3` answer boxes on page 1 and `Q4` and `Q5` on
+   page 2. Draw one box for each complete answer area.
+3. Check box placement and click **Save and mark reviewed** on each page.
+
+Confirm these regions apply to all four scripts. After reviewing both pages,
+click **Approve all regions** and confirm. Stop the editor with Ctrl+C.
+Preparing and manually reviewing regions makes no AI calls.
+
+### E. Optional: live Vertex grading
+
+This step sends sample images and answers to Vertex AI and may incur charges.
+Offline tests do not establish that your selected models, project or location
+work. First configure Google Application Default Credentials and access to
+Vertex AI. Use a private model configuration YAML containing valid model IDs:
+
+```yaml
+vertex_ai:
+  use_vertexai: true
+models:
+  ocr: YOUR_OCR_MODEL_ID
+  grading: YOUR_GRADING_MODEL_ID
+  moderation: YOUR_MODERATION_MODEL_ID
+```
+
+Replace the placeholders with models available to your project and region;
+do not put credentials in the YAML or commit it. The original grader's model
+configuration can also be used if it has these fields.
+
+In the following commands, replace `/private/model-config.yaml`,
+`PROJECT_ID` and `LOCATION` with your own values. Preview first:
+
+```sh
+.venv/bin/handwriting-grader grade --exam examples/notebook-sample/example.yaml \
+  --model-config /private/model-config.yaml --project PROJECT_ID --location LOCATION
+```
+
+The sample's preview shows up to 57 requests: OCR, grading and moderation.
+It exits without sending requests because `--confirm-cost` is absent. Check
+the target, model names, data transfer and potential cost; retries may cost
+more. Only after explicitly accepting them, repeat the same command with
+`--confirm-cost`. A partial failure can still incur charges.
+
+On success, `output/grading/review.xlsx` is an **unapproved draft**, not a
+final result. If you do not want paid calls, stop after section D and use the
+offline suite in step 2.
+
+### F. Review scores and produce reports
+
+After live grading succeeds, open the score editor:
+
+```sh
+.venv/bin/handwriting-grader review-grading --exam examples/notebook-sample/example.yaml
+```
+
+Open the printed private URL. For every script, verify the roster identity
+against the scan and save it as reviewed. For each answer, check the OCR,
+reasoning, moderation and mark against the rubric and image, correct mistakes,
+and click **Save and mark reviewed**. Failed or flagged grades and corrected
+answers require a manual mark. The comparison table can help find unreviewed
+items; it does not approve them.
+
+After reviewing every identity and mark, optionally run the read-only check
+in a separate terminal:
+
+```sh
+.venv/bin/handwriting-grader check-grading-review --exam examples/notebook-sample/example.yaml
+```
+
+A clean check is not approval. Only if you accept every reviewed score,
+click **Approve all grading** in the editor and confirm; then stop the editor
+with Ctrl+C. Alternatively, after closing the editor, explicitly approve with
+`approve-grading --exam examples/notebook-sample/example.yaml --confirm-reviewed`.
+Create and inspect reports and offline statistics:
+
+```sh
+.venv/bin/handwriting-grader report --exam examples/notebook-sample/example.yaml
+.venv/bin/handwriting-grader analytics --exam examples/notebook-sample/example.yaml
+```
+
+Check `output/reports/` and `output/analytics/` under the example directory.
+The example has no pass thresholds, so pass statistics are blank. This test
+does not send email or run optional AI analysis.
+
+### Repeat or troubleshoot
+
+An existing stage directory causes its creation command to refuse to run.
+Preserve previous work rather than deleting it. For a fresh run, make a new
+private copy of the sample files and `example.yaml` in an empty directory;
+its relative paths and `output` directory resolve there. Use that copy's YAML
+path for every command. Don't modify an exam configuration after approvals:
+changes invalidate dependent approvals.
+
+For a supported interrupted grading checkpoint, use `resume-grading --exam
+PATH` to preview and obtain fresh cost approval before adding `--confirm-cost`.
+An in-flight request can repeat. Other partial stages may require a new output
+directory. Investigate stale locks; never remove a live lock.
+
+For your own data, prepare a **new private directory**, copy
+`exam.yaml.template` there and set its input and output paths. Do not
+overwrite an existing exam or output, or put actual student data in the
+tracked example files.
 
 Live Vertex and SMTP behavior are not established by the offline suite. Use
 only authorized synthetic data and a properly configured test account.

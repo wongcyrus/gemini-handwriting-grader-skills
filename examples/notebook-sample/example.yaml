@@ -1,0 +1,12 @@
+exam:
+  name: VTC sample
+  roster: VTC Test Name List.xlsx
+  roster_sheet: Name List
+  scanned_pdf: VTC Test.pdf
+  marking_scheme: VTC Test Marking Scheme.xlsx
+  answer_sheet_template: VTC Test Answer Sheet.docx
+  output_dir: output
+
+layout:
+  pages_per_student: 2
+  same_layout_for_all: true
