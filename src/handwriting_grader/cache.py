@@ -83,8 +83,9 @@ class CachedGrader:
         return self.call("ocr", {"image_sha256": hashlib.sha256(image).hexdigest(), "field": field},
                          lambda: self.provider.ocr(image, field), validate)
 
-    def grade(self, question, answer):
+    def grade(self, question, answer, image=None):
         from .grading import GradeResponse
+        import inspect
         import math
 
         def validate(value):
@@ -93,8 +94,21 @@ class CachedGrader:
                     or not math.isfinite(grade.similarity_score) or not 0 <= grade.similarity_score <= 1):
                 raise ValueError("Invalid cached grade")
             return grade.model_dump()
-        return self.call("grading", {"question": question, "answer": answer},
-                         lambda: self.provider.grade(question, answer), validate)
+
+        payload = {"question": question, "answer": answer}
+        if image is not None:
+            payload["image_sha256"] = hashlib.sha256(image).hexdigest()
+
+        def compute():
+            try:
+                sig = inspect.signature(self.provider.grade)
+                if "image" in sig.parameters:
+                    return self.provider.grade(question, answer, image=image)
+            except (ValueError, TypeError):
+                pass
+            return self.provider.grade(question, answer)
+
+        return self.call("grading", payload, compute, validate)
 
     def moderate(self, question, entries):
         from .grading import ModerationResponse
