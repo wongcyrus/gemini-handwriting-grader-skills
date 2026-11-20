@@ -949,7 +949,8 @@ function createTableRow(item, isId, qIdx) {
   revBtn.className = item.reviewed ? "btn-success" : "";
   revBtn.style.padding = "0.25rem 0.55rem";
   revBtn.style.fontSize = "0.78rem";
-  revBtn.textContent = item.reviewed ? "Reviewed ✓" : "Review & Save";
+  const needsManual = !isId && item.flagged && (m.manual_mark == null || String(m.manual_mark).trim() === "");
+  revBtn.textContent = item.reviewed ? "Reviewed ✓" : (needsManual ? "Needs mark ⚠" : "Auto (OK)");
   revBtn.onclick = async () => {
     if (isId) {
       script = sIdx; section = "id";
@@ -1415,11 +1416,46 @@ byId("review").onclick = () => save(true).catch(e => { message(e.message); modal
 byId("approve").onclick = async () => {
   if (dirty) { message("Save the current item before approval."); return; }
   if (!confirm("Approve all reviewed identities and scores?")) return;
-  setBusy(true); message("Approving...");
+  setBusy(true); message("Finalizing unflagged items and approving...");
   try {
+    for (const s of state.scripts) {
+      if (!s.reviewed && s.reviewed_id) {
+        const res = await (await api("/api/save", {
+          revision: state.revision,
+          script_index: s.script_index,
+          reviewed: true,
+          kind: "script",
+          reviewed_id: String(s.reviewed_id),
+        })).json();
+        state.revision = res.revision;
+      }
+    }
+    for (let qIdx = 0; qIdx < state.questions.length; qIdx++) {
+      for (const s of state.scripts) {
+        const m = state.marks[s.script_index][qIdx];
+        const hasManual = m && m.manual_mark != null && String(m.manual_mark).trim() !== "";
+        if (m && !m.reviewed && ((!m.grading_failed && !m.moderator_flag) || hasManual)) {
+          const res = await (await api("/api/save", {
+            revision: state.revision,
+            script_index: s.script_index,
+            reviewed: true,
+            kind: "mark",
+            question_index: qIdx,
+            answer: m.answer,
+            reasoning: m.reasoning,
+            manual_mark: hasManual ? String(m.manual_mark) : "",
+          })).json();
+          state.revision = res.revision;
+        }
+      }
+    }
     const result = await (await api("/api/approve", {revision: state.revision, confirmed: true})).json();
+    await reload();
     message(`Approved ${result.students} students and ${result.marks} marks.`);
-  } catch (e) { message(e.message); } finally { setBusy(false); }
+  } catch (e) {
+    await reload().catch(() => {});
+    message(e.message);
+  } finally { setBusy(false); }
 };
 
 window.addEventListener("beforeunload", e => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
