@@ -434,6 +434,7 @@ it does not change model inputs, review data, region approvals or reports.</p>
       <details><summary>Original OCR answer</summary><div class="details-content"><pre id="original" style="margin:0;"></pre></div></details>
       <details id="previous-review" hidden><summary>Previous approved review</summary><div class="details-content"><pre id="previous" style="margin:0;"></pre></div></details>
 
+      <div id="modal-status" role="status" style="display:none; padding:0.45rem 0.7rem; border-radius:5px; font-size:0.82rem; font-weight:600; background:#eff6ff; border:1px solid #bfdbfe; color:#1d4ed8;"></div>
       <div id="modal-footer-actions" class="bar" style="justify-content: flex-end; padding-top: 0.5rem; border-top: 1px solid #e2e8f0;">
       </div>
     </div>
@@ -469,6 +470,15 @@ let marksheetSort = {col: "answer", mode: "group"};
 const tableImageUrls = new Map();
 
 function message(text) { byId("status").textContent = text; }
+function modalMessage(text, isError = false) {
+  const ms = byId("modal-status");
+  if (!ms) return;
+  ms.textContent = text;
+  ms.style.display = text ? "block" : "none";
+  ms.style.background = isError ? "#fef2f2" : "#eff6ff";
+  ms.style.borderColor = isError ? "#fecaca" : "#bfdbfe";
+  ms.style.color = isError ? "#b91c1c" : "#1d4ed8";
+}
 
 function setBusy(value) {
   busy = value;
@@ -503,6 +513,8 @@ function clearBulk() {
 }
 
 function openEditorModal() {
+  const ms = byId("modal-status");
+  if (ms) ms.style.display = "none";
   byId("modal-footer-actions").append(byId("save"), byId("review"));
   const modal = byId("editor-modal");
   if (typeof modal.showPopover === "function") {
@@ -1314,16 +1326,22 @@ async function save(reviewed) {
     body.answer = byId("answer").value; body.reasoning = byId("reasoning").value;
     body.manual_mark = byId("manual").value;
   }
-  setBusy(true); message("Saving...");
+  setBusy(true); message("Saving..."); modalMessage("Saving...");
   try {
     await api("/api/save", body);
     dirty = false; await reload();
+    if (reviewed) {
+      modalMessage("");
+      closeEditorModal();
+    } else {
+      modalMessage("Draft saved; item is not reviewed.");
+    }
     message(reviewed ? "Saved and marked reviewed. Any earlier approval is stale." : "Draft saved; item is not reviewed.");
   } finally { setBusy(false); }
 }
 
-byId("save").onclick = () => save(false).catch(e => message(e.message));
-byId("review").onclick = () => save(true).catch(e => message(e.message));
+byId("save").onclick = () => save(false).catch(e => { message(e.message); modalMessage(e.message, true); });
+byId("review").onclick = () => save(true).catch(e => { message(e.message); modalMessage(e.message, true); });
 
 byId("approve").onclick = async () => {
   if (dirty) { message("Save the current item before approval."); return; }
