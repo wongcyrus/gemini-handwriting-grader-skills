@@ -949,11 +949,48 @@ function createTableRow(item, isId, qIdx) {
   const cellMark = document.createElement("td");
   cellMark.className = "col-mark";
   if (isId) {
-    const spanMeta = document.createElement("span");
+    const spanMeta = document.createElement("div");
     spanMeta.style.color = "#64748b";
     spanMeta.style.fontSize = "0.78rem";
+    spanMeta.style.marginBottom = "0.25rem";
     spanMeta.textContent = `${s.name_ocr || ""} (${s.class_ocr || ""})`;
-    cellMark.append(spanMeta);
+
+    const idSelect = document.createElement("select");
+    idSelect.style.maxWidth = "200px";
+    idSelect.append(option("", "Choose roster ID"));
+    for (const [id, person] of Object.entries(state.roster || {})) {
+      idSelect.append(option(id, `${id} — ${person.name} (${person.class})`));
+    }
+    idSelect.value = s.reviewed_id == null ? "" : String(s.reviewed_id);
+    idSelect.onchange = async () => {
+      setBusy(true); message(`Saving identity for Script #${sIdx + 1}...`);
+      try {
+        const res = await (await api("/api/save", {
+          revision: state.revision,
+          script_index: sIdx,
+          reviewed: idSelect.value !== "",
+          kind: "script",
+          reviewed_id: idSelect.value,
+        })).json();
+        state.revision = res.revision;
+        s.reviewed_id = idSelect.value || null;
+        s.reviewed = idSelect.value !== "";
+        dirty = false;
+        const revBtn = byId(`inline-rev-${sIdx}`);
+        if (revBtn) {
+          revBtn.className = s.reviewed ? "btn-success" : "";
+          revBtn.textContent = s.reviewed ? "Reviewed ✓" : "Auto (OK)";
+        }
+        renderTabs();
+        renderComparison();
+        message(s.reviewed ? `Script #${sIdx + 1} identity saved and reviewed.` : `Script #${sIdx + 1} identity cleared.`);
+      } catch (e) {
+        message(e.message);
+      } finally {
+        setBusy(false);
+      }
+    };
+    cellMark.append(spanMeta, idSelect);
   } else {
     const isLocked = m.manual_mark != null && String(m.manual_mark).trim() !== "";
     const markVal = isLocked ? m.manual_mark : (m.moderated_mark ?? m.raw_mark ?? "");
