@@ -286,10 +286,6 @@ Keep this URL private and close spreadsheet editors while using this interface.<
   <div class="global-actions">
     <label class="visually-hidden">Script <select id="script"></select></label>
     <label class="visually-hidden">Review <select id="section"></select></label>
-    <span id="global-save-slot" hidden>
-      <button id="save">Save draft</button>
-      <button id="review" class="btn-primary">Save and mark reviewed</button>
-    </span>
   </div>
 </div>
 <div id="questions-drawer" class="questions-drawer" hidden></div>
@@ -421,6 +417,8 @@ it does not change model inputs, review data, region approvals or reports.</p>
     </div>
   </div>
   <div id="modal-footer-actions" class="bar" style="justify-content: flex-end; padding: 0.65rem 1.15rem; border-top: 1px solid #e2e8f0; background: #f8fafc; flex-shrink: 0;">
+    <button id="save">Save draft</button>
+    <button id="review" class="btn-primary">Save and mark reviewed</button>
   </div>
 </dialog>
 
@@ -499,7 +497,6 @@ function clearSuggestion() {
 function openEditorModal() {
   const ms = byId("modal-status");
   if (ms) ms.style.display = "none";
-  byId("modal-footer-actions").append(byId("save"), byId("review"));
   const modal = byId("editor-modal");
   if (typeof modal.showPopover === "function") {
     if (!modal.matches(":popover-open")) modal.showPopover();
@@ -508,7 +505,6 @@ function openEditorModal() {
   }
 }
 function closeEditorModal() {
-  byId("global-save-slot").append(byId("save"), byId("review"));
   const modal = byId("editor-modal");
   if (typeof modal.hidePopover === "function") {
     if (modal.matches(":popover-open")) modal.hidePopover();
