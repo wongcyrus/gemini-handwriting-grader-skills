@@ -24,8 +24,10 @@
    temporary token. The server runs until stopped with Ctrl+C.
 4. When AI suggestions exist, they are automatically loaded across all pages
    on startup. The Load AI suggestions button can also reload them across all
-   pages. On each page, adjust boxes (move, resize with handle, relabel, delete,
-   or add new boxes). Save and mark each page reviewed. Check all answer and
+   pages. On each page, adjust boxes (drag to draw with live preview, move,
+   resize with handle, relabel, delete, or nudge a selected box with Arrow
+   keys / `Shift+Arrow` and remove with `Delete`/`Backspace` when the canvas
+   is focused). Save and mark each page reviewed. Check all answer and
    metadata regions; the ID box must be on the first page.
 5. Approve all regions only after reviewing every page. The editor writes
    `annotations.json` and a separate hash-based `approval.json`. Saving another

@@ -28,10 +28,15 @@
    --project PROJECT_ID --location LOCATION` to preview. Explain the request
    count and data sent; repeat with `--confirm-cost` only after approval.
 4. Ask the teacher to run `review-grading --exam /path/to/exam.yaml` and open
-   the full printed local URL. Review identities and each answer against the
-   crop or full page, edit text and marks, then explicitly mark every item
-   reviewed. The approval button asks for confirmation and uses the same
-   validator as `approve-grading`. Do not leave spreadsheet editors open:
+   the full printed local URL. The score editor presents a one-page blind
+   marksheet per question (hiding student IDs during question review), groups
+   similar answers together, lets the teacher sort by clicking table headers
+   (`Answer`, `Script`, `Mark`, `Similarity`, `Status`), resize or enlarge
+   handwriting crops, toggle columns, edit marks inline, or click a script
+   number to open a side-by-side detail dialog. Review identities and each answer
+   against the crop or full page, edit text and marks, then explicitly mark
+   every item reviewed. The approval button asks for confirmation and uses the
+   same validator as `approve-grading`. Do not leave spreadsheet editors open:
    non-cooperating applications can race with saves. Prior workbook versions
    remain in private `grading/review-history/`; edits invalidate approvals.
    Investigate a stale `.score-review.lock` before removing it; never remove a
