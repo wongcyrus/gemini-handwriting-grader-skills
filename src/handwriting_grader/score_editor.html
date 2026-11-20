@@ -1198,7 +1198,17 @@ byId("mark-ids-reviewed").onclick = async () => {
     }
     dirty = false;
     await reload();
-    message(`Marked ${targets.length} student identity/identities reviewed.`);
+    const allIdsDone = state.scripts.every(s => s.reviewed);
+    const nextQ = state.questions.findIndex((_, qi) =>
+      state.scripts.some(s => !state.marks[s.script_index][qi]?.reviewed)
+    );
+    if (allIdsDone && nextQ >= 0) {
+      section = String(nextQ);
+      await render();
+      message(`Marked ${targets.length} student identity/identities reviewed ✓ — Moved to next unreviewed question.`);
+    } else {
+      message(`Marked ${targets.length} student identity/identities reviewed.`);
+    }
   } catch (e) {
     message(e.message);
   } finally {
@@ -1266,7 +1276,23 @@ byId("mark-question-reviewed").onclick = async () => {
       await renderMarksheetTable();
       message(`Marked ${targets.length} item(s) reviewed. ${failedNoMark.length} failed item(s) still need a manual mark.`);
     } else {
-      message(`Marked all ${targets.length} item(s) in this question reviewed ✓`);
+      const totalQ = state.questions.length;
+      let nextIdx = -1;
+      for (let offset = 1; offset <= totalQ; offset++) {
+        const candidate = (qIdx + offset) % totalQ;
+        if (state.scripts.some(s => !state.marks[s.script_index][candidate]?.reviewed)) {
+          nextIdx = candidate;
+          break;
+        }
+      }
+      if (nextIdx >= 0) {
+        section = String(nextIdx);
+        await render();
+        const nextLabel = state.questions[nextIdx].question_number;
+        message(`Question reviewed ✓ — Moved to ${String(nextLabel).startsWith("Q") ? nextLabel : "Q" + nextLabel}.`);
+      } else {
+        message(`Marked all ${targets.length} item(s) in this question reviewed ✓ — All sections complete!`);
+      }
     }
   } catch (e) {
     message(e.message);
