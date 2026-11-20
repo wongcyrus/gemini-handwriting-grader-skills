@@ -13,6 +13,7 @@ from contextlib import contextmanager
 from decimal import Decimal, InvalidOperation, ROUND_FLOOR, localcontext
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 from openpyxl import load_workbook
 from openpyxl.utils.exceptions import IllegalCharacterError
@@ -359,7 +360,10 @@ class ScoreHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.headers.get("Host") != self.server.origin.removeprefix("http://"):
             return self.json_response(403, {"error": "Invalid host"})
-        if self.path == "/":
+        parsed = urlsplit(self.path)
+        path = parsed.path
+        query = parse_qs(parsed.query)
+        if path == "/":
             return self.respond(200, Path(__file__).with_name("score_editor.html").read_bytes(),
                                 "text/html; charset=utf-8")
         if not self.authorized():
@@ -372,7 +376,7 @@ class ScoreHandler(BaseHTTPRequestHandler):
                 if file_hash(root / "manifest.json") != revision.split(":")[2]:
                     raise ValueError("Grading manifest changed")
                 effective_crops = manifest.get("effective_crops", {})
-                if self.path == "/api/state":
+                if path == "/api/state":
                     _, _, _, boxes = approved_inputs(self.server.config, self.server.config_dir, self.server.config_path)
                     return self.json_response(200, {
                         "revision": revision, "roster": roster, "questions": questions,
@@ -383,7 +387,7 @@ class ScoreHandler(BaseHTTPRequestHandler):
                                                      [boxes[question_key(q["question_number"])][1]] * len(scripts))[i]
                                    for q in questions] for i in sorted(scripts)],
                     })
-                segments = self.path.split("/")
+                segments = path.split("/")
                 if len(segments) == 5 and segments[1:3] == ["api", "image"]:
                     script, field = segments[3:]
                     full_page = field.startswith("full-")
@@ -407,10 +411,11 @@ class ScoreHandler(BaseHTTPRequestHandler):
                     image = root / "images" / f"{int(script) * self.server.config['layout']['pages_per_student'] + page}.jpg"
                     if full_page:
                         return self.respond(200, image.read_bytes(), "image/jpeg")
-                    if context_crop:
+                    pad_all = max(0, min(2000, int(query["pad"][0]))) if "pad" in query and query["pad"][0].isdigit() else 0
+                    if context_crop or pad_all > 0:
                         with Image.open(image) as source:
-                            pad_x = max(80, int(box["width"] * 0.35))
-                            pad_y = max(80, int(box["height"] * 0.50))
+                            pad_x = pad_all if pad_all > 0 else max(80, int(box["width"] * 0.35))
+                            pad_y = pad_all if pad_all > 0 else max(80, int(box["height"] * 0.50))
                             x0 = max(0, box["x"] - pad_x)
                             y0 = max(0, box["y"] - pad_y)
                             x1 = min(source.width, box["x"] + box["width"] + pad_x)

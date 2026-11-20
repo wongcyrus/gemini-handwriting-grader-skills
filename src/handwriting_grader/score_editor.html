@@ -341,6 +341,10 @@ Keep this URL private and close spreadsheet editors while using this interface.<
         <option value="full-">Full Page</option>
       </select>
     </label>
+    <label title="Increase the bounding box margin on all answers at once to show out-of-bounds writing">Expand Box:
+      <input type="range" id="box-pad" min="0" max="600" step="20" value="0">
+      <span id="currentBoxPad" style="font-weight: 600; color: #2563eb; min-width: 46px;">+0px</span>
+    </label>
     <label>Image Size: <input type="range" id="img-size" min="100" max="1200" step="20" value="280"> <span id="currentImgSize" style="font-weight: 600; color: #475569;">280px</span></label>
   </div>
   <div class="controls-group">
@@ -1342,19 +1346,21 @@ function refreshMarksBySimilarity() {
 
 async function loadTableImages() {
   const prefix = byId("table-image-mode").value || "";
-  document.body.classList.toggle("view-expanded", prefix !== "");
+  const pad = Number(byId("box-pad").value) || 0;
+  const query = prefix === "" && pad > 0 ? `?pad=${pad}` : "";
+  document.body.classList.toggle("view-expanded", prefix !== "" || pad > 0);
   const images = document.querySelectorAll("img.answer-crop-img");
   for (const img of images) {
     const s = img.dataset.script, f = img.dataset.field;
-    const key = `${s}_${prefix}${f}`;
+    const key = `${s}_${prefix}${f}${query}`;
     if (tableImageUrls.has(key)) {
       img.src = tableImageUrls.get(key);
       continue;
     }
-    api(`/api/image/${s}/${prefix}${f}`).then(res => res.blob()).then(blob => {
+    api(`/api/image/${s}/${prefix}${f}${query}`).then(res => res.blob()).then(blob => {
       const url = URL.createObjectURL(blob);
       tableImageUrls.set(key, url);
-      if ((byId("table-image-mode").value || "") === prefix) img.src = url;
+      if ((byId("table-image-mode").value || "") === prefix && (Number(byId("box-pad").value) || 0) === pad) img.src = url;
     }).catch(() => {});
   }
 }
@@ -1384,10 +1390,12 @@ function setLightboxZoom(zoom, anchorClientX, anchorClientY) {
 }
 
 async function loadLightboxImage(sIdx, field, mode) {
-  const key = `${sIdx}_${mode}${field}`;
+  const pad = Number(byId("box-pad").value) || 0;
+  const query = mode === "" && pad > 0 ? `?pad=${pad}` : "";
+  const key = `${sIdx}_${mode}${field}${query}`;
   let url = tableImageUrls.get(key);
   if (!url) {
-    const res = await api(`/api/image/${sIdx}/${mode}${field}`);
+    const res = await api(`/api/image/${sIdx}/${mode}${field}${query}`);
     const blob = await res.blob();
     url = URL.createObjectURL(blob);
     tableImageUrls.set(key, url);
@@ -1476,6 +1484,22 @@ byId("table-image-mode").onchange = e => {
   }
   loadTableImages();
 };
+byId("box-pad").oninput = e => {
+  byId("currentBoxPad").textContent = `+${e.target.value}px`;
+};
+byId("box-pad").onchange = e => {
+  const pad = Number(e.target.value) || 0;
+  byId("currentBoxPad").textContent = `+${pad}px`;
+  if (pad > 0) {
+    byId("table-image-mode").value = "";
+    if (Number(byId("img-size").value) < 420) {
+      byId("img-size").value = "420";
+      byId("currentImgSize").textContent = "420px";
+      document.documentElement.style.setProperty("--img-max-h", "420px");
+    }
+  }
+  loadTableImages();
+};
 
 if (!("closedBy" in HTMLDialogElement.prototype)) {
   const outside = (e, dialog) => {
@@ -1545,7 +1569,9 @@ async function image(field) {
   imageReady = false; setBusy(busy);
   byId("image").removeAttribute("src");
   const prefix = byId("full-page").checked ? "full-" : (modalContext ? "ctx-" : "");
-  const response = await api(`/api/image/${script}/${prefix}${field}`);
+  const pad = Number(byId("box-pad").value) || 0;
+  const query = !byId("full-page").checked && !modalContext && pad > 0 ? `?pad=${pad}` : "";
+  const response = await api(`/api/image/${script}/${prefix}${field}${query}`);
   const blob = await response.blob();
   if (generation !== imageGeneration) return;
   if (imageUrl) URL.revokeObjectURL(imageUrl);
