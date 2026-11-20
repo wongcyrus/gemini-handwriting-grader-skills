@@ -228,6 +228,7 @@ textarea {
 }
 .warning { color: #dc2626; font-weight: 700; }
 .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+[hidden] { display: none !important; }
 
 details {
   background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px;
@@ -285,7 +286,7 @@ Keep this URL private and close spreadsheet editors while using this interface.<
   <div class="global-actions">
     <label class="visually-hidden">Script <select id="script"></select></label>
     <label class="visually-hidden">Review <select id="section"></select></label>
-    <span id="global-save-slot" class="bar" hidden>
+    <span id="global-save-slot" hidden>
       <button id="save">Save draft</button>
       <button id="review" class="btn-primary">Save and mark reviewed</button>
     </span>
