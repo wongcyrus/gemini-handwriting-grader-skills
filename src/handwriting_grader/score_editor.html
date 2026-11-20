@@ -23,14 +23,29 @@ p.instructions { font-size: 0.82rem; color: #475569; margin: 0 0 0.6rem 0; line-
 }
 .nav-tabs { display: flex; gap: 0.35rem; align-items: center; flex-wrap: wrap; }
 .nav-tab {
-  padding: 0.35rem 0.8rem; border: 1px solid #cbd5e1; background: #ffffff;
-  border-radius: 5px; font-size: 0.84rem; font-weight: 600; color: #334155;
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  padding: 0.32rem 0.65rem; border: 1px solid #cbd5e1; background: #ffffff;
+  border-radius: 5px; font-size: 0.82rem; font-weight: 600; color: #334155;
   cursor: pointer; text-decoration: none; transition: all 0.12s ease;
 }
 .nav-tab:hover { background: #f1f5f9; border-color: #94a3b8; }
+.nav-tab.tab-done { border-color: #bbf7d0; background: #f0fdf4; color: #166534; }
+.nav-tab.tab-flagged { border-color: #fed7aa; background: #fff7ed; color: #9a3412; }
 .nav-tab.active { background: #2563eb; color: #ffffff; border-color: #1d4ed8; }
 .nav-tab.metadata { background: #f8fafc; color: #0284c7; border-color: #bae6fd; }
 .nav-tab.metadata.active { background: #0284c7; color: #ffffff; border-color: #0369a1; }
+.tab-badge {
+  display: inline-block; padding: 0.05rem 0.38rem; border-radius: 999px;
+  font-size: 0.72rem; font-weight: 700; line-height: 1.3;
+}
+.tab-badge.done { background: #dcfce7; color: #15803d; }
+.tab-badge.pending { background: #e2e8f0; color: #334155; }
+.tab-badge.flagged { background: #fee2e2; color: #b91c1c; }
+.nav-tab.active .tab-badge { background: rgba(255,255,255,0.22); color: #ffffff; }
+.review-summary-pill {
+  font-size: 0.78rem; font-weight: 600; color: #475569;
+  padding: 0.25rem 0.55rem; background: #f1f5f9; border-radius: 999px;
+}
 
 .global-actions { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
 
@@ -539,28 +554,86 @@ function textSimilarity(a, b) {
 function renderTabs() {
   const nav = byId("question-tabs");
   nav.replaceChildren();
+  if (!state || !state.scripts) return;
 
-  const idTab = document.createElement("a");
-  idTab.className = "nav-tab metadata" + (section === "id" ? " active" : "");
-  idTab.textContent = "Student Identity";
+  const totalScripts = state.scripts.length;
+  const idReviewed = state.scripts.filter(s => s.reviewed).length;
+  const idErrors = state.scripts.filter(s => !s.reviewed && s.errors && s.errors.length > 0).length;
+  const idDone = totalScripts > 0 && idReviewed === totalScripts;
+
+  const idTab = document.createElement("button");
+  idTab.type = "button";
+  idTab.className = "nav-tab metadata" + (section === "id" ? " active" : "") + (idDone ? " tab-done" : (idErrors > 0 ? " tab-flagged" : ""));
+  idTab.append(document.createTextNode("Student Identity"));
+  const idBadge = document.createElement("span");
+  idBadge.className = "tab-badge " + (idDone ? "done" : (idErrors > 0 ? "flagged" : "pending"));
+  idBadge.textContent = idDone ? "✓" : `${idReviewed}/${totalScripts}` + (idErrors > 0 ? ` ⚠${idErrors}` : "");
+  idTab.append(idBadge);
   idTab.onclick = () => {
     closeEditorModal();
     change("section", "id");
   };
   nav.append(idTab);
 
-  if (state && state.questions) {
+  let totalPendingQuestions = idDone ? 0 : 1;
+  let nextPendingSection = idDone ? null : "id";
+
+  if (state.questions) {
     state.questions.forEach((q, i) => {
-      const tab = document.createElement("a");
-      tab.className = "nav-tab" + (section === String(i) ? " active" : "");
+      let qReviewed = 0, qFlagged = 0;
+      for (const s of state.scripts) {
+        const m = state.marks[s.script_index][i];
+        if (m && m.reviewed) qReviewed++;
+        if (m && (m.grading_failed || m.moderator_flag) && !m.reviewed) qFlagged++;
+      }
+      const qDone = totalScripts > 0 && qReviewed === totalScripts;
+      if (!qDone) {
+        totalPendingQuestions++;
+        if (nextPendingSection === null || (section !== "id" && i > Number(section))) {
+          if (nextPendingSection === null || (section !== "id" && Number(nextPendingSection) <= Number(section))) {
+            nextPendingSection = String(i);
+          }
+        }
+      }
+
+      const tab = document.createElement("button");
+      tab.type = "button";
+      tab.className = "nav-tab" + (section === String(i) ? " active" : "") + (qDone ? " tab-done" : (qFlagged > 0 ? " tab-flagged" : ""));
       const qLabel = String(q.question_number).startsWith("Q") ? q.question_number : `Q${q.question_number}`;
-      tab.textContent = `${qLabel} (${q.marks}m)`;
+      tab.append(document.createTextNode(`${qLabel} (${q.marks}m)`));
+
+      const badge = document.createElement("span");
+      badge.className = "tab-badge " + (qDone ? "done" : (qFlagged > 0 ? "flagged" : "pending"));
+      badge.textContent = qDone ? "✓" : `${qReviewed}/${totalScripts}` + (qFlagged > 0 ? ` ⚠${qFlagged}` : "");
+      tab.append(badge);
+
       tab.onclick = () => {
         closeEditorModal();
         change("section", String(i));
       };
       nav.append(tab);
     });
+  }
+
+  const summary = document.createElement("span");
+  summary.className = "review-summary-pill";
+  summary.textContent = totalPendingQuestions === 0
+    ? "All sections reviewed ✓"
+    : `${totalPendingQuestions} section${totalPendingQuestions === 1 ? "" : "s"} need review`;
+  nav.append(summary);
+
+  if (nextPendingSection !== null && nextPendingSection !== section) {
+    const jumpBtn = document.createElement("button");
+    jumpBtn.type = "button";
+    jumpBtn.id = "next-unreviewed";
+    jumpBtn.style.fontSize = "0.78rem";
+    jumpBtn.style.padding = "0.25rem 0.55rem";
+    jumpBtn.textContent = "Next needing review →";
+    jumpBtn.onclick = () => {
+      closeEditorModal();
+      change("section", nextPendingSection);
+    };
+    nav.append(jumpBtn);
   }
 }
 
