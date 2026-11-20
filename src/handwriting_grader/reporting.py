@@ -98,8 +98,11 @@ def scored_scripts(root, grading_root, regions_root, rows, questions, pages_per_
                     if key in (effective_crops or {}):
                         box = effective_crops[key][row["script_index"]]
                     if box_page == page:
-                        draw.text((box["x"], box["y"]), f"{mark:g}/{question['marks']:g}",
-                                  fill="red", font=font, stroke_width=1, stroke_fill="white")
+                        label = f"{mark:g}"
+                        text_w = draw.textlength(label, font=font)
+                        x = max(0, min(image.width - text_w - 6, box["x"] + box["width"] - text_w - 6))
+                        y = max(0, box["y"] + 2)
+                        draw.text((x, y), label, fill="red", font=font, stroke_width=2, stroke_fill="white")
                 if page == 0:
                     draw.text((10, 10), f"Total: {row['total']:g}", fill="red",
                               font=font, stroke_width=1, stroke_fill="white")
