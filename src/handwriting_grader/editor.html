@@ -195,11 +195,21 @@ document.getElementById("next").onclick = () => showPage(Math.min(state.pages.le
 document.getElementById("save").onclick = () => save(false).catch(e => message(e.message));
 document.getElementById("review").onclick = () => save(true).catch(e => message(e.message));
 document.getElementById("approve").onclick = async () => {
-  if (dirty) { message("Save the current page before approval."); return; }
-  if (!confirm("Approve all saved page layouts for this exam?")) return;
+  if (selected >= 0) boxes[selected].label = label.value.trim();
+  state.draft.annotations[String(page)] = structuredClone(boxes);
+  if (!confirm("Approve all page layouts for this exam?")) return;
   try {
+    for (let p = 0; p < state.pages.length; p++) {
+      if (!state.draft.reviewed.includes(p) || (p === page && dirty)) {
+        const pBoxes = (p === page) ? boxes : (state.draft.annotations[String(p)] || []);
+        const resp = await api("/api/page", {revision: state.draft.revision, page: p, boxes: pBoxes, reviewed: true});
+        state.draft = await resp.json();
+      }
+    }
+    dirty = false;
     await api("/api/approve", {revision: state.draft.revision});
     state.approved = true;
+    draw();
     message("Regions approved. This does not start grading.");
   } catch (e) { message(e.message); }
 };
