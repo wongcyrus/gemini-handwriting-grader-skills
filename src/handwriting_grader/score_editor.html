@@ -301,10 +301,10 @@ Keep this URL private and close spreadsheet editors while using this interface.<
 <!-- Identity Matching Section (Only visible on Student Identity tab) -->
 <div class="identity-panel" id="script-fields">
   <div class="bar">
-    <span id="ocr" style="font-weight: 600;"></span>
-    <label>Reviewed roster ID <select id="reviewed-id"></select></label>
+    <span id="ocr" class="visually-hidden"></span>
+    <label class="visually-hidden">Reviewed roster ID <select id="reviewed-id"></select></label>
     <label>Metadata image <select id="metadata-image"><option value="id">ID</option><option value="name">Name</option><option value="class">Class</option></select></label>
-    <span id="review-status-id" style="font-weight: 600; color: #475569;"></span>
+    <span id="review-status-id" class="visually-hidden"></span>
   </div>
 </div>
 
@@ -1488,7 +1488,10 @@ byId("section").onchange = e => {
   change("section", e.target.value);
   if (e.target.value !== "id") openEditorModal(); else closeEditorModal();
 };
-byId("metadata-image").onchange = e => image(e.target.value).catch(err => message(err.message));
+byId("metadata-image").onchange = e => {
+  image(e.target.value).catch(err => message(err.message));
+  renderMarksheetTable();
+};
 byId("full-page").onchange = () => image(section === "id" ? byId("metadata-image").value : section)
   .catch(err => message(err.message));
 
