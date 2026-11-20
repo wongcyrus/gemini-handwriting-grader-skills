@@ -1009,7 +1009,7 @@ function createTableRow(item, isId, qIdx) {
     spanMeta.style.color = "#64748b";
     spanMeta.style.fontSize = "0.78rem";
     spanMeta.style.marginBottom = "0.25rem";
-    spanMeta.textContent = `ID: ${s.id_ocr || "-"} · ${s.name_ocr || ""} (${s.class_ocr || ""})`;
+    spanMeta.textContent = `OCR ID: ${s.id_ocr || "-"}`;
 
     const idSelect = document.createElement("select");
     idSelect.style.maxWidth = "200px";
@@ -1683,14 +1683,22 @@ byId("approve").onclick = async () => {
   if (!confirm("Approve all reviewed identities and scores?")) return;
   setBusy(true); message("Finalizing unflagged items and approving...");
   try {
+    const roster = state.roster || {};
+    const usedIds = new Set(state.scripts.map(x => x.reviewed_id).filter(Boolean).map(String));
     for (const s of state.scripts) {
-      if (!s.reviewed && s.reviewed_id) {
+      if (s.reviewed) continue;
+      let targetId = s.reviewed_id ? String(s.reviewed_id) : "";
+      if (!targetId && s.id_ocr && Object.prototype.hasOwnProperty.call(roster, String(s.id_ocr)) && !usedIds.has(String(s.id_ocr))) {
+        targetId = String(s.id_ocr);
+        usedIds.add(targetId);
+      }
+      if (targetId) {
         const res = await (await api("/api/save", {
           revision: state.revision,
           script_index: s.script_index,
           reviewed: true,
           kind: "script",
-          reviewed_id: String(s.reviewed_id),
+          reviewed_id: targetId,
         })).json();
         updateRevision(res.revision);
       }
