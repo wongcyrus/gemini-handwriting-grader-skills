@@ -264,10 +264,13 @@ def continue_grading(target, results, questions, boxes, summary, stride, models,
                 attendance_guard()
             results["scripts"].append(metadata)
             atomic_json(target / "results.json", results)
-        for question in questions:
+            print(f"[Metadata {script_index + 1}/{summary['students']}] Extracted student identifiers", flush=True)
+        total_q = len(questions)
+        for q_index, question in enumerate(questions):
             key = question_key(question["question_number"])
             page, box = boxes[key]
             rows = []
+            print(f"[{q_index + 1}/{total_q}] Grading question {question['question_number']} ({summary['students']} scripts)...", flush=True)
             for script_index in range(summary["students"]):
                 box = (effective_crops or {}).get(key, [])[script_index] if key in (effective_crops or {}) else boxes[key][1]
                 row = marks.get((script_index, key))
@@ -323,6 +326,7 @@ def continue_grading(target, results, questions, boxes, summary, stride, models,
                         row["moderator_note"] = "moderation_skipped_due_to_grading_failure"
             moderated.append(key)
             atomic_json(target / "results.json", results)
+            print(f"[{q_index + 1}/{total_q}] Question {question['question_number']} complete (graded & moderated)", flush=True)
 
 
 @contextmanager
