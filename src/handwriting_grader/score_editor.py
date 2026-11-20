@@ -132,7 +132,7 @@ def commit_review(server, root, book, revision):
                 or file_hash(root / "manifest.json") != manifest_hash):
             raise RuntimeError("Grading or review changed during save; reload before editing")
         os.replace(temp, root / "review.xlsx")
-        return file_hash(root / "review.xlsx")
+        return f"{file_hash(root / 'review.xlsx')}:{result_hash}:{manifest_hash}"
     finally:
         if temp is not None:
             temp.unlink(missing_ok=True)
