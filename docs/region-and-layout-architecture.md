@@ -21,7 +21,7 @@ Exam answer sheets use physical pixel bounding boxes anchored to rendered 200 DP
 - Mandatory Identification Boxes (Page 0):
   - `ID`: Student ID handwriting zone.
   - `CLASS`: Student Class handwriting zone.
-  - `NAME`: (Optional) Student Name handwriting zone.
+  - `NAME`: Student Name handwriting zone.
 - Question Boxes:
   - Labeled matching the approved rubric (e.g. `Q1`, `Q2`, `Q3`, ...).
   - Every question in the approved rubric must have exactly one bounding box across the page set.
