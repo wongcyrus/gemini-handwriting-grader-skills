@@ -61,6 +61,8 @@ def load_model_settings(path, agent="annotation"):
 def create_json_once(path, data):
     """Atomically publish a new suggestions file without replacing an old one."""
     path = Path(path)
+    if path.exists():
+        raise ValueError("AI suggestions already exist; do not overwrite them")
     with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as file:
         temp = Path(file.name)
         try:
@@ -72,9 +74,9 @@ def create_json_once(path, data):
             temp.unlink(missing_ok=True)
             raise
     try:
-        os.link(temp, path)
-    except FileExistsError as exc:
-        raise ValueError("AI suggestions already exist; do not overwrite them") from exc
+        if path.exists():
+            raise ValueError("AI suggestions already exist; do not overwrite them")
+        os.replace(temp, path)
     finally:
         temp.unlink(missing_ok=True)
 

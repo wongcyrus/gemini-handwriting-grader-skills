@@ -280,10 +280,22 @@ def main(argv=None):
     email_send = commands.add_parser("send-email", help="Send individually approved emails using SMTP STARTTLS")
     email_send.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     email_send.add_argument("--confirm-send", action="store_true", help="Explicitly confirm dispatch")
+    discover_models = commands.add_parser("discover-models", help="Discover and probe available Vertex AI models online")
+    discover_models.add_argument("--project", required=True, help="Explicit Google Cloud project")
+    discover_models.add_argument("--location", default="global", help="Vertex AI location (default: global)")
+    discover_models.add_argument("--write-config", type=Path, help="Path to write/update model configuration YAML")
     for selected in (resume, grade_review, grade_check, grade_approve, report, analytics, ai_analysis, analysis_approve,
                      infographics, advanced_report, cost_report, clean, email_preview, email_approve, email_send):
         selected.add_argument("--run", help="Child run ID (default: original run)")
     args = parser.parse_args(argv)
+    if args.command == "discover-models":
+        from .discovery import discover_and_report
+        try:
+            discover_and_report(args.project, args.location, args.write_config)
+            return 0
+        except Exception as exc:
+            print(f"Model discovery failed: {exc}", file=sys.stderr)
+            return 1
     try:
         path = args.exam.expanduser().resolve()
         config = load_config(path)

@@ -102,8 +102,8 @@
    class PPTX with a question-score chart. Review both before sharing.
 8. Optional `infographics --exam /path/to/exam.yaml --model-config
    /path/to/config.yaml --project PROJECT_ID --location LOCATION` previews
-   use of `models.analytics_image`. Obtain separate approval for transmitting
-   reviewed analysis and image-generation cost before adding `--confirm-cost`.
+   use of `models.analytics_image` (`gemini-3.8-flash` for high-throughput visual asset generation). Obtain separate approval for transmitting
+   reviewed analysis and generation cost before adding `--confirm-cost`.
    Review images and use `advanced-report --include-infographics
    --confirm-images-reviewed` to include them only after explicit approval;
    the image/model and analysis approvals must remain current.

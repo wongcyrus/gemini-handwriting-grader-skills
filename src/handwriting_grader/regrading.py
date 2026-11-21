@@ -134,7 +134,7 @@ def private_parent_cache(path):
     if not root.is_absolute() or root.resolve() != root or not root.is_dir():
         raise ValueError("The parent cache directory is unavailable or unsafe")
     info = root.stat()
-    if info.st_uid != os.getuid() or info.st_mode & 0o077:
+    if hasattr(os, "getuid") and (info.st_uid != os.getuid() or info.st_mode & 0o077):
         raise ValueError("Parent cache directory must be owned by the user and private (mode 0700)")
     return root
 

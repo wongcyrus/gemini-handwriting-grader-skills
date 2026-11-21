@@ -44,7 +44,7 @@ Grading runs in three strictly decoupled, resilient phases:
   ```
 - **Prompt**: Strict extraction directive:
   > *"Extract only the handwritten {field} from this image. Preserve text and line breaks. Return an empty response if blank; do not guess."*
-- **Model**: Fast flash model (`gemini-3.8-flash` / `gemini-2.5-flash`), temperature = 0.
+- **Model**: Fast flash model (`gemini-3.8-flash`), temperature = 0.
 
 ---
 

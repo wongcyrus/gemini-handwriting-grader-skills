@@ -51,15 +51,14 @@ class TestTelemetryTracker(unittest.TestCase):
         expected = 0.009375 + 0.0375 + 0.030
         self.assertAlmostEqual(cost, round(expected, 6), places=5)
 
-    def test_calculate_cost_images(self):
+    def test_calculate_cost_tier_fallback(self):
         cost = self.tracker.calculate_cost(
-            model="gemini-3-pro-image",
-            prompt_tokens=100,
-            candidate_tokens=10,
+            model="gemini-4-hydrogen",
+            prompt_tokens=1_000_000,
+            candidate_tokens=100_000,
             cached_tokens=0,
-            images_count=2,
         )
-        self.assertAlmostEqual(cost, 0.06, places=4)
+        self.assertAlmostEqual(cost, 1.25 + 0.50, places=4)
 
     def test_record_call_and_summary(self):
         usage = MagicMock()

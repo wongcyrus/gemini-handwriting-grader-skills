@@ -12,16 +12,16 @@ Exam grading operations consume an external YAML model configuration file (`--mo
 vertex_ai:
   use_vertexai: true
   project_id: my-gcp-project-id
-  location: us-central1
+  location: global
 
 models:
-  annotation: gemini-3.8-flash        # Automated region suggestion
-  marking_scheme: gemini-3.8-flash    # Rubric extraction from DOCX
-  ocr: gemini-3.8-flash               # Student ID & Class metadata OCR
-  grading: gemini-3.8-flash           # Per-script multimodal question grading
-  moderation: gemini-4-argon          # Batch consistency moderation
-  analytics: gemini-4-argon           # AI feedback & misconception analysis
-  analytics_image: gemini-3-pro-image # Infographic generation
+  annotation: gemini-3.8-flash        # Automated region suggestion (Flash tier)
+  marking_scheme: gemini-3.8-flash    # Rubric extraction from DOCX (Flash tier)
+  ocr: gemini-3.8-flash               # Student ID & Class metadata OCR (Flash tier)
+  grading: gemini-3.8-flash           # Per-script multimodal question grading (Flash tier)
+  moderation: gemini-4-argon          # Batch consistency moderation (Reasoning tier)
+  analytics: gemini-4-argon           # AI feedback & misconception analysis (Reasoning tier)
+  analytics_image: gemini-3.8-flash   # Infographic generation (Flash tier)
 
 caching:
   enabled: true
@@ -31,6 +31,24 @@ caching:
     - grading
     - moderation
 ```
+
+---
+
+## 2. Dynamic Online Model Discovery (`discover-models`)
+
+Google frequently updates and releases new Gemini models. To prevent relying on static, outdated, or fantasy model names, `gemini-handwriting-grader-skills` provides automated online model discovery:
+
+```bash
+python -m handwriting_grader.cli discover-models --project <PROJECT_ID> [--location <LOCATION>] [--write-config /path/to/config.yaml]
+```
+
+### Discovery Mechanics:
+1. **Live Vertex AI Query**: Calls `client.models.list()` live against your Google Cloud project and location to discover currently deployed publisher models.
+2. **Quota & Connectivity Ping**: Conducts a zero-cost live ping to verify that the project has active quota and valid regional routing (e.g. `global` vs regional endpoints).
+3. **Capability & Cost Tier Allocation**:
+   - **Flash Tier** (e.g. `gemini-3.8-flash` @ ~$0.075/1M input): Assigned to high-volume batch tasks (`ocr`, `grading`, `marking_scheme`, `annotation`, `analytics_image`).
+   - **Frontier Reasoning Tier** (e.g. `gemini-4-argon` @ ~$1.250/1M input): Assigned strictly to complex cohort synthesis tasks (`moderation`, `analytics`).
+4. **Transparent Cost Table**: Outputs an ASCII cost and throughput breakdown before writing the configuration.
 
 ---
 

@@ -55,7 +55,7 @@ class CachedGrader:
         if self.agents:
             root.mkdir(mode=0o700, parents=True, exist_ok=True)
             stat = root.stat()
-            if stat.st_uid != os.getuid() or stat.st_mode & 0o077:
+            if hasattr(os, "getuid") and (stat.st_uid != os.getuid() or stat.st_mode & 0o077):
                 raise ValueError("Cache directory must be owned by the user and private (mode 0700)")
 
     def call(self, kind, payload, compute, validate):

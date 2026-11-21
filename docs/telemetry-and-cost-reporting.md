@@ -63,11 +63,10 @@ class CallTrace:
 
 Standard rates configured in [`src/handwriting_grader/telemetry.py`](../src/handwriting_grader/telemetry.py):
 
-| Model Family | Input / 1M Tokens | Output / 1M Tokens | Cached / 1M Tokens | Per Image |
+| Model Family | Input / 1M Tokens | Output / 1M Tokens | Cached / 1M Tokens | Role |
 | :--- | :--- | :--- | :--- | :--- |
-| `gemini-3.8-flash` / `gemini-2.5-flash` | $0.075 | $0.300 | $0.01875 | — |
-| `gemini-4-argon` / `gemini-1.5-pro` | $1.250 | $5.000 | $0.31250 | — |
-| `gemini-3-pro-image` / `imagen-3.0` | — | — | — | $0.030 |
+| `gemini-3.8-flash` | $0.075 | $0.300 | $0.01875 | High-Throughput (OCR, Grading, Marking Scheme, Annotations, Infographics) |
+| `gemini-4-argon` | $1.250 | $5.000 | $0.31250 | Frontier Reasoning (Moderation, Misconception Analytics) |
 
 Calculation Formula:
 $$\text{Cost} = \left(\frac{\text{Prompt} - \text{Cached}}{10^6} \times \text{Rate}_{\text{in}}\right) + \left(\frac{\text{Cached}}{10^6} \times \text{Rate}_{\text{cached}}\right) + \left(\frac{\text{Candidates}}{10^6} \times \text{Rate}_{\text{out}}\right) + (\text{Images} \times \text{Rate}_{\text{img}})$$

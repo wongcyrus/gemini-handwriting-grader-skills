@@ -12,12 +12,7 @@ from typing import Any, Dict, List, Optional
 # Standard Vertex AI Gemini on-demand pricing (USD per 1,000,000 tokens / per image)
 DEFAULT_RATES: Dict[str, Dict[str, float]] = {
     "gemini-3.8-flash": {"input": 0.075, "output": 0.30, "cached": 0.01875, "image": 0.0},
-    "gemini-2.5-flash": {"input": 0.075, "output": 0.30, "cached": 0.01875, "image": 0.0},
-    "gemini-1.5-flash": {"input": 0.075, "output": 0.30, "cached": 0.01875, "image": 0.0},
     "gemini-4-argon": {"input": 1.25, "output": 5.00, "cached": 0.3125, "image": 0.0},
-    "gemini-1.5-pro": {"input": 1.25, "output": 5.00, "cached": 0.3125, "image": 0.0},
-    "gemini-3-pro-image": {"input": 0.0, "output": 0.0, "cached": 0.0, "image": 0.03},
-    "imagen-3.0": {"input": 0.0, "output": 0.0, "cached": 0.0, "image": 0.03},
 }
 
 
@@ -61,7 +56,12 @@ class TelemetryTracker:
                     rates = v
                     break
         if not rates:
-            rates = {"input": 0.075, "output": 0.30, "cached": 0.01875, "image": 0.0}
+            if "flash" in model.lower():
+                rates = {"input": 0.075, "output": 0.30, "cached": 0.01875, "image": 0.0}
+            elif any(r in model.lower() for r in ["gemini-4", "argon", "pro"]):
+                rates = {"input": 1.25, "output": 5.00, "cached": 0.3125, "image": 0.0}
+            else:
+                rates = {"input": 0.075, "output": 0.30, "cached": 0.01875, "image": 0.0}
 
         non_cached_prompt = max(0, prompt_tokens - cached_tokens)
         prompt_cost = (non_cached_prompt / 1_000_000.0) * rates.get("input", 0.0)

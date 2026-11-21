@@ -8,6 +8,9 @@ dist/
 .env
 exam.yaml
 *.exam.yaml
+config.yaml
+*.config.yaml
+/ITE3101 CA Test/
 data/
 output/
 cache/

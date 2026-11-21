@@ -12,8 +12,10 @@
 1. Run `.venv/bin/handwriting-grader prepare-regions --exam /path/to/exam.yaml`.
    It renders the first script into `output_dir/regions/images/`; it does not
    make model calls or modify the original PDF.
-2. Optional AI proposals: run `suggest-regions` with `--exam`, `--model-config`
-   pointing to the existing grader's config, `--project` and `--location`.
+2. Automated Gemini AI proposals: run `suggest-regions` with `--exam`, `--model-config`
+   pointing to the model config, `--project` and `--location`. Region setup must run
+   Gemini for AI suggestion so teachers review and adjust proposed boxes rather than
+   drawing them manually from scratch.
    The command previews the target and image count without sending anything.
    Obtain the user's explicit approval for data transfer and charges before
    repeating it with `--confirm-cost`. One page is submitted per request;

@@ -54,7 +54,7 @@ Generates pedagogical feedback using Gemini Pro (`advanced.py`):
 ## 4. Infographics & Advanced Office Reports (`infographics`, `advanced-report`)
 
 1. **Infographics**:
-   - Uses `gemini-3-pro-image` / `imagen-3.0` to render visual summary infographics for class overview and individual question takeaways.
+   - Uses `gemini-3.8-flash` to render visual summary infographics for class overview and individual question takeaways.
    - Built-in rate-limit backoff and retry handling (`advanced.py`).
 2. **Advanced Reports**:
    - Generates executive Word document (`teacher-report.docx`) with embedded tables and analysis.

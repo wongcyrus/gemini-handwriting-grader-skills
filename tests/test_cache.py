@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -81,9 +82,10 @@ class CacheTests(unittest.TestCase):
             CachedGrader(second, cache_directory(config, root / "other"), enabled_agents(config),
                          models, "p", "l").ocr(b"image", "answer")
             self.assertEqual(second.calls, [])
-            shared.chmod(0o755)
-            with self.assertRaisesRegex(ValueError, "private"):
-                CachedGrader(second, shared, ["ocr"], models, "p", "l")
+            if os.name != "nt":
+                shared.chmod(0o755)
+                with self.assertRaisesRegex(ValueError, "private"):
+                    CachedGrader(second, shared, ["ocr"], models, "p", "l")
             config.write_text(yaml.safe_dump({"caching": {"scope": "shared"}}))
             with self.assertRaisesRegex(ValueError, "caching.directory"):
                 cache_directory(config, root / "run")

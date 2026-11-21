@@ -39,7 +39,22 @@ Use the original project's `config.yaml` for Vertex mode and model selection:
 extraction and search review, `models.ocr`, `models.grading`,
 `models.moderation` for grading, `models.analytics` for AI analysis and
 `models.analytics_image` for optional infographics. `vertex_ai.use_vertexai`
-must be true. Enabled caches apply to `ocr`, `grading`, `moderation`,
+must be true.
+
+### Dynamic online model discovery & cost-tiered configuration policy
+Never hardcode static model versions or recommend non-existent or deprecated models (e.g. Gemini 1.x, 2.x, or dedicated image generators for multimodal text/visual tasks). Google continuously updates and retires models online. Never use expensive frontier reasoning models (Gemini 4) across all stages, as high-volume tasks (OCR, grading, template annotation) become slow and cost-prohibitive.
+
+Always dynamically discover, profile, and allocate models online by capability and cost:
+```bash
+handwriting-grader discover-models --project <PROJECT_ID> [--location <LOCATION>] [--write-config /path/to/config.yaml]
+```
+This queries Vertex AI online, inspects live model properties and quota, benchmarks pricing rates, and assigns:
+- **Fast / High-Volume Tier** (e.g. `gemini-3.8-flash` at ~$0.075/1M input): for `annotation`, `marking_scheme`, `ocr`, `grading`, and `analytics_image` (generates visual analytics and infographics efficiently without expensive image generators).
+- **Deep Reasoning Tier** (e.g. `gemini-4-argon` at ~$1.250/1M input, ~16.7x cost): reserved strictly for `moderation` (batch score calibration across scripts) and `analytics` (cohort pedagogical diagnosis).
+
+The skill runs this command during initial setup and configures `config.yaml` automatically with verified online models.
+
+Enabled caches apply to `ocr`, `grading`, `moderation`,
 `annotation`, `marking_scheme` extraction and `analytics`; they
 default to one run. Cross-run reuse requires explicit `caching.scope: shared`
 and `caching.directory`, relative to the model configuration. The directory

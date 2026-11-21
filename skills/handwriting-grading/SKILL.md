@@ -54,6 +54,16 @@ execute a notebook as a workaround, or claim a human approval occurred.
   call a paid model or send email without the relevant explicit approval.
 - Never infer approval from a saved file, a passing test or a model response.
 - Local skill instructions alone are not an enforcement mechanism.
+- Never hardcode static model versions or recommend non-existent, deprecated, or
+  fantasy models (e.g. Gemini 1.x, 2.x, or dedicated image generators for analytics). Google
+  frequently updates and retires models online. Never use expensive frontier models (Gemini 4)
+  for all steps, as high-volume tasks (OCR, grading, annotation) become prohibitively slow
+  and expensive. Always run dynamic tiered model discovery:
+  `handwriting-grader discover-models --project <PROJECT> [--location <LOCATION>] [--write-config <PATH>]`
+  to inspect live model properties and pricing online, allocating cost-efficient,
+  high-throughput Flash models (e.g. `gemini-3.8-flash`) to high-volume steps (OCR,
+  grading, rubric extraction, region annotation, visual summaries) and reserving frontier reasoning models
+  (e.g. `gemini-4-argon`) strictly for batch moderation and deep cohort analytics.
 
 ## Prepare an exam
 
@@ -61,7 +71,14 @@ execute a notebook as a workaround, or claim a human approval occurred.
    and which local paths they intend to use. Do not copy or overwrite data.
 2. Read `references/configuration.md` and examine existing settings. Present
    detected values and ask for missing or ambiguous decisions. Keep actual
-   configuration outside version control.
+   configuration outside version control:
+   a. Exam settings (`exam.yaml`): define roster, scans, layout, attendance, and reporting.
+   b. AI model configuration (`config.yaml`): The skill automatically runs online
+      model discovery:
+      `handwriting-grader discover-models --project <PROJECT> [--location <LOCATION>] [--write-config <PATH>]`
+      to inspect live model properties on Vertex AI, benchmark token pricing and throughput,
+      present the cost allocation table to the user, and automatically generate or update
+      `config.yaml` with the optimal model tier for each pipeline step.
 3. If the user needs printable answer sheets before scans exist, read
    `references/answer-sheets.md` and run that independent stage first.
 4. Run preflight checks:
@@ -75,10 +92,12 @@ execute a notebook as a workaround, or claim a human approval occurred.
 6. For region setup and review, read `references/regions.md`:
    a. Run `handwriting-grader prepare-regions --exam /path/to/exam.yaml`
       to render the first script's page images into `output_dir/regions/images/`.
-   b. Ask the user if they want Gemini to automatically detect bounding boxes.
-      If yes, preview `suggest-regions` (with `--model-config`, `--project`,
-      `--location`), explain the target and page count, obtain explicit cost
-      consent, and run with `--confirm-cost` to generate `suggestions.json`.
+   b. Region setup must run Gemini for AI suggestion: preview `suggest-regions`
+      (with `--model-config`, `--project`, `--location`), explain the target and
+      page count, obtain explicit cost consent, and run with `--confirm-cost`
+      to generate `ai_suggestions.json`. Never skip Gemini AI suggestions or ask
+      the user to manually draw bounding boxes from scratch without running Gemini
+      AI suggestions first.
    c. Start the local server with `review-regions --exam /path/to/exam.yaml`.
       Provide the URL so the user can inspect the automatically loaded AI proposals
       across all pages, adjust boxes (`ID`, `NAME`, `CLASS`, questions), save each
