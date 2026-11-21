@@ -31,9 +31,13 @@ class ExtractedRubric(BaseModel):
     questions: list[RubricQuestion]
 
 
-PROMPT = """Extract the marking scheme from the document. Return every question
-with its question number, complete question text, marking criteria and total
-available marks. Preserve sub-question labels. Include any general grading
+PROMPT = """Extract the marking scheme from the document. Return every gradable
+question or sub-question as its own separate entry with its exact label,
+question text/context, marking criteria, and individual available marks.
+Whenever a numbered question contains separately marked sub-parts, sub-items,
+or fill-in-the-blank items (each having its own answer space or mark allocation),
+split each sub-part into its own entry using its combined label rather than
+collapsing multiple sub-parts into one parent entry. Include any general grading
 guidance separately. Do not invent missing information."""
 
 REQUIRED_COLUMNS = ("question_number", "question_text", "marking_scheme", "marks")
