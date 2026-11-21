@@ -611,7 +611,8 @@ def retry_grading(config, config_dir, config_path, summary, run_id=None, provide
         cache_agents = manifest.get("cache_agents", [])
         if cache_agents:
             cache_root = Path(manifest.get("cache_root", target / "cache"))
-            provider = CachedGrader(provider, cache_root, cache_agents, manifest["models"])
+            provider = CachedGrader(provider, cache_root, cache_agents, manifest["models"],
+                                    manifest["project"], manifest["location"])
 
         # 1. Retry failed marks
         if failed_marks:
