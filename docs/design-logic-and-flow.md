@@ -23,7 +23,7 @@ flowchart TD
         G2 --> H2["rubric/approval.json (SHA-256 bound)"]
 
         D1 & E1 --> I2["prepare-regions (pypdfium2 200 DPI)"]
-        F2 & I2 --> J2["suggest-regions (Gemini 4 + Rubric Question IDs)"]
+        H2 & I2 --> J2["suggest-regions (Gemini 4 + Approved Rubric Question IDs)"]
         J2 --> K2["review-regions (Local Browser Editor + Missing-Box Alert)"]
         K2 --> L2["regions/approval.json (SHA-256 bound)"]
     end

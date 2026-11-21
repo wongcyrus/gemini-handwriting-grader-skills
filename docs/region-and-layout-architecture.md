@@ -43,7 +43,7 @@ Teachers can request automated proposal boxes using Gemini 4 (`models.annotation
 handwriting-grader suggest-regions --exam exam.yaml \
   --model-config config.yaml --project PROJECT_ID --location LOCATION --confirm-cost
 ```
-- **Rubric-First Requirement**: `suggest-regions` requires an extracted or imported `output/rubric/rubric.xlsx` and refuses to run if no question ID list exists.
+- **Approved-Rubric-First Requirement**: `suggest-regions` requires an extracted/imported and approved `output/rubric/rubric.xlsx` (`approve-rubric --confirm-reviewed`) and refuses to run if no question ID list exists.
 - **Dynamic Prompt Injection**: `load_rubric_questions()` reads every `question_number` and a short text summary from `rubric.xlsx`, and `build_prompt()` injects them dynamically into the prompt (with zero hardcoded label examples). `question_ids` is included in the cache key so rubric changes invalidate stale suggestions.
 - **Model Tier**: Uses the reasoning tier (`gemini-4-argon`) for high spatial precision across all sub-question cells and metadata fields (`NAME`, `ID`, `CLASS`).
 - Generates `output/regions/ai_suggestions.json`.

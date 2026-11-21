@@ -4,9 +4,9 @@
 
 - Successful offline preflight with confirmed scan order, pages per script and
   common layout. Layout extraction uses the first student's pages.
-- **Extracted/approved rubric (`output_dir/rubric/rubric.xlsx`)**: Always extract or
-  import the rubric before running `suggest-regions` so Gemini receives the exact
-  list of expected question IDs and does not miss sub-questions or invent labels.
+- **Approved rubric (`output_dir/rubric/rubric.xlsx` + `approval.json`)**: Always extract/import
+  and approve the rubric (`approve-rubric --confirm-reviewed`) before running `suggest-regions`
+  so Gemini receives the finalized list of question IDs and does not waste calls or miss sub-questions.
 - Poppler `pdftoppm` on `PATH`, plus the project's Python environment.
 - An approved output location; `output_dir/regions` must not already exist.
 
