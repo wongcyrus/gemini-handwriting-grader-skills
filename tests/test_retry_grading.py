@@ -84,3 +84,42 @@ class TestRetryGrading(unittest.TestCase):
             with self.assertRaises(SystemExit) as cm:
                 main(["retry-grading", "--help"])
             self.assertEqual(cm.exception.code, 0)
+
+    def test_cli_help_includes_approve_regions(self):
+        with patch("sys.stdout"), patch("sys.stderr"):
+            with self.assertRaises(SystemExit) as cm:
+                main(["approve-regions", "--help"])
+            self.assertEqual(cm.exception.code, 0)
+
+    def test_inspect_retry_grading_supports_re_ocr_and_question(self):
+        config_path = Path("exam.yaml")
+        if not config_path.exists():
+            return
+        import yaml
+        config = yaml.safe_load(config_path.read_text())
+        info = inspect_retry_grading(
+            config, Path("."), config_path,
+            re_ocr_fields=["ID"], question="1.1",
+        )
+        self.assertIn("target", info)
+        self.assertIn("re_ocr_fields", info)
+        self.assertEqual(info["re_ocr_fields"], ["ID"])
+        self.assertIn("target_question", info)
+        self.assertIsNotNone(info["target_question"])
+        self.assertIn("estimated_requests", info)
+
+    def test_approve_regions_workflow(self):
+        from handwriting_grader.regions import approve_regions, verify_run
+        config_path = Path("exam.yaml")
+        if not config_path.exists():
+            return
+        import yaml
+        config = yaml.safe_load(config_path.read_text())
+        root, manifest = verify_run(config, Path("."))
+        annotations = approve_regions(config, Path("."), config_path)
+        self.assertIsInstance(annotations, dict)
+        self.assertTrue((root / "approval.json").is_file())
+        with (root / "approval.json").open(encoding="utf-8") as f:
+            app = json.load(f)
+        self.assertIn("annotations_sha256", app)
+        self.assertIn("approved_at", app)

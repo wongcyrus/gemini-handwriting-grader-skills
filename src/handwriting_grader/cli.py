@@ -167,6 +167,9 @@ def main(argv=None):
     review = commands.add_parser("review-regions", help="Start a local browser-based region editor")
     review.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     review.add_argument("--port", type=int, default=0, help="Local port (default: automatically selected)")
+    regions_approve = commands.add_parser("approve-regions", help="Validate and explicitly approve page-layout regions")
+    regions_approve.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    regions_approve.add_argument("--confirm-reviewed", action="store_true", help="Confirm human region review")
     suggest = commands.add_parser("suggest-regions", help="Request optional Vertex AI region proposals")
     suggest.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     suggest.add_argument("--model-config", required=True, type=Path, help="Path to existing AI config.yaml")
@@ -202,6 +205,9 @@ def main(argv=None):
     retry_cmd = commands.add_parser("retry-grading", help="Retry failed marks and unmoderated questions in a grading run")
     retry_cmd.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     retry_cmd.add_argument("--run", help="Target child run ID (default: original run)")
+    retry_cmd.add_argument("--re-ocr-id", action="store_true", help="Re-run ID OCR for all scripts using current approved box")
+    retry_cmd.add_argument("--re-ocr-metadata", action="store_true", help="Re-run ID, CLASS and NAME OCR for all scripts using current approved boxes")
+    retry_cmd.add_argument("--question", help="Re-grade and re-moderate a specific question using current approved box")
     retry_cmd.add_argument("--confirm-cost", action="store_true", help="Confirm sending student work to Vertex AI")
     regrade_rubric = commands.add_parser("prepare-regrade-rubric", help="Prepare a replacement rubric for review")
     regrade_rubric.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
@@ -691,23 +697,47 @@ def main(argv=None):
         from .grading import inspect_retry_grading, retry_grading
         from .regions import resolve_path
 
+        fields = None
+        if args.re_ocr_metadata:
+            fields = ["ID", "CLASS", "NAME"]
+        elif args.re_ocr_id:
+            fields = ["ID"]
+
         try:
-            info = inspect_retry_grading(config, path.parent, path, run_id=args.run)
+            info = inspect_retry_grading(
+                config, path.parent, path, run_id=args.run,
+                re_ocr_fields=fields, question=args.question,
+            )
             failed_marks = info["failed_marks"]
             unmoderated_questions = info["unmoderated_questions"]
             manifest = info["manifest"]
+            regions_updated = info["regions_updated"]
+            target_question = info["target_question"]
+            est_requests = info["estimated_requests"]
         except (OSError, ValueError, KeyError) as exc:
             print(f"Cannot inspect retry: {exc}", file=sys.stderr)
             return 1
 
-        if not failed_marks and not unmoderated_questions:
-            print("All marks and moderations are complete; no failed items to retry.")
+        if not failed_marks and not unmoderated_questions and not fields and not target_question and not regions_updated:
+            print("All marks, moderations, and metadata are complete; no items to retry.")
             return 0
 
+        details = []
+        if regions_updated:
+            details.append("approved regions updated")
+        if fields:
+            details.append(f"re-OCR {', '.join(fields)} ({info['num_scripts']} scripts)")
+        if target_question:
+            details.append(f"regrade Q{target_question['question_number']} ({info['num_scripts']} scripts + moderation)")
+        if failed_marks:
+            details.append(f"{len(failed_marks)} failed mark(s)")
+        if unmoderated_questions:
+            details.append(f"{len(unmoderated_questions)} question(s) to moderate")
+
         print(f"Retry target: project={manifest['project']}, location={manifest['location']}, "
-              f"models={manifest['models']}; run={args.run or 'original'}; "
-              f"{len(failed_marks)} failed mark(s), {len(unmoderated_questions)} question(s) to moderate. "
-              "In-flight requests can be repeated and billed.")
+              f"models={manifest['models']}; run={args.run or 'original'}.\n"
+              f"Action plan: {'; '.join(details)}.\n"
+              f"Estimated requests: up to {est_requests}. In-flight requests will be billed.")
 
         if not args.confirm_cost:
             print("No request sent. Obtain user approval and rerun with --confirm-cost.", file=sys.stderr)
@@ -717,7 +747,10 @@ def main(argv=None):
         tracker = TelemetryTracker(log_dir=target_dir / "telemetry")
         set_active_tracker(tracker)
         try:
-            output = retry_grading(config, path.parent, path, summary, run_id=args.run)
+            output = retry_grading(
+                config, path.parent, path, summary, run_id=args.run,
+                re_ocr_fields=fields, question=args.question,
+            )
             tracker.write_cost_report(output)
         except Exception as exc:
             tracker.write_cost_report(target_dir)
@@ -1002,6 +1035,22 @@ def main(argv=None):
             pass
         finally:
             server.server_close()
+        return 0
+    if args.command == "approve-regions":
+        from .regions import approve_regions, verify_run
+
+        try:
+            root, manifest = verify_run(config, path.parent, path)
+            print(f"Regions cover {len(manifest['pages'])} pages.")
+            if not args.confirm_reviewed:
+                print("No approval recorded. Review the regions and rerun with --confirm-reviewed.",
+                      file=sys.stderr)
+                return 1
+            approve_regions(config, path.parent, path)
+        except (OSError, ValueError, yaml.YAMLError) as exc:
+            print(f"Region approval failed: {exc}", file=sys.stderr)
+            return 1
+        print("Regions approved; later changes invalidate the approval.")
         return 0
     if args.command == "suggest-regions":
         from .regions import resolve_path, verify_run

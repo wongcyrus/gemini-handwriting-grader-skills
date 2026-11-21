@@ -40,7 +40,8 @@ def roster_ids(config, config_dir):
         workbook.close()
 
 
-def verify_grading_run(config, config_dir, config_path, *, require_completed=True, run_id=None, _seen=()):
+def verify_grading_run(config, config_dir, config_path, *, require_completed=True, run_id=None, _seen=(),
+                       allow_updated_regions=False):
     from .attendance import approved_attendance
 
     if run_id in _seen or len(_seen) >= 32:
@@ -58,14 +59,17 @@ def verify_grading_run(config, config_dir, config_path, *, require_completed=Tru
 
         questions, rubric, parent = validate_child_lineage(config, config_dir, config_path, run_id, manifest,
                                                            _seen + (run_id,))
+    regions_approval_match = (
+        manifest.get("regions_approval_sha256") == file_hash(regions_root / "approval.json")
+        and manifest.get("annotations_sha256") == file_hash(regions_root / "annotations.json")
+    )
     if (
         manifest.get("version") != (1 if run_id is None else 2)
         or manifest.get("exam_config_sha256") != config_hash(config)
         or manifest.get("pdf_sha256") != region_manifest["pdf_sha256"]
         or manifest.get("roster_sha256") != file_hash(resolve_path(config_dir, config["exam"]["roster"]))
         or manifest.get("rubric_sha256") != file_hash(rubric)
-        or manifest.get("regions_approval_sha256") != file_hash(regions_root / "approval.json")
-        or manifest.get("annotations_sha256") != file_hash(regions_root / "annotations.json")
+        or (not regions_approval_match and not allow_updated_regions)
         or manifest.get("model_config_sha256") != file_hash(manifest["model_config_path"])
         or manifest.get("attendance_approval_sha256") != (attendance[1] if attendance else None)
     ):

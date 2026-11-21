@@ -540,11 +540,13 @@ def resume_grading(config, config_dir, config_path, summary, provider_factory=Ve
     return target
 
 
-def inspect_retry_grading(config, config_dir, config_path, run_id=None):
+def inspect_retry_grading(config, config_dir, config_path, run_id=None,
+                           re_ocr_fields=None, question=None):
     from .grade_review import verify_grading_run
 
     target, manifest, results, questions = verify_grading_run(
-        config, config_dir, config_path, require_completed=False, run_id=run_id
+        config, config_dir, config_path, require_completed=False, run_id=run_id,
+        allow_updated_regions=True,
     )
     if (target / "approval.json").exists():
         raise ValueError("Grading run has already been approved; cannot retry an approved run")
@@ -552,6 +554,35 @@ def inspect_retry_grading(config, config_dir, config_path, run_id=None):
         raise ValueError("Another grading process or a stale lock exists")
 
     questions_by_key = {question_key(q["question_number"]): q for q in questions}
+
+    # Check whether regions have been updated since grading ran
+    regions_root = resolve_path(config_dir, config["exam"]["output_dir"]) / "regions"
+    current_reg_hash = file_hash(regions_root / "approval.json") if (regions_root / "approval.json").is_file() else None
+    current_ann_hash = file_hash(regions_root / "annotations.json") if (regions_root / "annotations.json").is_file() else None
+    regions_updated = (
+        manifest.get("regions_approval_sha256") != current_reg_hash
+        or manifest.get("annotations_sha256") != current_ann_hash
+    )
+
+    # Validate requested re_ocr_fields
+    valid_re_ocr_fields = []
+    if re_ocr_fields:
+        for f in re_ocr_fields:
+            normalized = f.strip().upper()
+            if normalized not in ("ID", "CLASS", "NAME"):
+                raise ValueError(f"Invalid metadata field for OCR: {f}. Expected ID, CLASS, or NAME.")
+            if normalized not in valid_re_ocr_fields:
+                valid_re_ocr_fields.append(normalized)
+
+    # Validate target question
+    target_q_key = None
+    target_question = None
+    if question:
+        target_q_key = question_key(question)
+        if target_q_key not in questions_by_key:
+            raise ValueError(f"Question '{question}' not found in approved rubric")
+        target_question = questions_by_key[target_q_key]
+
     failed_marks = [
         m for m in results.get("marks", [])
         if m.get("grading_failed") or m.get("raw_mark") is None
@@ -572,6 +603,13 @@ def inspect_retry_grading(config, config_dir, config_path, run_id=None):
         if has_failed_mark or has_mod_error or q_key not in results.get("moderated_questions", []):
             unmoderated_questions.append(q_num)
 
+    num_scripts = len(results.get("scripts", []))
+    estimated_requests = len(failed_marks) + len(unmoderated_questions)
+    if valid_re_ocr_fields:
+        estimated_requests += num_scripts * len(valid_re_ocr_fields)
+    if target_question:
+        estimated_requests += num_scripts + 1
+
     return {
         "target": target,
         "manifest": manifest,
@@ -580,27 +618,42 @@ def inspect_retry_grading(config, config_dir, config_path, run_id=None):
         "questions_by_key": questions_by_key,
         "failed_marks": failed_marks,
         "unmoderated_questions": unmoderated_questions,
+        "regions_updated": regions_updated,
+        "re_ocr_fields": valid_re_ocr_fields,
+        "target_question": target_question,
+        "target_q_key": target_q_key,
+        "estimated_requests": estimated_requests,
+        "num_scripts": num_scripts,
     }
 
 
-def retry_grading(config, config_dir, config_path, summary, run_id=None, provider_factory=VertexGrader):
+def retry_grading(config, config_dir, config_path, summary, run_id=None,
+                  provider_factory=VertexGrader, re_ocr_fields=None, question=None):
     from .cache import CachedGrader
     from .local_filter import is_blank_cell
 
-    info = inspect_retry_grading(config, config_dir, config_path, run_id=run_id)
+    info = inspect_retry_grading(config, config_dir, config_path, run_id=run_id,
+                                 re_ocr_fields=re_ocr_fields, question=question)
     target = info["target"]
-    manifest = info["manifest"]
-    results = info["results"]
-    questions_by_key = info["questions_by_key"]
-    failed_marks = info["failed_marks"]
-    unmoderated_questions = info["unmoderated_questions"]
+    manifest = info.get("manifest", {})
+    results = info.get("results", {})
+    questions_by_key = info.get("questions_by_key", {})
+    failed_marks = info.get("failed_marks", [])
+    unmoderated_questions = info.get("unmoderated_questions", [])
+    regions_updated = info.get("regions_updated", False)
+    valid_re_ocr_fields = info.get("re_ocr_fields")
+    target_question = info.get("target_question")
+    target_q_key = info.get("target_q_key")
 
-    if not failed_marks and not unmoderated_questions:
+    if (not failed_marks and not unmoderated_questions and not valid_re_ocr_fields
+            and not target_question and not regions_updated):
         return target
 
     guard = attendance_guard(config, config_dir, config_path, manifest)
-    _, _, _, boxes = approved_inputs(config, config_dir, config_path)
+    questions, regions_root, _, boxes = approved_inputs(config, config_dir, config_path)
     tracker = get_active_tracker()
+    stride = config["layout"]["pages_per_student"]
+    image_dir = target / "images"
 
     with grading_lock(target):
         provider = provider_factory(manifest["models"], manifest["project"], manifest["location"])
@@ -610,12 +663,122 @@ def retry_grading(config, config_dir, config_path, summary, run_id=None, provide
             provider = CachedGrader(provider, cache_root, cache_agents, manifest["models"],
                                     manifest["project"], manifest["location"])
 
-        # 1. Retry failed marks
+        # 1. Re-OCR requested metadata fields with updated boxes
+        if valid_re_ocr_fields:
+            total_ocr = len(results["scripts"]) * len(valid_re_ocr_fields)
+            ocr_done = 0
+            for script in results["scripts"]:
+                si = script["script_index"]
+                for field in valid_re_ocr_fields:
+                    guard()
+                    page, box = boxes[field]
+                    image_path = image_dir / f"{si * stride + page}.jpg"
+                    crop = crop_image(image_path, box)
+                    try:
+                        extracted = provider.ocr(crop, field)
+                        script[field.lower() + "_ocr"] = extracted
+                    except Exception as exc:
+                        if "errors" not in script:
+                            script["errors"] = []
+                        script["errors"].append({"field": field, "type": type(exc).__name__})
+                    ocr_done += 1
+                    if tracker:
+                        tracker.show_progress(
+                            phase="re_ocr_metadata",
+                            current=ocr_done,
+                            total=total_ocr,
+                            item_label=f"Script #{si + 1} {field}",
+                        )
+                    else:
+                        print(f"[Re-OCR {ocr_done}/{total_ocr}] Script #{si + 1} {field}", flush=True)
+                atomic_json(target / "results.json", results)
+
+        # 2. Re-grade and re-moderate specific question if requested
+        if target_question:
+            q_num = target_question["question_number"]
+            page, box = boxes[target_q_key]
+            q_marks = [m for m in results["marks"] if question_key(m.get("question")) == target_q_key]
+            q_marks.sort(key=lambda m: m["script_index"])
+
+            def grade_q_script(idx, mark):
+                si = mark["script_index"]
+                image_path = target / mark["page_image"]
+                crop = crop_image(image_path, box)
+                if is_blank_cell(crop):
+                    mark.update(
+                        answer="", raw_mark=0, moderated_mark=0,
+                        similarity_score=0.0, reasoning="Blank answer (local filter).",
+                        moderator_flag=False, grading_failed=False, moderator_note="",
+                    )
+                else:
+                    grade = provider.grade(target_question, image=crop)
+                    extracted = grade.get("answer")
+                    if not extracted and grade.get("mark", 0) > 0 and hasattr(provider, "ocr"):
+                        extracted = provider.ocr(crop, "answer")
+                    mark.update(
+                        answer=extracted or "",
+                        raw_mark=grade["mark"],
+                        moderated_mark=grade["mark"],
+                        similarity_score=grade["similarity_score"],
+                        reasoning=grade["reasoning"],
+                        grading_failed=False,
+                        moderator_note="",
+                        moderator_flag=False,
+                    )
+                return si
+
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                futures = [executor.submit(grade_q_script, idx, m) for idx, m in enumerate(q_marks)]
+                done_count = 0
+                for future in as_completed(futures):
+                    future.result()
+                    done_count += 1
+                    guard()
+                    if tracker:
+                        tracker.show_progress(
+                            phase="regrade_question",
+                            current=done_count,
+                            total=len(q_marks),
+                            item_label=f"Regraded Q{q_num} ({done_count}/{len(q_marks)})",
+                        )
+                    atomic_json(target / "results.json", results)
+
+            # Re-moderate target question
+            entries = [
+                {
+                    "script_index": m["script_index"],
+                    "answer": m["answer"],
+                    "mark": m["raw_mark"],
+                    "reasoning": m["reasoning"],
+                }
+                for m in q_marks if not m.get("grading_failed") and m.get("raw_mark") is not None
+            ]
+            if len(entries) == len(q_marks):
+                guard()
+                try:
+                    mod_resp = provider.moderate(target_question, entries)
+                    for m in q_marks:
+                        item = mod_resp[m["script_index"]]
+                        m["moderated_mark"] = item["moderated_mark"]
+                        m["moderator_flag"] = item["flag"] or (item["moderated_mark"] != m["raw_mark"])
+                        m["moderator_note"] = item["note"]
+                except Exception as exc:
+                    for m in q_marks:
+                        m["moderator_flag"] = True
+                        m["moderator_note"] = f"moderation_error:{type(exc).__name__}"
+                moderated_set = set(results.get("moderated_questions", []))
+                moderated_set.add(target_q_key)
+                results["moderated_questions"] = sorted(list(moderated_set))
+                atomic_json(target / "results.json", results)
+
+        # 3. Retry failed marks (skipping target_question if already processed)
         if failed_marks:
             for idx, mark in enumerate(failed_marks, 1):
                 guard()
                 q_num = mark["question"]
                 q_key = question_key(q_num)
+                if target_q_key and q_key == target_q_key:
+                    continue
                 question = questions_by_key[q_key]
                 page, box = boxes[q_key]
                 img_path = target / mark["page_image"]
@@ -651,11 +814,13 @@ def retry_grading(config, config_dir, config_path, summary, run_id=None, provide
                         item_label=f"Retried Q{q_num} Script #{mark['script_index'] + 1}",
                     )
 
-        # 2. Re-moderate questions with resolved marks or previous moderation errors
+        # 4. Re-moderate questions with resolved marks or previous moderation errors
         moderated_set = set(results.get("moderated_questions", []))
         for q_num in unmoderated_questions:
             guard()
             q_key = question_key(q_num)
+            if target_q_key and q_key == target_q_key:
+                continue
             question = questions_by_key[q_key]
             q_marks = [m for m in results["marks"] if m.get("question") == q_num]
             q_marks.sort(key=lambda m: m["script_index"])
@@ -688,7 +853,12 @@ def retry_grading(config, config_dir, config_path, summary, run_id=None, provide
             results["moderated_questions"] = sorted(list(moderated_set))
             atomic_json(target / "results.json", results)
 
-        # 3. Finalize review.xlsx
+        # 5. Sync manifest with current region approval hashes
+        manifest["regions_approval_sha256"] = file_hash(regions_root / "approval.json")
+        manifest["annotations_sha256"] = file_hash(regions_root / "annotations.json")
+        atomic_json(target / "manifest.json", manifest)
+
+        # 6. Finalize review.xlsx
         all_failed = [m for m in results["marks"] if m.get("grading_failed") or m.get("raw_mark") is None]
         if not all_failed:
             results["completed"] = True

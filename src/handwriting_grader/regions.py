@@ -158,6 +158,48 @@ def approval_is_current(root, manifest, draft):
         return False
 
 
+def approve_regions(config, config_dir, config_path=None):
+    from datetime import datetime, timezone
+
+    root, manifest = verify_run(config, config_dir, config_path)
+    annotations_path = root / "annotations.json"
+    draft_path = root / "draft.json"
+
+    if annotations_path.is_file():
+        with annotations_path.open(encoding="utf-8") as file:
+            annotations = json.load(file)
+    elif draft_path.is_file():
+        with draft_path.open(encoding="utf-8") as file:
+            draft = json.load(file)
+        annotations = draft.get("annotations", {})
+    else:
+        raise ValueError("Neither annotations.json nor draft.json exists in regions")
+
+    validate_annotations(annotations, manifest["pages"], complete=True)
+
+    if draft_path.is_file():
+        with draft_path.open(encoding="utf-8") as file:
+            draft = json.load(file)
+    else:
+        draft = {"revision": 0}
+
+    draft["annotations"] = annotations
+    draft["reviewed"] = list(range(len(manifest["pages"])))
+    draft["revision"] = draft.get("revision", 0) + 1
+    atomic_json(draft_path, draft)
+    atomic_json(annotations_path, annotations)
+
+    digest = hashlib.sha256(annotations_path.read_bytes()).hexdigest()
+    atomic_json(root / "approval.json", {
+        "annotations_sha256": digest,
+        "config_sha256": manifest["config_sha256"],
+        "pdf_sha256": manifest["pdf_sha256"],
+        "revision": draft["revision"],
+        "approved_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return annotations
+
+
 def validate_annotations(annotations, pages, *, complete=False):
     if not isinstance(annotations, dict) or set(annotations) != {str(i) for i in range(len(pages))}:
         raise ValueError("Annotations must contain exactly the configured pages")

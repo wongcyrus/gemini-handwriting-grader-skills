@@ -150,9 +150,12 @@ When API operations exhaust their built-in retry attempts:
 - **User decision required**: The agent must prompt the user to choose:
   1. Inspect/wait for GCP quota reset, then execute targeted `retry-grading --exam /path/to/exam.yaml [--confirm-cost]`.
   2. Grade the failed items manually in `review.xlsx` without additional API calls.
-- **Targeted retry command**: When the user approves retrying:
-  `handwriting-grader retry-grading --exam /path/to/exam.yaml`
-  Preview the items, obtain cost confirmation, and add `--confirm-cost`. It regrades only failed crops, runs moderation for affected questions, and merges updates into `review.xlsx` preserving any existing manual entries.
+- **Targeted retry and re-run commands**: When the user approves retrying or after adjusting bounding boxes (see `regions.md`):
+  - `handwriting-grader retry-grading --exam /path/to/exam.yaml`: Retries failed marks and completes unmoderated questions.
+  - `handwriting-grader retry-grading --exam /path/to/exam.yaml --re-ocr-id`: Re-runs student ID OCR for all scripts using the approved bounding box.
+  - `handwriting-grader retry-grading --exam /path/to/exam.yaml --re-ocr-metadata`: Re-runs student ID, class, and name OCR for all scripts using approved boxes.
+  - `handwriting-grader retry-grading --exam /path/to/exam.yaml --question <Q_NUM>`: Re-grades and re-moderates a specific question using its approved box.
+  Always preview the action plan without `--confirm-cost`, obtain explicit user cost confirmation, and rerun with `--confirm-cost`. The command updates `results.json`, syncs manifest hashes to current region approvals, and updates `review.xlsx` while preserving existing manual reviews.
 
 Runs refuse overwrite. Supported interrupted grading checkpoints can resume
 with `resume-grading --exam /path/to/exam.yaml`; preview the recorded target

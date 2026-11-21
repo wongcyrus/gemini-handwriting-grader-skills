@@ -36,9 +36,24 @@
    is focused). Save and mark each page reviewed. Check all answer and
    metadata regions; the ID box must be on the first page.
 5. Approve all regions only after reviewing every page. The editor writes
-   `annotations.json` and a separate hash-based `approval.json`. Saving another
-   edit invalidates approval; source PDF, page images or configuration
+   `annotations.json` and a separate hash-based `approval.json`. Alternatively,
+   after editing `annotations.json` directly, run:
+   `handwriting-grader approve-regions --exam /path/to/exam.yaml --confirm-reviewed`.
+   Saving another edit invalidates approval; source PDF, page images or configuration
    changes block the run.
+
+## Scanner Shift and Bounding Box Adjustments
+
+Scanners commonly introduce vertical or horizontal shifts across batches. If a bounding box (such as `ID`, `NAME`, `CLASS`, or a specific question box) clips handwriting or misses digits:
+1. **Update the bounding box**:
+   - In `review-regions`: Drag/resize the box (e.g., increase `ID` height from 35px to 60-80px to safely tolerate scanner drift), click **Save page**, and click **Approve all regions**.
+   - Or headless/programmatic: Edit `output_dir/regions/annotations.json` directly with the updated `x`, `y`, `width`, `height`, then approve with:
+     `handwriting-grader approve-regions --exam /path/to/exam.yaml --confirm-reviewed`
+2. **Re-run targeted OCR or grading on the existing grading run**:
+   - For student ID: `handwriting-grader retry-grading --exam /path/to/exam.yaml --re-ocr-id`
+   - For all metadata (`ID`, `CLASS`, `NAME`): `handwriting-grader retry-grading --exam /path/to/exam.yaml --re-ocr-metadata`
+   - For a specific question: `handwriting-grader retry-grading --exam /path/to/exam.yaml --question <Q_NUM>`
+   Always preview without `--confirm-cost`, check the action plan, obtain cost confirmation, and rerun with `--confirm-cost`. This re-crops the affected regions, updates `results.json`, syncs the run manifest to the updated region approval, and updates `review.xlsx` without discarding existing manual edits.
 
 ## Limits
 
