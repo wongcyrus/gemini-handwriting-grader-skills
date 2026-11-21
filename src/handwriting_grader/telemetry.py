@@ -37,8 +37,6 @@ class TelemetryTracker:
     def __init__(self, log_dir: Optional[Path] = None):
         self.log_dir = Path(log_dir) if log_dir else None
         self.traces: List[CallTrace] = []
-        if self.log_dir:
-            self.log_dir.mkdir(parents=True, exist_ok=True)
 
     def calculate_cost(
         self,
@@ -106,6 +104,7 @@ class TelemetryTracker:
 
         if self.log_dir:
             try:
+                self.log_dir.mkdir(parents=True, exist_ok=True)
                 log_file = self.log_dir / "gemini_usage.jsonl"
                 with log_file.open("a", encoding="utf-8") as f:
                     f.write(json.dumps(asdict(trace), ensure_ascii=False) + "\n")
@@ -297,6 +296,15 @@ class TelemetryTracker:
             json.dump(json_summary, f, ensure_ascii=False, indent=2)
 
         return report_path
+
+    def flush_jsonl(self, log_dir: Path) -> Path:
+        log_path = Path(log_dir)
+        log_path.mkdir(parents=True, exist_ok=True)
+        log_file = log_path / "gemini_usage.jsonl"
+        with log_file.open("a", encoding="utf-8") as f:
+            for trace in self.traces:
+                f.write(json.dumps(asdict(trace), ensure_ascii=False) + "\n")
+        return log_file
 
 
 # Global instance

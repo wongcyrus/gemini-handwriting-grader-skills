@@ -4,6 +4,7 @@ import json
 import hashlib
 import os
 import tempfile
+import time
 from pathlib import Path
 
 import yaml
@@ -13,6 +14,7 @@ from pydantic import BaseModel, StrictInt, StrictStr
 
 from .regions import file_hash, validate_annotations, verify_run
 from .cache import CachedGrader, cache_directory, enabled_agents
+from .telemetry import get_active_tracker
 
 
 class SuggestedBox(BaseModel):
@@ -138,6 +140,7 @@ def generate_suggestions(config, config_dir, config_path, model_config_path, pro
         for index, page in enumerate(manifest["pages"]):
             image = (root / "images" / f"{index}.jpg").read_bytes()
             def compute():
+                t0 = time.monotonic()
                 response = client.models.generate_content(
                     model=model,
                     contents=[prompt_text, types.Part.from_bytes(data=image, mime_type="image/jpeg")],
@@ -146,6 +149,15 @@ def generate_suggestions(config, config_dir, config_path, model_config_path, pro
                         response_mime_type="application/json", response_schema=SuggestedBoxes,
                     ),
                 )
+                tracker = get_active_tracker()
+                if tracker is not None:
+                    tracker.record_call(
+                        phase="suggest_regions",
+                        step_label=f"Template page {index + 1}",
+                        model=model,
+                        usage_metadata=getattr(response, "usage_metadata", None),
+                        duration_sec=time.monotonic() - t0,
+                    )
                 return (SuggestedBoxes.model_validate(response.parsed) if response.parsed is not None
                         else SuggestedBoxes.model_validate_json(response.text)).model_dump()
 

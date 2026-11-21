@@ -3,6 +3,7 @@
 import json
 import math
 import shutil
+import time
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -17,6 +18,7 @@ from pydantic import BaseModel, StrictStr
 from .regions import atomic_json, config_hash, file_hash, resolve_path
 from .suggestions import load_model_settings
 from .cache import CachedGrader, cache_directory, enabled_agents
+from .telemetry import get_active_tracker
 
 
 class RubricQuestion(BaseModel):
@@ -213,6 +215,7 @@ def extract_rubric(config, config_dir, config_path, model_config_path, project, 
     options = types.HttpOptions(timeout=120_000, retry_options=types.HttpRetryOptions(attempts=1))
     with genai.Client(vertexai=True, project=project, location=location, http_options=options) as client:
         def compute():
+            t0 = time.monotonic()
             response = client.models.generate_content(
                 model=model,
                 contents=[PROMPT, content],
@@ -221,6 +224,15 @@ def extract_rubric(config, config_dir, config_path, model_config_path, project, 
                     response_mime_type="application/json", response_schema=ExtractedRubric,
                 ),
             )
+            tracker = get_active_tracker()
+            if tracker is not None:
+                tracker.record_call(
+                    phase="extract_rubric",
+                    step_label="Extract marking scheme DOCX",
+                    model=model,
+                    usage_metadata=getattr(response, "usage_metadata", None),
+                    duration_sec=time.monotonic() - t0,
+                )
             return (ExtractedRubric.model_validate(response.parsed) if response.parsed is not None
                     else ExtractedRubric.model_validate_json(response.text)).model_dump()
 

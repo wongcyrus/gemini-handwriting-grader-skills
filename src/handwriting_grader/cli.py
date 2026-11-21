@@ -380,14 +380,20 @@ def main(argv=None):
         if not args.confirm_cost:
             print("No request sent. Obtain user approval and rerun with --confirm-cost.", file=sys.stderr)
             return 1
+        tracker = TelemetryTracker(log_dir=None)
+        set_active_tracker(tracker)
         try:
             output = extract_rubric(
                 config, path.parent, path, args.model_config, args.project.strip(), args.location.strip()
             )
+            tracker.flush_jsonl(output.parent / "telemetry")
+            tracker.write_cost_report(output.parent)
         except Exception as exc:
             print(f"Rubric extraction failed ({type(exc).__name__}); requests may have incurred charges.",
                   file=sys.stderr)
             return 1
+        finally:
+            set_active_tracker(None)
         print(f"Extracted rubric to {output}. Review it before approval.")
         return 0
     if args.command == "approve-rubric":
@@ -431,12 +437,18 @@ def main(argv=None):
         if not args.confirm_cost:
             print("No request sent. Obtain user approval and rerun with --confirm-cost.", file=sys.stderr)
             return 1
+        tracker = TelemetryTracker(log_dir=None)
+        set_active_tracker(tracker)
         try:
             output = verify_rubric(config, path.parent, path, args.model_config, args.project, args.location)
+            tracker.flush_jsonl(output / "telemetry")
+            tracker.write_cost_report(output)
         except Exception as exc:
             print(f"Rubric verification failed ({type(exc).__name__}); requests may have incurred charges.",
                   file=sys.stderr)
             return 1
+        finally:
+            set_active_tracker(None)
         print(f"Verification saved to {output}. Review claims and sources; this is not rubric approval.")
         return 0
     if args.command == "prepare-regrade-rubric":
@@ -518,14 +530,19 @@ def main(argv=None):
         if not args.confirm_cost:
             print("No request sent. Obtain user approval and rerun with --confirm-cost.", file=sys.stderr)
             return 1
+        tracker = TelemetryTracker(log_dir=info["target"] / "grading" / "telemetry")
+        set_active_tracker(tracker)
         try:
             output = regrade(config, path.parent, path, args.run, args.parent, args.question,
                              args.model_config, args.project, args.location, args.rubric_proposal,
                              args.crop_proposal, args.reuse_parent_cache)
+            tracker.write_cost_report(output)
         except Exception as exc:
             print(f"Regrading failed ({type(exc).__name__}); requests may have incurred charges. "
                   "Preserve and inspect the child run.", file=sys.stderr)
             return 1
+        finally:
+            set_active_tracker(None)
         print(f"Child run saved to {output}. Fresh human review is required.")
         return 0
     if args.command == "grade":
@@ -791,18 +808,23 @@ def main(argv=None):
         from .run_context import run_directory
 
         try:
-            grading_dir = run_directory(config, path.parent, args.run) / "grading"
-            telemetry_file = grading_dir / "telemetry" / "gemini_usage.jsonl"
-            ai_telemetry_file = grading_dir.parent / "ai-analysis" / "telemetry" / "gemini_usage.jsonl"
-            
+            run_dir = run_directory(config, path.parent, args.run)
+            grading_dir = run_dir / "grading"
+            telemetry_files = [
+                run_dir / "rubric" / "telemetry" / "gemini_usage.jsonl",
+                run_dir / "rubric" / "verification" / "telemetry" / "gemini_usage.jsonl",
+                run_dir / "regions" / "telemetry" / "gemini_usage.jsonl",
+                grading_dir / "telemetry" / "gemini_usage.jsonl",
+                run_dir / "ai-analysis" / "telemetry" / "gemini_usage.jsonl",
+            ]
+
             tracker = TelemetryTracker(log_dir=grading_dir / "telemetry")
-            if telemetry_file.exists():
-                tracker.load_existing_log(telemetry_file)
-            if ai_telemetry_file.exists():
-                tracker.load_existing_log(ai_telemetry_file)
+            for tf in telemetry_files:
+                if tf.exists():
+                    tracker.load_existing_log(tf)
 
             if not tracker.traces:
-                print(f"No telemetry logs found in {grading_dir / 'telemetry'} or {grading_dir.parent / 'ai-analysis' / 'telemetry'}.")
+                print(f"No telemetry logs found in {run_dir}.")
                 return 0
 
             summary = tracker.get_summary()
@@ -937,7 +959,7 @@ def main(argv=None):
             server.server_close()
         return 0
     if args.command == "suggest-regions":
-        from .regions import verify_run
+        from .regions import resolve_path, verify_run
         from .suggestions import generate_suggestions, load_model_settings
 
         if (
@@ -949,7 +971,7 @@ def main(argv=None):
             return 1
         try:
             model = load_model_settings(args.model_config)
-            _, manifest = verify_run(config, path.parent, path)
+            regions_root, manifest = verify_run(config, path.parent, path)
         except (OSError, ValueError, yaml.YAMLError) as exc:
             print(f"Cannot prepare Vertex suggestions: {exc}", file=sys.stderr)
             return 1
@@ -960,10 +982,13 @@ def main(argv=None):
         if not args.confirm_cost:
             print("No request sent. Obtain user approval and rerun with --confirm-cost.", file=sys.stderr)
             return 1
+        tracker = TelemetryTracker(log_dir=regions_root / "telemetry")
+        set_active_tracker(tracker)
         try:
             output = generate_suggestions(
                 config, path.parent, path, args.model_config, args.project.strip(), args.location.strip()
             )
+            tracker.write_cost_report(regions_root)
         except Exception as exc:
             print(
                 f"Vertex suggestion generation failed ({type(exc).__name__}); "
@@ -971,6 +996,8 @@ def main(argv=None):
                 file=sys.stderr,
             )
             return 1
+        finally:
+            set_active_tracker(None)
         print(f"Saved suggestions to {output}; human review is still required.")
         return 0
     print(

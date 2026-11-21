@@ -1,6 +1,7 @@
 """Optional search-grounded review of a marking scheme."""
 
 import json
+import time
 
 from google import genai
 from google.genai import types
@@ -11,6 +12,7 @@ from .grading import safe_append
 from .regions import atomic_json, file_hash
 from .rubric import read_rubric, verify_rubric_source
 from .suggestions import load_model_settings
+from .telemetry import get_active_tracker
 
 
 def verify_rubric(config, config_dir, config_path, model_config_path, project, location):
@@ -39,6 +41,7 @@ def verify_rubric(config, config_dir, config_path, model_config_path, project, l
         options = types.HttpOptions(timeout=120_000, retry_options=types.HttpRetryOptions(attempts=1))
         with genai.Client(vertexai=True, project=project, location=location, http_options=options) as client:
             for question in questions:
+                t0 = time.monotonic()
                 response = client.models.generate_content(
                     model=model,
                     contents=(
@@ -52,6 +55,15 @@ def verify_rubric(config, config_dir, config_path, model_config_path, project, l
                         tools=[types.Tool(google_search=types.GoogleSearch())],
                     ),
                 )
+                tracker = get_active_tracker()
+                if tracker is not None:
+                    tracker.record_call(
+                        phase="verify_rubric",
+                        step_label=f"Question {question['question_number']}",
+                        model=model,
+                        usage_metadata=getattr(response, "usage_metadata", None),
+                        duration_sec=time.monotonic() - t0,
+                    )
                 if not response.text:
                     raise ValueError("Search-grounded review returned no text")
                 metadata = response.candidates[0].grounding_metadata if response.candidates else None
