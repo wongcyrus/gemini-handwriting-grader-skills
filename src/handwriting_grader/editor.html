@@ -47,6 +47,11 @@ button.btn-danger:hover:not(:disabled) { background: #fee2e2; border-color: #fca
   border-radius: 6px; color: #1d4ed8; font-size: 0.86rem; font-weight: 500;
   white-space: pre-wrap; margin-bottom: 0.75rem;
 }
+#missing-warning {
+  padding: 0.55rem 0.85rem; background: #fef3c7; border: 1px solid #f59e0b;
+  border-radius: 6px; color: #92400e; font-size: 0.86rem; font-weight: 600;
+  white-space: pre-wrap; margin-bottom: 0.75rem; display: none;
+}
 
 .workspace {
   display: grid; grid-template-columns: minmax(260px, 320px) 1fr; gap: 1rem; align-items: start;
@@ -109,6 +114,7 @@ Boxes cover the whole answer area. AI suggestions are optional and must be revie
 </header>
 
 <div id="status" role="status">Connecting...</div>
+<div id="missing-warning" role="alert"></div>
 
 <main class="workspace">
   <aside class="sidebar-panel" aria-labelledby="boxes-heading">
@@ -162,6 +168,41 @@ function svgElement(name, attrs) {
   for (const [key, value] of Object.entries(attrs)) element.setAttribute(key, value);
   return element;
 }
+function questionKey(value) {
+  let s = String(value || "").trim().toUpperCase();
+  if (s.startsWith("Q") && s.length > 1) s = s.slice(1);
+  const num = Number(s);
+  if (s !== "" && Number.isFinite(num) && Number.isInteger(num)) return String(Math.trunc(num));
+  return s;
+}
+function updateMissingWarning() {
+  const warnEl = document.getElementById("missing-warning");
+  if (!warnEl || !state || !state.draft) return;
+  const presentKeys = new Set();
+  for (let p = 0; p < state.pages.length; p++) {
+    const pBoxes = (p === page) ? boxes : (state.draft.annotations[String(p)] || []);
+    for (const b of pBoxes) {
+      if (b && b.label) presentKeys.add(questionKey(b.label));
+    }
+  }
+  const missing = [];
+  const expected = state.expected_questions || [];
+  for (const q of expected) {
+    if (!presentKeys.has(questionKey(q))) missing.push(q);
+  }
+  const page1Boxes = (page === 0) ? boxes : (state.draft.annotations["0"] || []);
+  const hasId = page1Boxes.some(b => b && String(b.label || "").trim().toUpperCase() === "ID");
+  const warnings = [];
+  if (!hasId) warnings.push("Missing required ID box on Page 1.");
+  if (missing.length > 0) warnings.push("Missing bounding box for rubric question(s): " + missing.join(", "));
+  if (warnings.length > 0) {
+    warnEl.textContent = "Warning: " + warnings.join(" | ");
+    warnEl.style.display = "block";
+  } else {
+    warnEl.textContent = "";
+    warnEl.style.display = "none";
+  }
+}
 function draw() {
   if (!state || !state.pages || !state.draft) return;
   const dims = state.pages[page];
@@ -208,6 +249,7 @@ function draw() {
   }
   document.getElementById("page").textContent =
     `Page ${page + 1} of ${state.pages.length}${state.draft.reviewed.includes(page) ? " (reviewed)" : ""}${dirty ? " (unsaved)" : ""}`;
+  updateMissingWarning();
 }
 function point(event) {
   const p = canvas.createSVGPoint(); p.x = event.clientX; p.y = event.clientY;

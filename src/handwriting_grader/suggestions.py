@@ -119,6 +119,11 @@ def generate_suggestions(config, config_dir, config_path, model_config_path, pro
     if output.exists():
         raise ValueError("AI suggestions already exist; do not overwrite them")
     question_ids = load_rubric_question_ids(config, config_dir)
+    if not question_ids:
+        raise ValueError(
+            "Cannot suggest regions without a marking rubric question list. "
+            "Extract or import the rubric first (extract-rubric / import-rubric)."
+        )
     prompt_text = build_prompt(question_ids)
     suggestions = {}
     agents = [name for name in enabled_agents(model_path) if name == "annotation"]

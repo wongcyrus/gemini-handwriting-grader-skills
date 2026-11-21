@@ -68,9 +68,22 @@ class RegionHandler(BaseHTTPRequestHandler):
                 root, manifest = verify_run(self.server.config, self.server.config_dir, self.server.config_path)
                 if self.path == "/api/state":
                     draft = self.server.read_draft()
+                    expected_questions = []
+                    try:
+                        from .rubric import read_rubric, rubric_root
+                        rubric_path = rubric_root(self.server.config, self.server.config_dir) / "rubric.xlsx"
+                        if rubric_path.is_file():
+                            expected_questions = [
+                                str(q.get("question_number") or q.get("question") or "").strip()
+                                for q in read_rubric(rubric_path)
+                                if str(q.get("question_number") or q.get("question") or "").strip()
+                            ]
+                    except Exception:
+                        expected_questions = []
                     return self.json_response(200, {
                         "pages": manifest["pages"], "draft": draft,
                         "approved": approval_is_current(root, manifest, draft),
+                        "expected_questions": expected_questions,
                     })
                 if self.path == "/api/suggestions":
                     suggestion_path = root / "ai_suggestions.json"
