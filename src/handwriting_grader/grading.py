@@ -541,7 +541,7 @@ def resume_grading(config, config_dir, config_path, summary, provider_factory=Ve
 
 
 def inspect_retry_grading(config, config_dir, config_path, run_id=None,
-                           re_ocr_fields=None, question=None):
+                           re_ocr_fields=None, question=None, align_images=False):
     from .grade_review import verify_grading_run
 
     target, manifest, results, questions = verify_grading_run(
@@ -624,16 +624,19 @@ def inspect_retry_grading(config, config_dir, config_path, run_id=None,
         "target_q_key": target_q_key,
         "estimated_requests": estimated_requests,
         "num_scripts": num_scripts,
+        "align_images": bool(align_images),
     }
 
 
 def retry_grading(config, config_dir, config_path, summary, run_id=None,
-                  provider_factory=VertexGrader, re_ocr_fields=None, question=None):
+                  provider_factory=VertexGrader, re_ocr_fields=None, question=None,
+                  align_images=False):
     from .cache import CachedGrader
     from .local_filter import is_blank_cell
 
     info = inspect_retry_grading(config, config_dir, config_path, run_id=run_id,
-                                 re_ocr_fields=re_ocr_fields, question=question)
+                                 re_ocr_fields=re_ocr_fields, question=question,
+                                 align_images=align_images)
     target = info["target"]
     manifest = info.get("manifest", {})
     results = info.get("results", {})
@@ -646,7 +649,7 @@ def retry_grading(config, config_dir, config_path, summary, run_id=None,
     target_q_key = info.get("target_q_key")
 
     if (not failed_marks and not unmoderated_questions and not valid_re_ocr_fields
-            and not target_question and not regions_updated):
+            and not target_question and not regions_updated and not align_images):
         return target
 
     guard = attendance_guard(config, config_dir, config_path, manifest)
@@ -654,14 +657,30 @@ def retry_grading(config, config_dir, config_path, summary, run_id=None,
     tracker = get_active_tracker()
     stride = config["layout"]["pages_per_student"]
     image_dir = target / "images"
+    needs_ai = bool(valid_re_ocr_fields or target_question or failed_marks or unmoderated_questions)
 
     with grading_lock(target):
-        provider = provider_factory(manifest["models"], manifest["project"], manifest["location"])
-        cache_agents = manifest.get("cache_agents", [])
-        if cache_agents:
-            cache_root = Path(manifest.get("cache_root", target / "cache"))
-            provider = CachedGrader(provider, cache_root, cache_agents, manifest["models"],
-                                    manifest["project"], manifest["location"])
+        if align_images:
+            from .alignment import align_page_file, prepare_reference_maps
+            ref_maps = prepare_reference_maps(regions_root, stride)
+            new_hashes = []
+            for index in range(len(manifest.get("image_sha256", []))):
+                img_path = image_dir / f"{index}.jpg"
+                ref_arr, ref_size = ref_maps[index % stride]
+                align_page_file(img_path, ref_arr, ref_size)
+                new_hashes.append(file_hash(img_path))
+            manifest["image_sha256"] = new_hashes
+            manifest["aligned_to_regions"] = True
+            atomic_json(target / "manifest.json", manifest)
+
+        provider = None
+        if needs_ai:
+            provider = provider_factory(manifest["models"], manifest["project"], manifest["location"])
+            cache_agents = manifest.get("cache_agents", [])
+            if cache_agents:
+                cache_root = Path(manifest.get("cache_root", target / "cache"))
+                provider = CachedGrader(provider, cache_root, cache_agents, manifest["models"],
+                                        manifest["project"], manifest["location"])
 
         # 1. Re-OCR requested metadata fields with updated boxes
         if valid_re_ocr_fields:
@@ -903,10 +922,14 @@ def grade_exam(config, config_dir, config_path, model_config_path, project, loca
             raise ValueError("A grading run already exists; choose a different output directory") from exc
         image_dir = target / "images"
         image_dir.mkdir(mode=0o700)
+        from .alignment import align_page_file, prepare_reference_maps
+        per_script = len(region_manifest["pages"])
+        ref_maps = prepare_reference_maps(regions_root, per_script)
         image_hashes = []
         for index, page in enumerate(pages):
             image = image_dir / f"{index}.jpg"
-            shutil.copyfile(page, image)
+            ref_arr, ref_size = ref_maps[index % per_script]
+            align_page_file(page, ref_arr, ref_size, output_path=image)
             image_hashes.append(file_hash(image))
         manifest = {
             "version": 1, "exam_config_sha256": config_hash(config),

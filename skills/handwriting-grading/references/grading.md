@@ -150,8 +150,9 @@ When API operations exhaust their built-in retry attempts:
 - **User decision required**: The agent must prompt the user to choose:
   1. Inspect/wait for GCP quota reset, then execute targeted `retry-grading --exam /path/to/exam.yaml [--confirm-cost]`.
   2. Grade the failed items manually in `review.xlsx` without additional API calls.
-- **Targeted retry and re-run commands**: When the user approves retrying or after adjusting bounding boxes (see `regions.md`):
+- **Targeted retry and re-run commands**: When the user approves retrying or after scanner-shift alignment / bounding box adjustments (see `regions.md`):
   - `handwriting-grader retry-grading --exam /path/to/exam.yaml`: Retries failed marks and completes unmoderated questions.
+  - `handwriting-grader retry-grading --exam /path/to/exam.yaml --align-images`: Aligns all scanned page images to the approved reference layout (offline, 0 AI cost). Can be combined with `--re-ocr-id`, `--re-ocr-metadata`, or `--question`.
   - `handwriting-grader retry-grading --exam /path/to/exam.yaml --re-ocr-id`: Re-runs student ID OCR for all scripts using the approved bounding box.
   - `handwriting-grader retry-grading --exam /path/to/exam.yaml --re-ocr-metadata`: Re-runs student ID, class, and name OCR for all scripts using approved boxes.
   - `handwriting-grader retry-grading --exam /path/to/exam.yaml --question <Q_NUM>`: Re-grades and re-moderates a specific question using its approved box.

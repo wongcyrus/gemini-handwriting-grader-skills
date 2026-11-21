@@ -205,6 +205,7 @@ def main(argv=None):
     retry_cmd = commands.add_parser("retry-grading", help="Retry failed marks and unmoderated questions in a grading run")
     retry_cmd.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     retry_cmd.add_argument("--run", help="Target child run ID (default: original run)")
+    retry_cmd.add_argument("--align-images", action="store_true", help="Align scanned page images to reference regions before cropping (offline, zero AI cost)")
     retry_cmd.add_argument("--re-ocr-id", action="store_true", help="Re-run ID OCR for all scripts using current approved box")
     retry_cmd.add_argument("--re-ocr-metadata", action="store_true", help="Re-run ID, CLASS and NAME OCR for all scripts using current approved boxes")
     retry_cmd.add_argument("--question", help="Re-grade and re-moderate a specific question using current approved box")
@@ -707,6 +708,7 @@ def main(argv=None):
             info = inspect_retry_grading(
                 config, path.parent, path, run_id=args.run,
                 re_ocr_fields=fields, question=args.question,
+                align_images=args.align_images,
             )
             failed_marks = info["failed_marks"]
             unmoderated_questions = info["unmoderated_questions"]
@@ -718,11 +720,14 @@ def main(argv=None):
             print(f"Cannot inspect retry: {exc}", file=sys.stderr)
             return 1
 
-        if not failed_marks and not unmoderated_questions and not fields and not target_question and not regions_updated:
+        if (not failed_marks and not unmoderated_questions and not fields
+                and not target_question and not regions_updated and not args.align_images):
             print("All marks, moderations, and metadata are complete; no items to retry.")
             return 0
 
         details = []
+        if args.align_images:
+            details.append(f"align {len(manifest.get('image_sha256', []))} page image(s) to reference layout (offline)")
         if regions_updated:
             details.append("approved regions updated")
         if fields:
@@ -737,9 +742,10 @@ def main(argv=None):
         print(f"Retry target: project={manifest['project']}, location={manifest['location']}, "
               f"models={manifest['models']}; run={args.run or 'original'}.\n"
               f"Action plan: {'; '.join(details)}.\n"
-              f"Estimated requests: up to {est_requests}. In-flight requests will be billed.")
+              f"Estimated requests: up to {est_requests}. "
+              + ("In-flight requests will be billed." if est_requests > 0 else "No AI requests needed."))
 
-        if not args.confirm_cost:
+        if est_requests > 0 and not args.confirm_cost:
             print("No request sent. Obtain user approval and rerun with --confirm-cost.", file=sys.stderr)
             return 1
 
@@ -750,8 +756,10 @@ def main(argv=None):
             output = retry_grading(
                 config, path.parent, path, summary, run_id=args.run,
                 re_ocr_fields=fields, question=args.question,
+                align_images=args.align_images,
             )
-            tracker.write_cost_report(output)
+            if est_requests > 0:
+                tracker.write_cost_report(output)
         except Exception as exc:
             tracker.write_cost_report(target_dir)
             print(f"Retry failed ({type(exc).__name__}); requests may have incurred charges.", file=sys.stderr)

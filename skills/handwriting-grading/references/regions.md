@@ -42,18 +42,18 @@
    Saving another edit invalidates approval; source PDF, page images or configuration
    changes block the run.
 
-## Scanner Shift and Bounding Box Adjustments
+## Scanner Shift and Page Alignment
 
-Scanners commonly introduce vertical or horizontal shifts across batches. If a bounding box (such as `ID`, `NAME`, `CLASS`, or a specific question box) clips handwriting or misses digits:
-1. **Update the bounding box**:
-   - In `review-regions`: Drag/resize the box (e.g., increase `ID` height from 35px to 60-80px to safely tolerate scanner drift), click **Save page**, and click **Approve all regions**.
-   - Or headless/programmatic: Edit `output_dir/regions/annotations.json` directly with the updated `x`, `y`, `width`, `height`, then approve with:
+Scanners commonly introduce vertical/horizontal shifts and slight skew across batches.
+- **Automatic alignment during `grade`**: Every rendered page is automatically aligned (rigid translation + small rotation via 4-quadrant phase correlation) to `output_dir/regions/images/` before cropping.
+- **Recovering an existing unaligned run**:
+  1. Run offline alignment (0 AI cost) and targeted re-OCR / regrade:
+     - Align + re-OCR IDs: `handwriting-grader retry-grading --exam /path/to/exam.yaml --align-images --re-ocr-id`
+     - Align + re-OCR all metadata (`ID`, `CLASS`, `NAME`): `--align-images --re-ocr-metadata`
+     - Align + re-grade a specific question: `--align-images --question <Q_NUM>`
+  2. If a template bounding box itself is too tight, adjust it in `review-regions` (click **Save page** and **Approve all regions**) or edit `output_dir/regions/annotations.json` directly and run:
      `handwriting-grader approve-regions --exam /path/to/exam.yaml --confirm-reviewed`
-2. **Re-run targeted OCR or grading on the existing grading run**:
-   - For student ID: `handwriting-grader retry-grading --exam /path/to/exam.yaml --re-ocr-id`
-   - For all metadata (`ID`, `CLASS`, `NAME`): `handwriting-grader retry-grading --exam /path/to/exam.yaml --re-ocr-metadata`
-   - For a specific question: `handwriting-grader retry-grading --exam /path/to/exam.yaml --question <Q_NUM>`
-   Always preview without `--confirm-cost`, check the action plan, obtain cost confirmation, and rerun with `--confirm-cost`. This re-crops the affected regions, updates `results.json`, syncs the run manifest to the updated region approval, and updates `review.xlsx` without discarding existing manual edits.
+  Always preview without `--confirm-cost`, check the action plan, obtain cost confirmation, and rerun with `--confirm-cost`. This updates `results.json`, syncs the run manifest, and updates `review.xlsx` without discarding existing manual edits.
 
 ## Limits
 

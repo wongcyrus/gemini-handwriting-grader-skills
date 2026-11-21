@@ -113,14 +113,18 @@ execute a notebook as a workaround, or claim a human approval occurred.
       page, and approve. Alternatively, after manual or programmatic edits to
       `annotations.json`, approve with:
       `handwriting-grader approve-regions --exam /path/to/exam.yaml --confirm-reviewed`.
-   d. **Handling Scanner Shifts & Bounding Box Adjustments**: If scanner drift causes
-      boxes (e.g. `ID` or specific questions) to clip handwriting, adjust the bounding
-      box in `review-regions` (or edit `annotations.json` and run `approve-regions`), then
-      re-run only the affected fields/questions on the current grading run without regrading
-      the whole exam:
-      - Student ID: `retry-grading --exam /path/to/exam.yaml --re-ocr-id [--confirm-cost]`
-      - All metadata: `retry-grading --exam /path/to/exam.yaml --re-ocr-metadata [--confirm-cost]`
-      - Specific question: `retry-grading --exam /path/to/exam.yaml --question <Q_NUM> [--confirm-cost]`
+   d. **Automatic Page Alignment & Scanner Shift Recovery**:
+      During `grade`, every scanned page is automatically registered (translation +
+      small rotation) against the approved template pages in `regions/images/` before
+      cropping OCR or question answers.
+      If an existing unaligned run has scanner drift (e.g. clipped `ID` or shifted
+      questions), align the pages offline first and then re-run only affected items:
+      - Align pages offline (0 AI cost): `retry-grading --exam /path/to/exam.yaml --align-images`
+      - Re-run Student ID OCR: `retry-grading --exam /path/to/exam.yaml --align-images --re-ocr-id [--confirm-cost]`
+      - Re-run all metadata: `retry-grading --exam /path/to/exam.yaml --re-ocr-metadata [--confirm-cost]`
+      - Re-run specific question: `retry-grading --exam /path/to/exam.yaml --question <Q_NUM> [--confirm-cost]`
+      (If a bounding box itself is too tight, adjust it in `review-regions` or edit
+      `annotations.json` and run `approve-regions --exam /path/to/exam.yaml --confirm-reviewed`.)
 8. For grading, reporting and AI analysis read `references/grading.md`.
    Obtain the specified human confirmations; never infer approval.
    
