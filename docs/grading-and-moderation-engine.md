@@ -61,6 +61,7 @@ Grading runs in three strictly decoupled, resilient phases:
       similarity_score: float    # Semantic similarity to marking criteria (0.0 to 1.0)
       reasoning: StrictStr       # Justification referencing rubric criteria
   ```
+- **Local Blank-Cell Pre-Filter (`local_filter.py`)**: Before sending a crop to Vertex AI, `is_blank_cell()` performs a cross-platform Pillow inset ink-density check (`Windows` / `macOS` / `Linux`, no GPU/OpenCV needed). Clearly blank white boxes are scored `0` locally (`"Blank answer (local filter)."`), while any cell with ink, printed labels, or an unsupported/error condition falls back seamlessly to `provider.grade()`.
 - **Throughput & Model Tier**: Uses `gemini-3.8-flash` (`temperature=0`, `thinking_budget=0`) with bounded concurrency (`ThreadPoolExecutor(max_workers=10)`) across scripts per question, checkpointing atomically to `results.json` on the main thread with thread-safe telemetry locking.
 - **Prompt Guard**: Student handwriting is explicitly framed as data, not instructions, to defend against prompt injection in student submissions.
 

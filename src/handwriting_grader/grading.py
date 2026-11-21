@@ -18,6 +18,7 @@ from PIL import Image, ImageEnhance
 from pydantic import BaseModel, StrictBool, StrictInt, StrictStr
 
 from .pdf_renderer import render_pdf_to_images
+from .local_filter import is_blank_cell
 from .regions import (
     approval_is_current, atomic_json, config_hash, file_hash, resolve_path,
     validate_annotations, verify_run,
@@ -359,6 +360,13 @@ def continue_grading(target, results, questions, boxes, summary, stride, models,
                     }
                     try:
                         image = crop_image(image_dir / f"{image_index}.jpg", box)
+                        if is_blank_cell(image):
+                            row.update(
+                                answer="", raw_mark=0, moderated_mark=0,
+                                similarity_score=0.0, reasoning="Blank answer (local filter).",
+                                moderator_flag=False, grading_failed=False,
+                            )
+                            return script_index, row
                         grade = provider.grade(question, image=image)
                         extracted = grade.get("answer")
                         if not extracted and grade["mark"] > 0 and hasattr(provider, "ocr"):
