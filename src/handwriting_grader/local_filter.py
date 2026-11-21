@@ -21,7 +21,7 @@ def is_blank_cell(image_bytes: bytes, ink_threshold: int = 160, max_ink_ratio: f
             if w - 2 * pad_x <= 4 or h - 2 * pad_y <= 4:
                 return False
             inner = gray.crop((pad_x, pad_y, w - pad_x, h - pad_y))
-            pixels = inner.getdata()
+            pixels = getattr(inner, "get_flattened_data", inner.getdata)()
             total = len(pixels)
             if total == 0:
                 return False

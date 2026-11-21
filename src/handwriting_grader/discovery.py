@@ -22,10 +22,25 @@ STEP_REQUIREMENTS: Dict[str, Dict[str, str]] = {
         "description": "DOCX answer key extraction into structured rubric",
         "rationale": "Direct structured text parsing; Flash extracts questions and marks rapidly at minimal cost.",
     },
+    "one_pass_metadata_ocr": {
+        "tier": "flash",
+        "description": "One-Pass batch student ID, Class, and Name OCR across all scripts",
+        "rationale": "High-throughput chunked metadata extraction with roster fuzzy matching.",
+    },
+    "one_pass_grading": {
+        "tier": "reasoning",
+        "description": "One-Pass batch multimodal question grading across all student scripts",
+        "rationale": "Holistic cohort evaluation and self-moderation in structured batch output.",
+    },
+    "batch_grading": {
+        "tier": "reasoning",
+        "description": "Alias for one_pass_grading",
+        "rationale": "Backward-compatible alias for one-pass question grading.",
+    },
     "ocr": {
         "tier": "flash",
-        "description": "Student ID, Name, and Class metadata OCR across all scripts",
-        "rationale": "High volume (every page of every script); Flash delivers low latency and minimal token cost.",
+        "description": "Fallback sequential Student ID, Name, and Class metadata OCR across all scripts",
+        "rationale": "High volume fallback (single-crop sequential OCR).",
     },
     "grading": {
         "tier": "flash",
@@ -248,7 +263,11 @@ def write_model_config(
             "location": location,
         },
         "models": {
-            step: step_models[step] for step in STEP_REQUIREMENTS.keys()
+            step: step_models.get(
+                step,
+                step_models.get("ocr" if "ocr" in step else ("grading" if "grading" in step else next(iter(step_models.values()))))
+            )
+            for step in STEP_REQUIREMENTS.keys()
         },
         "caching": {
             "enabled": True,

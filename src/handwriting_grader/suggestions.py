@@ -56,10 +56,26 @@ def load_model_settings(path, agent="annotation"):
     models = settings.get("models")
     if not isinstance(vertex, dict) or vertex.get("use_vertexai") is not True:
         raise ValueError("Model configuration must enable Vertex AI")
-    model = models.get(agent) if isinstance(models, dict) else None
-    if not isinstance(model, str) or not model.strip():
+    aliases = {
+        "ocr": ("one_pass_metadata_ocr", "batch_metadata_ocr", "metadata_ocr", "ocr"),
+        "batch_metadata_ocr": ("one_pass_metadata_ocr", "batch_metadata_ocr", "metadata_ocr", "ocr"),
+        "one_pass_metadata_ocr": ("one_pass_metadata_ocr", "batch_metadata_ocr", "metadata_ocr", "ocr"),
+        "metadata_ocr": ("one_pass_metadata_ocr", "batch_metadata_ocr", "metadata_ocr", "ocr"),
+        "grading": ("one_pass_grading", "batch_grading", "grading"),
+        "batch_grading": ("one_pass_grading", "batch_grading", "grading"),
+        "one_pass_grading": ("one_pass_grading", "batch_grading", "grading"),
+    }
+    keys = aliases.get(agent, (agent,))
+    model = None
+    if isinstance(models, dict):
+        for key in keys:
+            val = models.get(key)
+            if isinstance(val, str) and val.strip():
+                model = val.strip()
+                break
+    if not model:
         raise ValueError(f"Model configuration needs models.{agent}")
-    return model.strip()
+    return model
 
 
 def create_json_once(path, data):

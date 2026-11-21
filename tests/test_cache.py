@@ -90,6 +90,50 @@ class CacheTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "caching.directory"):
                 cache_directory(config, root / "run")
 
+    def test_grade_question_batch_caching(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config = root / "models.yaml"
+            config.write_text(yaml.safe_dump({"caching": {"enabled": True, "agents": {
+                "batch_grading": True,
+            }}}))
+            agents = enabled_agents(config)
+            self.assertEqual(agents, ["batch_grading"])
+            models = {"batch_grading": "bg-model", "grading": "g"}
+
+            class BatchProvider:
+                def __init__(self):
+                    self.calls = 0
+
+                def grade_question_batch(self, question, script_items):
+                    self.calls += 1
+                    return {
+                        item["script_index"]: {
+                            "script_index": item["script_index"],
+                            "answer": "Test answer",
+                            "mark": 2.0,
+                            "similarity_score": 0.9,
+                            "reasoning": "Well done",
+                            "moderator_flag": False,
+                            "moderator_note": "",
+                        }
+                        for item in script_items
+                    }
+
+            first = BatchProvider()
+            cached = CachedGrader(first, root / "cache", agents, models, "project", "location")
+            q = {"question_number": "1", "question_text": "Q", "marking_scheme": "S", "marks": 2}
+            scripts = [{"script_index": 0, "image": b"fake_png_data"}]
+            res1 = cached.grade_question_batch(q, scripts)
+            self.assertEqual(res1.grades[0].mark, 2.0)
+            self.assertEqual(first.calls, 1)
+
+            second = BatchProvider()
+            resumed = CachedGrader(second, root / "cache", agents, models, "project", "location")
+            res2 = resumed.grade_question_batch(q, scripts)
+            self.assertEqual(res2.grades[0].mark, 2.0)
+            self.assertEqual(second.calls, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

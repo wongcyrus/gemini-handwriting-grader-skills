@@ -115,11 +115,71 @@ class TestRetryGrading(unittest.TestCase):
             return
         import yaml
         config = yaml.safe_load(config_path.read_text())
-        root, manifest = verify_run(config, Path("."))
-        annotations = approve_regions(config, Path("."), config_path)
-        self.assertIsInstance(annotations, dict)
-        self.assertTrue((root / "approval.json").is_file())
-        with (root / "approval.json").open(encoding="utf-8") as f:
-            app = json.load(f)
-        self.assertIn("annotations_sha256", app)
-        self.assertIn("approved_at", app)
+        written_files = {}
+
+        def fake_atomic_json(path, data):
+            written_files[Path(path).name] = data
+
+        with patch("handwriting_grader.regions.atomic_json", side_effect=fake_atomic_json):
+            annotations = approve_regions(config, Path("."), config_path)
+            self.assertIsInstance(annotations, dict)
+            self.assertIn("approval.json", written_files)
+            app = written_files["approval.json"]
+            self.assertIn("annotations_sha256", app)
+            self.assertIn("approved_at", app)
+
+    def test_load_metadata_candidates_from_exam(self):
+        from handwriting_grader.grading import load_metadata_candidates
+        config_path = Path("exam.yaml")
+        if not config_path.exists():
+            return
+        import yaml
+        config = yaml.safe_load(config_path.read_text())
+        candidates = load_metadata_candidates(config, Path("."), config_path)
+        self.assertIn("ID", candidates)
+        self.assertGreater(len(candidates["ID"]), 0)
+        self.assertIn("NAME", candidates)
+        self.assertIn("CLASS", candidates)
+        self.assertIn("1A", candidates["CLASS"])
+
+    def test_load_metadata_roster_from_exam(self):
+        from handwriting_grader.grading import load_metadata_roster
+        config_path = Path("exam.yaml")
+        if not config_path.exists():
+            return
+        import yaml
+        config = yaml.safe_load(config_path.read_text())
+        roster = load_metadata_roster(config, Path("."), config_path)
+        self.assertIsInstance(roster, list)
+        self.assertEqual(len(roster), 74)
+        first = roster[0]
+        self.assertIn("id", first)
+        self.assertIn("name", first)
+        self.assertIn("class", first)
+
+    def test_batch_extract_metadata_fallback(self):
+        from handwriting_grader.grading import batch_extract_metadata
+        class FallbackProvider:
+            def ocr(self, image, field, candidates=None):
+                return f"extracted_{field}"
+
+        boxes = {
+            "ID": (0, {"x": 0, "y": 0, "width": 10, "height": 10}),
+            "CLASS": (0, {"x": 0, "y": 0, "width": 10, "height": 10}),
+        }
+        with tempfile.TemporaryDirectory() as td:
+            img_dir = Path(td)
+            from PIL import Image
+            img = Image.new("RGB", (100, 100), color="white")
+            img.save(img_dir / "0.jpg")
+            res = batch_extract_metadata(
+                provider=FallbackProvider(),
+                script_indices=[0],
+                fields=["ID", "CLASS"],
+                boxes=boxes,
+                stride=1,
+                image_dir=img_dir,
+            )
+            self.assertIn(0, res)
+            self.assertEqual(res[0]["id_ocr"], "extracted_ID")
+            self.assertEqual(res[0]["class_ocr"], "extracted_CLASS")

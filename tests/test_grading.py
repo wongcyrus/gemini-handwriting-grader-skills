@@ -228,6 +228,8 @@ class GradingTests(unittest.TestCase):
         finally:
             book.close()
         state = json.loads(self.score_request("/api/state")[1])
+        self.assertIn("has_clusters", state)
+        self.assertFalse(state["has_clusters"])
         self.assertEqual(self.score_request("/api/suggest", {**suggestion, "revision": state["revision"]})[0], 400)
         self.assertEqual(self.score_request("/api/approve", {"revision": state["revision"]})[0], 400)
         self.assertEqual(self.score_request("/api/approve", {

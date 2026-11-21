@@ -292,9 +292,6 @@ Keep this URL private and close spreadsheet editors while using this interface.<
 <!-- Marksheet Controls -->
 <div class="controls-bar" id="marksheet-controls">
   <div class="controls-group">
-    <label>Full mark: <input type="number" id="fullMark" min="0" max="100" style="width: 55px;"></label>
-    <label>Similarity: <input type="range" id="minimumSimilarity" min="0" max="1" step="0.01" value="0.8"> <span id="currentSimilarity" style="min-width: 32px; font-weight: 700; color: #2563eb;">0.80</span></label>
-    <label>Granularity: <input type="range" id="granularity" min="0.1" max="1" step="0.25" value="1"> <span id="currentGranularity" style="min-width: 25px; font-weight: 700; color: #2563eb;">1</span></label>
     <label>View:
       <select id="table-image-mode" title="Apply Crop, +Context (expanded margins), or Full Page to all answers at once">
         <option value="">Crop</option>
@@ -314,6 +311,13 @@ Keep this URL private and close spreadsheet editors while using this interface.<
         <option value="all">All Students</option>
         <option value="unreviewed">Not Reviewed</option>
         <option value="flagged">Flagged / Failed</option>
+      </select>
+    </label>
+    <label id="cluster-mode-container" style="display: inline-flex; align-items: center; gap: 0.25rem; font-weight: 600; font-size: 0.8rem; color: #475569; margin-left: 0.5rem;">
+      Grouping:
+      <select id="marksheet-cluster-mode" title="Choose grouping method">
+        <option value="words">Word Overlap (Local)</option>
+        <option value="embedding" disabled>AI Embedding (Not generated)</option>
       </select>
     </label>
     <span style="font-weight: 600; font-size: 0.8rem; color: #475569;">Show/Hide:</span>
@@ -387,6 +391,8 @@ let busy = false, imageReady = false, suggestion = null, bulk = null;
 let marksheetSort = {col: "answer", mode: "group"};
 let questionStatusFilter = "all";
 const tableImageUrls = new Map();
+const qClusterCache = new Map();
+const qClusterLoading = new Set();
 
 function message(text) { byId("status").textContent = text; }
 function updateRevision(rev) {
@@ -400,7 +406,7 @@ function updateRevision(rev) {
 function setBusy(value) {
   busy = value;
   for (const id of ["script", "section", "metadata-image", "approve",
-                    "minimumSimilarity", "granularity", "fullMark", "marksheet-filter",
+                    "marksheet-filter",
                     "img-size", "mark-question-reviewed", "mark-ids-reviewed"]) {
     const el = byId(id);
     if (el) el.disabled = busy;
@@ -635,14 +641,10 @@ async function renderMarksheetTable() {
     byId("q-banner-title").textContent = "Student Identity Matching";
     byId("q-banner-scheme").textContent = "Verify handwritten ID, Name, and Class against student roster.";
     byId("q-banner-stats").textContent = `Total Scripts: ${state.scripts.length}`;
-    byId("fullMark").value = "";
-    byId("fullMark").disabled = true;
   } else {
     const qLabel = String(qData.question_number).startsWith("Q") ? qData.question_number : `Q${qData.question_number}`;
     byId("q-banner-title").textContent = `${qData.question_number}: ${qData.question_text || ""}`;
     byId("q-banner-scheme").textContent = `Marking Scheme: ${qData.marking_scheme || "(No marking scheme)"}`;
-    byId("fullMark").value = qData.marks;
-    byId("fullMark").disabled = false;
     byId("mark-question-reviewed").textContent = `Mark ${qLabel} Reviewed ✓`;
   }
 
@@ -705,18 +707,65 @@ async function renderMarksheetTable() {
   }
 
   if (sortMode === "group" && !isId) {
-    const clusters = [];
-    for (const e of entries) {
-      let placed = false;
-      for (const cluster of clusters) {
-        if (textSimilarity(e.normAnswer, cluster.repNorm) >= 0.65) {
-          cluster.items.push(e);
-          placed = true;
-          break;
+    const clusterSelect = byId("marksheet-cluster-mode");
+    const useEmbedding = Boolean(state && state.has_clusters && (!clusterSelect || clusterSelect.value === "embedding"));
+    const cachedClusterData = useEmbedding ? qClusterCache.get(qIdx) : null;
+    let clusters = [];
+
+    if (useEmbedding && cachedClusterData && cachedClusterData.clusters && cachedClusterData.clusters.length > 0) {
+      const entryMap = new Map();
+      for (const e of entries) {
+        entryMap.set(e.script.script_index, e);
+      }
+      for (const c of cachedClusterData.clusters) {
+        const cItems = [];
+        for (const sInfo of c.scripts) {
+          const e = entryMap.get(sInfo.script_index);
+          if (e) {
+            e.similarity = sInfo.similarity;
+            cItems.push(e);
+          }
+        }
+        if (cItems.length > 0) {
+          clusters.push({
+            id: c.id,
+            repText: c.rep_text,
+            items: cItems,
+            model: cachedClusterData.model || "gemini-embedding-2"
+          });
         }
       }
-      if (!placed) {
-        clusters.push({repNorm: e.normAnswer, repText: e.answer, items: [e]});
+    } else {
+      if (useEmbedding && !qClusterLoading.has(qIdx)) {
+        qClusterLoading.add(qIdx);
+        fetch(`/api/cluster/${qIdx}`, {
+          headers: {"Authorization": `Bearer ${token}`}
+        })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          qClusterLoading.delete(qIdx);
+          if (data && data.clusters) {
+            qClusterCache.set(qIdx, data);
+            if (section === String(qIdx) && marksheetSort.mode === "group") {
+              renderMarksheetTable();
+            }
+          }
+        })
+        .catch(() => qClusterLoading.delete(qIdx));
+      }
+
+      for (const e of entries) {
+        let placed = false;
+        for (const cluster of clusters) {
+          if (textSimilarity(e.normAnswer, cluster.repNorm) >= 0.65) {
+            cluster.items.push(e);
+            placed = true;
+            break;
+          }
+        }
+        if (!placed) {
+          clusters.push({repNorm: e.normAnswer, repText: e.answer, items: [e], model: useEmbedding ? "" : "Word Overlap"});
+        }
       }
     }
 
@@ -741,7 +790,8 @@ async function renderMarksheetTable() {
 
         const badge = document.createElement("span");
         badge.className = "group-badge";
-        badge.textContent = `Similar Group ${groupNum}`;
+        const modelLabel = cluster.model ? ` · ${cluster.model}` : "";
+        badge.textContent = `Similar Group ${groupNum}${modelLabel}`;
         divCell.append(badge);
 
         const strongCount = document.createElement("strong");
@@ -1229,27 +1279,6 @@ byId("mark-question-reviewed").onclick = async () => {
   }
 };
 
-function refreshMarksBySimilarity() {
-  const fullMark = Number(byId("fullMark").value);
-  const minSim = Number(byId("minimumSimilarity").value);
-  const granularity = Number(byId("granularity").value) || 1;
-
-  document.querySelectorAll("input.mark-input").forEach(input => {
-    const sIdx = Number(input.dataset.script);
-    const lockSpan = byId(`inline-lock-${sIdx}`);
-    if (lockSpan && lockSpan.textContent !== "") return;
-
-    const sim = Number(input.dataset.similarity) || 0;
-    if (sim >= minSim) {
-      input.value = fullMark;
-    } else {
-      let mark = fullMark * sim;
-      mark = Math.floor(mark / granularity) * granularity;
-      input.value = mark;
-    }
-  });
-}
-
 async function loadTableImages() {
   const prefix = byId("table-image-mode").value || "";
   const pad = Number(byId("box-pad").value) || 0;
@@ -1431,18 +1460,16 @@ byId("img-size").oninput = e => {
   document.documentElement.style.setProperty("--img-size", val + "px");
 };
 
-byId("minimumSimilarity").oninput = e => {
-  byId("currentSimilarity").textContent = Number(e.target.value).toFixed(2);
-  refreshMarksBySimilarity();
-};
-
-byId("granularity").oninput = e => {
-  byId("currentGranularity").textContent = e.target.value;
-  refreshMarksBySimilarity();
-};
-
-byId("fullMark").onchange = refreshMarksBySimilarity;
 byId("marksheet-filter").onchange = renderMarksheetTable;
+
+if (byId("marksheet-cluster-mode")) {
+  byId("marksheet-cluster-mode").onchange = e => {
+    if (state && state.has_clusters) {
+      localStorage.setItem("handwriting_grader_cluster_mode", e.target.value);
+    }
+    renderMarksheetTable();
+  };
+}
 
 document.querySelectorAll("#marksheet th.sortable").forEach(th => {
   th.onclick = () => {
@@ -1470,6 +1497,7 @@ async function render() {
   const identity = section === "id";
   byId("script-fields").style.display = identity ? "flex" : "none";
   byId("mark-question-reviewed").hidden = identity;
+  byId("cluster-mode-container").style.display = identity ? "none" : "inline-flex";
 
   renderTabs();
   await renderMarksheetTable();
@@ -1485,11 +1513,36 @@ async function render() {
   }
 }
 
+function updateClusterDropdown() {
+  const sel = byId("marksheet-cluster-mode");
+  if (!sel) return;
+  const hasClusters = Boolean(state && state.has_clusters);
+  sel.replaceChildren();
+  if (hasClusters) {
+    sel.append(
+      option("embedding", "AI Embedding (Semantic)"),
+      option("words", "Word Overlap (Local)")
+    );
+    const saved = localStorage.getItem("handwriting_grader_cluster_mode");
+    sel.value = saved === "words" ? "words" : "embedding";
+    sel.title = "Choose grouping method: AI Embedding (Semantic) or Word Overlap (Local)";
+  } else {
+    sel.append(
+      option("words", "Word Overlap (Local)"),
+      option("embedding", "AI Embedding (Not generated)")
+    );
+    if (sel.options[1]) sel.options[1].disabled = true;
+    sel.value = "words";
+    sel.title = "Grouped by local word overlap. Run 'handwriting-grader cluster-answers' to pre-compute AI semantic clusters.";
+  }
+}
+
 async function reload() {
   state = await (await api("/api/state")).json();
   byId("script").replaceChildren(...state.scripts.map(s => option(String(s.script_index), `Script ${s.script_index + 1}`)));
   byId("section").replaceChildren(option("id", "Identity"),
     ...state.questions.map((q, i) => option(String(i), `Question ${q.question_number}`)));
+  updateClusterDropdown();
   await render();
 }
 

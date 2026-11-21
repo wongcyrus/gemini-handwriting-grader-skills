@@ -20,6 +20,7 @@ from openpyxl.utils.exceptions import IllegalCharacterError
 from PIL import Image
 
 from .attendance import present_roster
+from .cache import shared_embedding_cache_path
 from .grade_review import approve_grading, confirmed, read_approved_grading, reviewed_rows, verify_grading_run
 from .grading import approved_inputs, crop_image
 from .regions import file_hash
@@ -330,9 +331,67 @@ class ScoreServer(ThreadingHTTPServer):
         self.lock = threading.Lock()
         self.image_cache = {}
         self.image_lock = threading.Lock()
+        self.embedding_cache = {}
+        self.embedding_lock = threading.Lock()
+        self._genai_client = None
+        self._embedding_model = None
+
+        _, model_name = self.get_embedding_client()
+        self.embedding_model_name = model_name
+        model_cfg_path = Path(config_dir) / config.get("exam", {}).get("model_config", "config.yaml")
+        if not model_cfg_path.is_file():
+            model_cfg_path = Path("config.yaml")
+        self.shared_cache_path = shared_embedding_cache_path(model_cfg_path if model_cfg_path.is_file() else None, model_name)
+
+        # 1. Load from cross-assignment shared cache
+        if self.shared_cache_path.is_file():
+            try:
+                with self.shared_cache_path.open("r", encoding="utf-8") as f:
+                    self.embedding_cache.update(json.load(f))
+            except Exception:
+                pass
 
         root, manifest, _, questions = verify_grading_run(config, config_dir, config_path, run_id=run_id)
         self.root = root
+
+        # 2. Load and merge assignment-local cache if present
+        cache_path = root / ".embedding_cache.json"
+        if cache_path.is_file():
+            try:
+                with cache_path.open("r", encoding="utf-8") as f:
+                    self.embedding_cache.update(json.load(f))
+            except Exception:
+                pass
+
+        # 3. Seed shared cache if local has entries not yet in shared cache
+        if self.embedding_cache:
+            try:
+                self.shared_cache_path.parent.mkdir(parents=True, exist_ok=True)
+                shared_to_write = {}
+                if self.shared_cache_path.is_file():
+                    try:
+                        with self.shared_cache_path.open("r", encoding="utf-8") as f:
+                            shared_to_write = json.load(f)
+                    except Exception:
+                        shared_to_write = {}
+                if len(self.embedding_cache) > len(shared_to_write):
+                    shared_to_write.update(self.embedding_cache)
+                    tmp_p = self.shared_cache_path.with_suffix(".tmp")
+                    with tmp_p.open("w", encoding="utf-8") as f:
+                        json.dump(shared_to_write, f)
+                    tmp_p.replace(self.shared_cache_path)
+            except Exception:
+                pass
+
+        clusters_path = root / "clusters.json"
+        self.precomputed_clusters = {}
+        if clusters_path.is_file():
+            try:
+                with clusters_path.open("r", encoding="utf-8") as f:
+                    self.precomputed_clusters = json.load(f)
+            except Exception:
+                self.precomputed_clusters = {}
+        self.has_clusters = bool(self.precomputed_clusters) or bool(self.embedding_cache)
         self.questions = questions
         self.effective_crops = manifest.get("effective_crops", {})
         _, _, _, boxes = approved_inputs(config, config_dir, config_path)
@@ -343,6 +402,198 @@ class ScoreServer(ThreadingHTTPServer):
 
         load_state(self)
         super().__init__(("127.0.0.1", port), ScoreHandler)
+
+    def get_embedding_client(self):
+        if self._genai_client is None:
+            try:
+                from google import genai
+                import yaml
+                model_cfg_path = Path(self.config_dir) / self.config["exam"].get("model_config", "config.yaml")
+                if not model_cfg_path.is_file():
+                    model_cfg_path = Path("config.yaml")
+                if model_cfg_path.is_file():
+                    with open(model_cfg_path, encoding="utf-8") as f:
+                        cfg = yaml.safe_load(f)
+                    vertex = cfg.get("vertex_ai", {})
+                    project = vertex.get("project_id", os.environ.get("GOOGLE_CLOUD_PROJECT"))
+                    location = vertex.get("location", "global")
+                    self._embedding_model = cfg.get("models", {}).get("embedding", "gemini-embedding-2")
+                    self._genai_client = genai.Client(vertexai=True, project=project, location=location)
+                else:
+                    self._genai_client = None
+                    self._embedding_model = "gemini-embedding-2"
+            except Exception:
+                self._genai_client = None
+                self._embedding_model = "gemini-embedding-2"
+        return self._genai_client, self._embedding_model or "gemini-embedding-2"
+
+    def cluster_question(self, question_idx, threshold=0.82):
+        from concurrent.futures import ThreadPoolExecutor
+        import numpy as np
+
+        with self.lock:
+            root, revision, roster, questions, scripts, marks = load_state(self)
+        if not (0 <= question_idx < len(questions)):
+            raise ValueError("Invalid question index")
+        q_num = questions[question_idx]["question_number"]
+        if q_num in self.precomputed_clusters:
+            return self.precomputed_clusters[q_num]
+        q_key = question_key(q_num)
+
+        script_answers = {}
+        for s_idx in sorted(scripts):
+            mark = marks.get((s_idx, q_key), {})
+            ans = (mark.get("answer") or "").strip()
+            script_answers[s_idx] = ans
+
+        norm_map = {}
+        for ans in script_answers.values():
+            if ans:
+                n = " ".join(ans.lower().split())
+                if n and n not in norm_map:
+                    norm_map[n] = ans
+
+        if not norm_map:
+            return {
+                "question_index": question_idx,
+                "clusters": [{
+                    "id": 1, "rep_text": "(empty)", "avg_similarity": 1.0,
+                    "scripts": [{"script_index": s_idx, "similarity": 1.0} for s_idx in sorted(script_answers)]
+                }],
+                "model": "none"
+            }
+
+        client, model_name = self.get_embedding_client()
+        unique_norms = list(norm_map.keys())
+
+        embeddings = {}
+        to_fetch = []
+        with self.embedding_lock:
+            for n in unique_norms:
+                if n in self.embedding_cache:
+                    embeddings[n] = self.embedding_cache[n]
+                else:
+                    to_fetch.append(n)
+
+        if to_fetch and client is not None:
+            def _embed(norm_k):
+                try:
+                    res = client.models.embed_content(model=model_name, contents=norm_map[norm_k])
+                    return norm_k, res.embeddings[0].values
+                except Exception:
+                    return norm_k, None
+
+            new_embeddings = {}
+            with ThreadPoolExecutor(max_workers=min(8, len(to_fetch))) as executor:
+                for norm_k, vec in executor.map(_embed, to_fetch):
+                    if vec is not None:
+                        new_embeddings[norm_k] = vec
+                        embeddings[norm_k] = vec
+
+            if new_embeddings:
+                with self.embedding_lock:
+                    self.embedding_cache.update(new_embeddings)
+                    try:
+                        cache_file = self.root / ".embedding_cache.json"
+                        with cache_file.open("w", encoding="utf-8") as f:
+                            json.dump(self.embedding_cache, f)
+                    except Exception:
+                        pass
+                    try:
+                        self.shared_cache_path.parent.mkdir(parents=True, exist_ok=True)
+                        shared_data = {}
+                        if self.shared_cache_path.is_file():
+                            try:
+                                with self.shared_cache_path.open("r", encoding="utf-8") as f:
+                                    shared_data = json.load(f)
+                            except Exception:
+                                shared_data = {}
+                        shared_data.update(new_embeddings)
+                        tmp_path = self.shared_cache_path.with_suffix(".tmp")
+                        with tmp_path.open("w", encoding="utf-8") as f:
+                            json.dump(shared_data, f)
+                        tmp_path.replace(self.shared_cache_path)
+                    except Exception:
+                        pass
+
+        has_vecs = [n for n in unique_norms if n in embeddings]
+        clusters = []
+
+        if has_vecs:
+            vec_matrix = np.array([embeddings[n] for n in has_vecs])
+            norm_matrix = vec_matrix / (np.linalg.norm(vec_matrix, axis=1, keepdims=True) + 1e-9)
+            sim_matrix = np.dot(norm_matrix, norm_matrix.T)
+
+            assigned = set()
+            for i, n_rep in enumerate(has_vecs):
+                if i in assigned:
+                    continue
+                assigned.add(i)
+                members = [n_rep]
+                for j in range(i + 1, len(has_vecs)):
+                    if j not in assigned and sim_matrix[i, j] >= threshold:
+                        assigned.add(j)
+                        members.append(has_vecs[j])
+                clusters.append({
+                    "rep_norm": n_rep,
+                    "rep_text": norm_map[n_rep],
+                    "norms": set(members)
+                })
+        else:
+            for n in unique_norms:
+                clusters.append({"rep_norm": n, "rep_text": norm_map[n], "norms": {n}})
+
+        script_cluster_map = {}
+        for s_idx, ans in script_answers.items():
+            if not ans:
+                continue
+            n = " ".join(ans.lower().split())
+            placed = False
+            for c_idx, c in enumerate(clusters):
+                if n in c["norms"]:
+                    if has_vecs and n in embeddings and c["rep_norm"] in embeddings:
+                        v1 = np.array(embeddings[n])
+                        v2 = np.array(embeddings[c["rep_norm"]])
+                        cos_sim = float(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-9))
+                    else:
+                        cos_sim = 1.0 if n == c["rep_norm"] else 0.80
+                    script_cluster_map[s_idx] = (c_idx, cos_sim)
+                    placed = True
+                    break
+            if not placed:
+                script_cluster_map[s_idx] = (len(clusters), 1.0)
+                clusters.append({"rep_norm": n, "rep_text": ans, "norms": {n}})
+
+        output_clusters = []
+        for c_idx, c in enumerate(clusters):
+            c_scripts = []
+            for s_idx in sorted(script_answers):
+                if s_idx in script_cluster_map and script_cluster_map[s_idx][0] == c_idx:
+                    c_scripts.append({"script_index": s_idx, "similarity": round(script_cluster_map[s_idx][1], 3)})
+            if c_scripts:
+                avg_sim = round(sum(s["similarity"] for s in c_scripts) / len(c_scripts), 3)
+                output_clusters.append({
+                    "id": c_idx + 1,
+                    "rep_text": c["rep_text"],
+                    "avg_similarity": avg_sim,
+                    "scripts": c_scripts
+                })
+
+        empty_scripts = [s_idx for s_idx in sorted(script_answers) if not script_answers[s_idx]]
+        if empty_scripts:
+            output_clusters.append({
+                "id": len(output_clusters) + 1,
+                "rep_text": "(empty)",
+                "avg_similarity": 1.0,
+                "scripts": [{"script_index": s_idx, "similarity": 1.0} for s_idx in empty_scripts]
+            })
+
+        output_clusters.sort(key=lambda c: len(c["scripts"]), reverse=True)
+        return {
+            "question_index": question_idx,
+            "clusters": output_clusters,
+            "model": model_name
+        }
 
     @property
     def origin(self):
@@ -455,6 +706,14 @@ class ScoreHandler(BaseHTTPRequestHandler):
             except Exception:
                 return self.json_response(404, {"error": "Image not found"})
 
+        if len(segments) == 4 and segments[1:3] == ["api", "cluster"]:
+            try:
+                q_idx = int(segments[3])
+                result = self.server.cluster_question(q_idx)
+                return self.json_response(200, result)
+            except Exception as exc:
+                return self.json_response(500, {"error": str(exc)})
+
         try:
             with self.server.lock:
                 root, revision, roster, questions, scripts, marks = load_state(self.server)
@@ -473,6 +732,7 @@ class ScoreHandler(BaseHTTPRequestHandler):
                         "crops": [[effective_crops.get(question_key(q["question_number"]),
                                                      [boxes[question_key(q["question_number"])][1]] * len(scripts))[i]
                                    for q in questions] for i in sorted(scripts)],
+                        "has_clusters": self.server.has_clusters,
                     })
         except (OSError, ValueError, KeyError, TypeError):
             return self.json_response(409, {"error": "Run or review changed; stop and inspect it"})

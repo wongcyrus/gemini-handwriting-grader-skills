@@ -201,9 +201,15 @@ def main(argv=None):
     grade.add_argument("--project", required=True, help="Explicit Google Cloud project")
     grade.add_argument("--location", required=True, help="Explicit Vertex AI location")
     grade.add_argument("--confirm-cost", action="store_true", help="Confirm sending student work to Vertex AI")
+    grade.add_argument("--mode", choices=["batch", "item"], default="batch",
+                       help="Grading mode: 'batch' (fast one-pass structured output per question) or 'item' (student-by-student with moderation)")
+    grade.add_argument("--concurrency", type=int, default=3, help="Concurrent questions for batch grading (default: 3)")
     resume = commands.add_parser("resume-grading", help="Resume a supported interrupted grading checkpoint")
     resume.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     resume.add_argument("--confirm-cost", action="store_true", help="Confirm resumed paid calls")
+    resume.add_argument("--mode", choices=["batch", "item"], default=None,
+                        help="Override grading mode (default: from manifest or batch)")
+    resume.add_argument("--concurrency", type=int, default=3, help="Concurrent questions for batch grading (default: 3)")
     retry_cmd = commands.add_parser("retry-grading", help="Retry failed marks and unmoderated questions in a grading run")
     retry_cmd.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     retry_cmd.add_argument("--run", help="Target child run ID (default: original run)")
@@ -245,6 +251,10 @@ def main(argv=None):
     regrade.add_argument("--project", required=True, help="Explicit Google Cloud project")
     regrade.add_argument("--location", required=True, help="Explicit Vertex AI location")
     regrade.add_argument("--confirm-cost", action="store_true", help="Confirm sending student work to Vertex AI")
+    cluster_cmd = commands.add_parser("cluster-answers", help="Pre-compute semantic embedding clusters of student answers after grading and before review")
+    cluster_cmd.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    cluster_cmd.add_argument("--threshold", type=float, default=0.82, help="Cosine similarity threshold (default: 0.82)")
+    cluster_cmd.add_argument("--run", help="Optional run ID (default: current run)")
     grade_review = commands.add_parser("review-grading", help="Start a local browser-based grading editor")
     grade_review.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     grade_review.add_argument("--port", type=int, default=0, help="Local port (default: automatically selected)")
@@ -582,7 +592,15 @@ def main(argv=None):
         except (OSError, ValueError, KeyError, yaml.YAMLError) as exc:
             print(f"Cannot prepare grading: {exc}", file=sys.stderr)
             return 1
-        request_count = summary["students"] * (3 + len(questions)) + len(questions)
+        mode = getattr(args, "mode", "batch")
+        concurrency = getattr(args, "concurrency", 3)
+        if mode == "batch":
+            chunks_per_q = max(1, (summary["students"] + 49) // 50)
+            request_count = summary["students"] * 3 + len(questions) * chunks_per_q
+            print(f"Mode: BATCH (multimodal structured output, {concurrency} questions concurrent).")
+        else:
+            request_count = summary["students"] * (3 + len(questions)) + len(questions)
+            print("Mode: ITEM (sequential student-by-student grading + moderation).")
         print(f"Vertex target: project={args.project}, location={args.location}, models={models}. "
               f"Up to {request_count} requests will send student work or answers and incur charges. "
               f"Cache: {cache_agents or 'disabled'}; location={cache_path if cache_agents else 'none'}.")
@@ -595,7 +613,7 @@ def main(argv=None):
         try:
             output = grade_exam(
                 config, path.parent, path, args.model_config, args.project.strip(),
-                args.location.strip(), summary,
+                args.location.strip(), summary, mode=mode, batch_concurrency=concurrency,
             )
             tracker.write_cost_report(output)
         except Exception as exc:
@@ -607,6 +625,31 @@ def main(argv=None):
             set_active_tracker(None)
         print(f"Grading results and review workbook saved to {output}. Human review is required.")
         return 0
+    if args.command == "cluster-answers":
+        import json
+        from .score_editor import ScoreServer
+
+        try:
+            server = ScoreServer(config, path.parent, 0, path, run_id=args.run)
+            _, model_name = server.get_embedding_client()
+            total_q = len(server.questions)
+            print(f"Pre-computing semantic clusters using {model_name} (threshold={args.threshold})...")
+            print(f"Shared embedding cache: {server.shared_cache_path} ({len(server.embedding_cache)} cached entries)")
+            cached_all = {}
+            for q_idx in range(total_q):
+                res = server.cluster_question(q_idx, threshold=args.threshold)
+                q_num = server.questions[q_idx]["question_number"]
+                c_count = len(res.get("clusters", []))
+                cached_all[q_num] = res
+                print(f"[{q_idx + 1}/{total_q}] Question {q_num}: {c_count} semantic clusters ready")
+            clusters_path = server.root / "clusters.json"
+            with clusters_path.open("w", encoding="utf-8") as f:
+                json.dump(cached_all, f, indent=2, ensure_ascii=False)
+            print(f"Semantic clustering complete! Saved to {clusters_path} for review-grading.")
+            return 0
+        except Exception as exc:
+            print(f"Semantic clustering failed: {exc}", file=sys.stderr)
+            return 1
     if args.command == "review-grading":
         from .score_editor import ScoreServer
 
@@ -687,7 +730,8 @@ def main(argv=None):
             return 1
         try:
             if args.run is None:
-                output = resume_grading(config, path.parent, path, summary)
+                output = resume_grading(config, path.parent, path, summary, mode=args.mode,
+                                        batch_concurrency=getattr(args, "concurrency", 3))
             else:
                 from .regrading import resume_regrade
                 output = resume_regrade(config, path.parent, path, args.run)

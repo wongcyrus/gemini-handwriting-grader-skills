@@ -16,3 +16,5 @@ output/
 cache/
 smtp.config
 *-key.json
+*.zip
+scratch/
