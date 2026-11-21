@@ -16,8 +16,8 @@ def is_blank_cell(image_bytes: bytes, ink_threshold: int = 160, max_ink_ratio: f
             w, h = gray.size
             if w < 16 or h < 16:
                 return False
-            pad_x = max(4, w // 12)
-            pad_y = max(4, h // 10)
+            pad_x = min(4, max(2, w // 30))
+            pad_y = min(4, max(2, h // 20))
             if w - 2 * pad_x <= 4 or h - 2 * pad_y <= 4:
                 return False
             inner = gray.crop((pad_x, pad_y, w - pad_x, h - pad_y))
