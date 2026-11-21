@@ -76,6 +76,25 @@ def review_data(config, config_dir, config_path):
     }
 
 
+def _write_attendance_xlsx(path: Path, students: list[dict]) -> None:
+    """Write a human-readable Excel workbook for non-technical teacher attendance review."""
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Attendance"
+    ws.append(["ID", "Name", "Class", "Status"])
+    for student in students:
+        row = [student.get("id", ""), student.get("name", ""), student.get("class", ""), student.get("status", "")]
+        ws.append(row)
+        for cell in ws[ws.max_row]:
+            if isinstance(cell.value, str):
+                cell.data_type = "s"
+    with path.open("wb") as file:
+        wb.save(file)
+    wb.close()
+
+
 def prepare_attendance(config, config_dir, config_path):
     review = review_data(config, config_dir, config_path)
     root = resolve_path(config_dir, config["exam"]["output_dir"]) / "attendance"
@@ -86,10 +105,11 @@ def prepare_attendance(config, config_dir, config_path):
     target = versions / version
     target.mkdir(mode=0o700)
     atomic_json(target / "review.json", review)
+    _write_attendance_xlsx(target / "attendance_review.xlsx", review["students"])
     if review_data(config, config_dir, config_path) != review:
         raise ValueError("Attendance changed during preparation; inspect the partial review")
     atomic_json(root / "current.json", {"version": 1, "review_id": version})
-    return target / "review.json"
+    return target / "attendance_review.xlsx"
 
 
 def current_review(config, config_dir, config_path):

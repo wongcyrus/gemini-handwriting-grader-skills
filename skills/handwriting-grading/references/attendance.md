@@ -20,8 +20,9 @@ Preflight checks the count, not the order or identity.
 1. Run `.venv/bin/handwriting-grader preflight --exam /path/to/exam.yaml`.
    Check its present and absent counts with the teacher.
 2. Run `.venv/bin/handwriting-grader prepare-attendance --exam /path/to/exam.yaml`.
-   Ask the teacher to inspect every ID, name, class and status in the printed
-   private `review.json` and compare it with the original list and roster.
+   Ask the teacher to inspect every ID, name, class and status in the generated
+   Excel workbook (`attendance_review.xlsx`, alongside `review.json`) and compare it
+   with the original list and roster.
 3. Only after explicit review, run `.venv/bin/handwriting-grader
    approve-attendance --exam /path/to/exam.yaml --confirm-reviewed`.
    The command without the flag records no approval.

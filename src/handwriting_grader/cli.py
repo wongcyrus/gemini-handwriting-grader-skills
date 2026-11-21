@@ -340,7 +340,7 @@ def main(argv=None):
 
         try:
             target, review, _, _ = current_review(config, path.parent, path)
-            print(f"Review {target / 'review.json'}: {summary['students']} present, {summary['absent']} absent.")
+            print(f"Review {target / 'attendance_review.xlsx'}: {summary['students']} present, {summary['absent']} absent.")
             if not args.confirm_reviewed:
                 print("No approval recorded. Review each student and rerun with --confirm-reviewed.", file=sys.stderr)
                 return 1

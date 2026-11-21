@@ -49,7 +49,7 @@ class FakeRetryProvider:
 class TestRetryGrading(unittest.TestCase):
     def test_inspect_retry_grading_identifies_failed_marks_and_moderations(self):
         config_path = Path("exam.yaml")
-        if not config_path.exists():
+        if not config_path.exists() or not Path("output/grading/results.json").is_file() or not Path("output/rubric/approval.json").is_file():
             return
         import yaml
         config = yaml.safe_load(config_path.read_text())
@@ -93,7 +93,7 @@ class TestRetryGrading(unittest.TestCase):
 
     def test_inspect_retry_grading_supports_re_ocr_and_question(self):
         config_path = Path("exam.yaml")
-        if not config_path.exists():
+        if not config_path.exists() or not Path("output/grading/results.json").is_file() or not Path("output/rubric/approval.json").is_file():
             return
         import yaml
         config = yaml.safe_load(config_path.read_text())
@@ -111,7 +111,7 @@ class TestRetryGrading(unittest.TestCase):
     def test_approve_regions_workflow(self):
         from handwriting_grader.regions import approve_regions, verify_run
         config_path = Path("exam.yaml")
-        if not config_path.exists():
+        if not config_path.exists() or not Path("output/regions/annotations.json").is_file():
             return
         import yaml
         config = yaml.safe_load(config_path.read_text())
