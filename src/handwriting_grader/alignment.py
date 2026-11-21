@@ -179,27 +179,98 @@ def _max_phase_score(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.max(cc))
 
 
+def _find_consensus_references(
+    page_paths: list[Path],
+    pages_per_student: int,
+) -> tuple[list[tuple[np.ndarray, tuple[int, int]] | None], list[str]]:
+    """Select majority-consensus upright reference ink maps for each page offset in a script."""
+    num_scripts = len(page_paths) // pages_per_student
+    sample_indices = (
+        sorted({0, num_scripts // 4, num_scripts // 2, (3 * num_scripts) // 4, num_scripts - 1})
+        if num_scripts >= 5
+        else list(range(num_scripts))
+    )
+
+    # Determine majority page dimensions overall (or per offset)
+    refs: list[tuple[np.ndarray, tuple[int, int]] | None] = []
+    early_issues: list[str] = []
+
+    for offset in range(pages_per_student):
+        candidates: list[tuple[int, np.ndarray, tuple[int, int]]] = []
+        size_counts: dict[tuple[int, int], int] = {}
+        for si in sample_indices:
+            p = page_paths[si * pages_per_student + offset]
+            with Image.open(p) as im:
+                size_counts[im.size] = size_counts.get(im.size, 0) + 1
+        if not size_counts:
+            refs.append(None)
+            continue
+        majority_size = max(size_counts, key=lambda s: size_counts[s])
+
+        for si in sample_indices:
+            p = page_paths[si * pages_per_student + offset]
+            with Image.open(p) as im:
+                if im.size != majority_size:
+                    continue
+                arr = _prepare_ink_map_4x(im)
+                if float(arr.max()) > 0.0:
+                    candidates.append((si, arr, im.size))
+
+        if not candidates:
+            refs.append(None)
+            continue
+        if len(candidates) == 1:
+            refs.append((candidates[0][1], candidates[0][2]))
+            continue
+
+        # Score each candidate by how many other candidates match it at 0 deg (vs 180 deg)
+        best_cand = candidates[0]
+        best_votes = -1.0
+        for i, (_, arr_i, size_i) in enumerate(candidates):
+            votes = 0.0
+            for j, (_, arr_j, _) in enumerate(candidates):
+                if i == j:
+                    continue
+                s0 = _max_phase_score(arr_i, arr_j)
+                s180 = _max_phase_score(arr_i, arr_j[::-1, ::-1])
+                if s0 >= s180 * 1.1:
+                    votes += 1.0 + s0
+            if votes > best_votes:
+                best_votes = votes
+                best_cand = candidates[i]
+        refs.append((best_cand[1], best_cand[2]))
+
+    return refs, early_issues
+
+
 def check_scan_orientation_and_sequence(
     page_paths: list[Path],
-    regions_root: Path,
+    regions_root: Path | None,
     pages_per_student: int,
 ) -> list[str]:
     """Verify every scanned page matches expected orientation (0 deg) and template sequence.
 
-    Returns a list of human-readable issue descriptions for any upside-down, sideways,
-    or out-of-sequence pages so the user can fix them manually.
+    If regions_root is provided and has images, uses those as references; otherwise uses
+    majority-consensus references across the PDF so an upside-down or misordered first
+    script is detected rather than treated as ground truth.
     """
-    refs_4x: list[tuple[np.ndarray, tuple[int, int]]] = []
-    for i in range(pages_per_student):
-        with Image.open(regions_root / "images" / f"{i}.jpg") as im:
-            refs_4x.append((_prepare_ink_map_4x(im), im.size))
+    if regions_root is not None and (regions_root / "images" / "0.jpg").is_file():
+        refs_4x: list[tuple[np.ndarray, tuple[int, int]] | None] = []
+        for i in range(pages_per_student):
+            with Image.open(regions_root / "images" / f"{i}.jpg") as im:
+                refs_4x.append((_prepare_ink_map_4x(im), im.size))
+    else:
+        refs_4x, _ = _find_consensus_references(page_paths, pages_per_student)
 
     issues: list[str] = []
     for idx, page_path in enumerate(page_paths):
         script_num = (idx // pages_per_student) + 1
         expected = idx % pages_per_student
         pdf_page = idx + 1
-        ref_arr, (ref_w, ref_h) = refs_4x[expected]
+        ref_entry = refs_4x[expected]
+        if ref_entry is None:
+            continue
+        ref_arr, (ref_w, ref_h) = ref_entry
 
         with Image.open(page_path) as im:
             w, h = im.size
@@ -236,7 +307,10 @@ def check_scan_orientation_and_sequence(
         for other in range(pages_per_student):
             if other == expected:
                 continue
-            o_arr, o_size = refs_4x[other]
+            other_entry = refs_4x[other]
+            if other_entry is None:
+                continue
+            o_arr, o_size = other_entry
             if o_size != (w, h) or float(o_arr.max()) <= 0.0:
                 continue
             s0 = _max_phase_score(o_arr, cur)

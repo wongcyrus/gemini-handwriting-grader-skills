@@ -152,6 +152,31 @@ class TestPageAlignment(unittest.TestCase):
             self.assertIn("out of sequence", bad_issues[2])
             self.assertIn("out of sequence", bad_issues[3])
 
+    def test_consensus_flags_upside_down_first_script_without_regions(self):
+        p0 = _make_form_image()
+        p1 = Image.new("RGB", (800, 1000), (255, 255, 255))
+        d1 = ImageDraw.Draw(p1)
+        d1.ellipse([100, 120, 350, 300], outline=(0, 0, 0), width=4)
+        d1.rectangle([450, 500, 720, 820], outline=(0, 0, 0), width=4)
+        d1.text((120, 600), "PAGE TWO", fill=(0, 0, 0))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            pages_dir = Path(tmp)
+            # Script 1 has page 1 upside-down (180 deg)
+            p0.rotate(180).save(pages_dir / "0.jpg", format="JPEG", quality=95)
+            p1.save(pages_dir / "1.jpg", format="JPEG", quality=95)
+            # Scripts 2 & 3 are normal upright
+            for s in (1, 2):
+                p0.save(pages_dir / f"{s * 2}.jpg", format="JPEG", quality=95)
+                p1.save(pages_dir / f"{s * 2 + 1}.jpg", format="JPEG", quality=95)
+
+            issues = check_scan_orientation_and_sequence(
+                [pages_dir / f"{i}.jpg" for i in range(6)], None, 2
+            )
+            self.assertEqual(len(issues), 1)
+            self.assertIn("PDF page 1 (Script #1, page 1)", issues[0])
+            self.assertIn("upside-down", issues[0])
+
     def test_cli_help_includes_check_scans(self):
         from unittest.mock import patch
         with patch("sys.stdout"), patch("sys.stderr"):

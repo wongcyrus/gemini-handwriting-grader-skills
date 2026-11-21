@@ -1066,18 +1066,17 @@ def main(argv=None):
         import tempfile
         from .alignment import check_scan_orientation_and_sequence
         from .pdf_renderer import render_pdf_to_images
-        from .regions import resolve_path, verify_run
+        from .regions import resolve_path
 
         try:
-            regions_root, manifest = verify_run(config, path.parent, path)
             pdf = resolve_path(path.parent, config["exam"]["scanned_pdf"])
-            per_student = len(manifest["pages"])
+            per_student = summary["pages_per_student"]
             with tempfile.TemporaryDirectory(prefix=".check-scans-") as temp:
                 pages = render_pdf_to_images(
                     pdf_path=pdf, output_dir=Path(temp), prefix="page",
                     dpi=200, first_page=1, last_page=summary["pdf_pages"],
                 )
-                issues = check_scan_orientation_and_sequence(pages, regions_root, per_student)
+                issues = check_scan_orientation_and_sequence(pages, None, per_student)
         except (OSError, ValueError, yaml.YAMLError) as exc:
             print(f"Scan check failed: {exc}", file=sys.stderr)
             return 1

@@ -2,8 +2,9 @@
 
 ## Prerequisites
 
-- Successful offline preflight with confirmed scan order, pages per script and
-  common layout. Layout extraction uses the first student's pages.
+- Successful offline preflight AND `check-scans --exam /path/to/exam.yaml` passing
+  (run `check-scans` **before** `prepare-regions` so an upside-down or misordered
+  first script cannot corrupt the template layout and bounding boxes for all scripts).
 - **Approved rubric (`output_dir/rubric/rubric.xlsx` + `approval.json`)**: Always extract/import
   and approve the rubric (`approve-rubric --confirm-reviewed`) before running `suggest-regions`
   so Gemini receives the finalized list of question IDs and does not waste calls or miss sub-questions.
@@ -46,7 +47,7 @@
 
 Scanners commonly introduce vertical/horizontal shifts, slight skew, upside-down feeds, or out-of-order pages:
 - **Orientation & sequence validation (`check-scans`)**:
-  Run `handwriting-grader check-scans --exam /path/to/exam.yaml` (offline, 0 AI cost) after `prepare-regions` (and `grade` also runs it automatically before any Vertex AI calls). It flags any upside-down (`180°`), sideways (`90°/270°`), blank, or out-of-sequence page by exact PDF page number and script number. **Never auto-flip or auto-reorder pages** — instruct the user to fix the physical paper or source PDF manually and re-run `check-scans`.
+  Run `handwriting-grader check-scans --exam /path/to/exam.yaml` (offline, 0 AI cost) **before** `prepare-regions` (and `grade` also runs it automatically before any Vertex AI calls). Using majority consensus across scripts, it flags any upside-down (`180°`), sideways (`90°/270°`), blank, or out-of-sequence page (including Script 1 itself) by exact PDF page number and script number. **Never auto-flip or auto-reorder pages** — instruct the user to fix the physical paper or source PDF manually and re-run `check-scans`.
 - **Automatic alignment during `grade`**: Every rendered page is automatically aligned (rigid translation + small rotation via 4-quadrant phase correlation with outlier-quadrant rejection) to `output_dir/regions/images/` before cropping.
 - **Recovering an existing unaligned run**:
   1. Run offline alignment (0 AI cost) and targeted re-OCR / regrade:
