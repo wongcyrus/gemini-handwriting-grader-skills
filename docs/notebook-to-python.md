@@ -214,19 +214,18 @@ source links; verification is not approval.
 ### C. Grade and review
 
 The model configuration needs Vertex enabled and `models.ocr`,
-`models.grading` and `models.moderation`; other models are needed only for
+`models.grading`, `models.moderation`, and `models.batch_grading`; other models are needed only for
 their optional stages. Configure authentication outside the YAML and obtain
 permission to send the scanned work. Preview:
 
 ```sh
 .venv/bin/handwriting-grader grade --exam "$EXAM" \
-  --model-config "$MODELS" --project PROJECT_ID --location LOCATION
+  --model-config "$MODELS" --project PROJECT_ID --location LOCATION \
+  [--mode batch|item] [--concurrency 3]
 ```
 
-For a new run, the preview's maximum is `N × (3 + 2Q) + Q`: for two
-students and two questions, **16** possible requests. This includes NAME,
-ID and CLASS OCR per student, answer OCR and grading per question/student,
-and moderation per question. Cache hits or skipped moderation may reduce
+Grading supports `--mode batch` (default: fast multimodal structured output pass per question with Argon, local blank filtering, and high cross-cohort consistency) or `--mode item` (sequential student-by-student with Flash, followed by moderation).
+For a new run in item mode, the preview's maximum is `N × (3 + 2Q) + Q`; for batch mode, the maximum is `3N + Q × ceil(N / 50)`, substantially reducing API round-trips. Cache hits or skipped moderation may reduce
 calls; resumed/in-flight calls may repeat and incur charges. Previewing
 without `--confirm-cost` sends nothing. Only after explicit authorization,
 repeat the same command with `--confirm-cost`.
