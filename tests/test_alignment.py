@@ -9,9 +9,11 @@ from PIL import Image, ImageDraw
 from handwriting_grader.alignment import (
     _prepare_ink_map,
     align_page_file,
+    check_scan_orientation_and_sequence,
     estimate_rigid_transform,
     warp_image_to_reference,
 )
+from handwriting_grader.cli import main
 
 
 def _make_form_image(size=(800, 1000)) -> Image.Image:
@@ -94,3 +96,65 @@ class TestPageAlignment(unittest.TestCase):
             modified, (tx, ty, _) = align_page_file(p, ref_arr, ref.size)
             self.assertTrue(modified)
             self.assertAlmostEqual(ty, -20.0, delta=2.5)
+
+    def test_outlier_quadrant_heavy_handwriting_is_rejected(self):
+        ref = _make_form_image()
+        shifted = ref.transform(
+            ref.size, Image.Transform.AFFINE, (1, 0, -6, 0, 1, -14),
+            resample=Image.Resampling.BILINEAR, fillcolor=(255, 255, 255),
+        )
+        # Add heavy scribble/diagram in bottom-left quadrant only
+        draw = ImageDraw.Draw(shifted)
+        for y in range(550, 950, 12):
+            draw.line([20, y, 360, y + 30], fill=(0, 0, 0), width=4)
+        tx, ty, _ = estimate_rigid_transform(_prepare_ink_map(ref), _prepare_ink_map(shifted), *ref.size)
+        self.assertAlmostEqual(tx, -6.0, delta=2.5)
+        self.assertAlmostEqual(ty, -14.0, delta=2.5)
+
+    def test_check_scan_orientation_and_sequence_flags_upside_down_swapped_and_rotated(self):
+        p0 = _make_form_image()
+        p1 = Image.new("RGB", (800, 1000), (255, 255, 255))
+        d1 = ImageDraw.Draw(p1)
+        d1.ellipse([100, 120, 350, 300], outline=(0, 0, 0), width=4)
+        d1.rectangle([450, 500, 720, 820], outline=(0, 0, 0), width=4)
+        d1.text((120, 600), "PAGE TWO", fill=(0, 0, 0))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            reg_img = root / "regions" / "images"
+            reg_img.mkdir(parents=True)
+            p0.save(reg_img / "0.jpg", format="JPEG", quality=95)
+            p1.save(reg_img / "1.jpg", format="JPEG", quality=95)
+
+            pages_dir = root / "pages"
+            pages_dir.mkdir()
+            # Script 1: valid (p0, p1)
+            p0.save(pages_dir / "0.jpg", format="JPEG", quality=95)
+            p1.save(pages_dir / "1.jpg", format="JPEG", quality=95)
+            # Script 2: p0 is upside-down 180 deg, p1 is rotated 90 deg (landscape)
+            p0.rotate(180).save(pages_dir / "2.jpg", format="JPEG", quality=95)
+            p1.rotate(90, expand=True).save(pages_dir / "3.jpg", format="JPEG", quality=95)
+            # Script 3: swapped sequence (p1, p0)
+            p1.save(pages_dir / "4.jpg", format="JPEG", quality=95)
+            p0.save(pages_dir / "5.jpg", format="JPEG", quality=95)
+
+            valid_issues = check_scan_orientation_and_sequence(
+                [pages_dir / "0.jpg", pages_dir / "1.jpg"], root / "regions", 2
+            )
+            self.assertEqual(valid_issues, [])
+
+            bad_issues = check_scan_orientation_and_sequence(
+                [pages_dir / f"{i}.jpg" for i in range(6)], root / "regions", 2
+            )
+            self.assertEqual(len(bad_issues), 4)
+            self.assertIn("upside-down", bad_issues[0])
+            self.assertIn("rotated 90°/270°", bad_issues[1])
+            self.assertIn("out of sequence", bad_issues[2])
+            self.assertIn("out of sequence", bad_issues[3])
+
+    def test_cli_help_includes_check_scans(self):
+        from unittest.mock import patch
+        with patch("sys.stdout"), patch("sys.stderr"):
+            with self.assertRaises(SystemExit) as cm:
+                main(["check-scans", "--help"])
+            self.assertEqual(cm.exception.code, 0)

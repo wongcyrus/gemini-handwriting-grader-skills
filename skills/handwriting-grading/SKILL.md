@@ -113,7 +113,14 @@ execute a notebook as a workaround, or claim a human approval occurred.
       page, and approve. Alternatively, after manual or programmatic edits to
       `annotations.json`, approve with:
       `handwriting-grader approve-regions --exam /path/to/exam.yaml --confirm-reviewed`.
-   d. **Automatic Page Alignment & Scanner Shift Recovery**:
+   d. **Scan Orientation & Sequence Check (Offline)**:
+      After `prepare-regions`, run `handwriting-grader check-scans --exam /path/to/exam.yaml`
+      (zero AI cost) before grading to verify no scanned page is upside-down (`180°`),
+      sideways (`90°/270°`), blank, or out of sequence. `grade` also enforces this check
+      automatically before calling Vertex AI. If any page is flagged, **do not silently
+      flip or reorder pages in code** — report the exact PDF page numbers and script numbers
+      to the user so they fix the physical scan or source PDF manually and re-run `check-scans`.
+   e. **Automatic Page Alignment & Scanner Shift Recovery**:
       During `grade`, every scanned page is automatically registered (translation +
       small rotation) against the approved template pages in `regions/images/` before
       cropping OCR or question answers.

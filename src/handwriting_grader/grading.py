@@ -913,6 +913,17 @@ def grade_exam(config, config_dir, config_path, model_config_path, project, loca
     output.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".grading-", dir=output) as temp:
         pages = render_scripts(config, config_dir, region_manifest, summary["pdf_pages"], Path(temp))
+        from .alignment import check_scan_orientation_and_sequence
+        scan_issues = check_scan_orientation_and_sequence(
+            pages, regions_root, len(region_manifest["pages"])
+        )
+        if scan_issues:
+            preview = "\n".join(f"- {issue}" for issue in scan_issues[:10])
+            more = f"\n... and {len(scan_issues) - 10} more issue(s)." if len(scan_issues) > 10 else ""
+            raise ValueError(
+                f"Scan orientation/sequence check failed ({len(scan_issues)} issue(s)). "
+                f"Fix the physical scan or PDF order manually before grading:\n{preview}{more}"
+            )
         approved_inputs(config, config_dir, config_path)
         if file_hash(model_config_path) != model_hash:
             raise ValueError("Model configuration changed before grading")

@@ -170,6 +170,8 @@ def main(argv=None):
     regions_approve = commands.add_parser("approve-regions", help="Validate and explicitly approve page-layout regions")
     regions_approve.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     regions_approve.add_argument("--confirm-reviewed", action="store_true", help="Confirm human region review")
+    check_scans_cmd = commands.add_parser("check-scans", help="Verify all scanned pages match expected orientation and page sequence (offline)")
+    check_scans_cmd.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     suggest = commands.add_parser("suggest-regions", help="Request optional Vertex AI region proposals")
     suggest.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     suggest.add_argument("--model-config", required=True, type=Path, help="Path to existing AI config.yaml")
@@ -1059,6 +1061,35 @@ def main(argv=None):
             print(f"Region approval failed: {exc}", file=sys.stderr)
             return 1
         print("Regions approved; later changes invalidate the approval.")
+        return 0
+    if args.command == "check-scans":
+        import tempfile
+        from .alignment import check_scan_orientation_and_sequence
+        from .pdf_renderer import render_pdf_to_images
+        from .regions import resolve_path, verify_run
+
+        try:
+            regions_root, manifest = verify_run(config, path.parent, path)
+            pdf = resolve_path(path.parent, config["exam"]["scanned_pdf"])
+            per_student = len(manifest["pages"])
+            with tempfile.TemporaryDirectory(prefix=".check-scans-") as temp:
+                pages = render_pdf_to_images(
+                    pdf_path=pdf, output_dir=Path(temp), prefix="page",
+                    dpi=200, first_page=1, last_page=summary["pdf_pages"],
+                )
+                issues = check_scan_orientation_and_sequence(pages, regions_root, per_student)
+        except (OSError, ValueError, yaml.YAMLError) as exc:
+            print(f"Scan check failed: {exc}", file=sys.stderr)
+            return 1
+        if issues:
+            print(f"Scan orientation/sequence issues found ({len(issues)}):", file=sys.stderr)
+            for issue in issues:
+                print(f"- {issue}", file=sys.stderr)
+            print("Fix the flagged pages manually in the source PDF or physical scan and re-run check-scans.",
+                  file=sys.stderr)
+            return 1
+        print(f"Scan check passed: all {summary['pdf_pages']} pages ({summary['students']} scripts) "
+              "match expected orientation and sequence.")
         return 0
     if args.command == "suggest-regions":
         from .regions import resolve_path, verify_run

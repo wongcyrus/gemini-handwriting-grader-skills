@@ -67,12 +67,25 @@ def estimate_rigid_transform(
     weights = np.array([max(p[4], 0.0) for p in pts], dtype=np.float64)
     if float(weights.sum()) < 0.15:
         return 0.0, 0.0, 0.0
+
+    # Reject a single outlier quadrant (e.g. heavy handwriting/diagram) if the other 3 agree
+    dx_all = np.array([p[2] for p in pts], dtype=np.float64)
+    dy_all = np.array([p[3] for p in pts], dtype=np.float64)
+    med_dx = float(np.median(dx_all))
+    med_dy = float(np.median(dy_all))
+    dists = np.hypot(dx_all - med_dx, dy_all - med_dy)
+    inliers = dists <= 15.0
+    if int(np.sum(inliers)) >= 3:
+        weights = np.where(inliers, weights, 0.0)
+        if float(weights.sum()) <= 0.0:
+            return 0.0, 0.0, 0.0
+
     weights /= weights.sum()
 
     px = np.array([p[0] for p in pts], dtype=np.float64)
     py = np.array([p[1] for p in pts], dtype=np.float64)
-    dx = np.array([p[2] for p in pts], dtype=np.float64)
-    dy = np.array([p[3] for p in pts], dtype=np.float64)
+    dx = dx_all
+    dy = dy_all
 
     tx = float(np.sum(weights * dx))
     ty = float(np.sum(weights * dy))
@@ -139,3 +152,115 @@ def prepare_reference_maps(regions_root: Path, page_count: int) -> list[tuple[np
         with Image.open(regions_root / "images" / f"{page_index}.jpg") as image:
             refs.append((_prepare_ink_map(image), image.size))
     return refs
+
+
+def _prepare_ink_map_4x(image: Image.Image) -> np.ndarray:
+    """Downsample 4x and extract thresholded ink intensity for fast orientation/sequence checks."""
+    w, h = image.size
+    small = image.resize((max(1, w // 4), max(1, h // 4)), Image.Resampling.BILINEAR).convert("L")
+    arr = 255.0 - np.asarray(small, dtype=np.float32)
+    arr[arr < 35.0] = 0.0
+    return arr
+
+
+def _max_phase_score(a: np.ndarray, b: np.ndarray) -> float:
+    """Return peak FFT phase correlation score between two same-sized 2D arrays."""
+    h, w = a.shape
+    if h < 16 or w < 16 or float(a.max()) <= 0.0 or float(b.max()) <= 0.0:
+        return 0.0
+    wy = np.hanning(h)[:, None]
+    wx = np.hanning(w)[None, :]
+    win = wy * wx
+    fa = np.fft.rfft2(a * win)
+    fb = np.fft.rfft2(b * win)
+    cross_power = fa * np.conj(fb)
+    cross_power /= np.maximum(np.abs(cross_power), 1e-8)
+    cc = np.fft.irfft2(cross_power, s=a.shape)
+    return float(np.max(cc))
+
+
+def check_scan_orientation_and_sequence(
+    page_paths: list[Path],
+    regions_root: Path,
+    pages_per_student: int,
+) -> list[str]:
+    """Verify every scanned page matches expected orientation (0 deg) and template sequence.
+
+    Returns a list of human-readable issue descriptions for any upside-down, sideways,
+    or out-of-sequence pages so the user can fix them manually.
+    """
+    refs_4x: list[tuple[np.ndarray, tuple[int, int]]] = []
+    for i in range(pages_per_student):
+        with Image.open(regions_root / "images" / f"{i}.jpg") as im:
+            refs_4x.append((_prepare_ink_map_4x(im), im.size))
+
+    issues: list[str] = []
+    for idx, page_path in enumerate(page_paths):
+        script_num = (idx // pages_per_student) + 1
+        expected = idx % pages_per_student
+        pdf_page = idx + 1
+        ref_arr, (ref_w, ref_h) = refs_4x[expected]
+
+        with Image.open(page_path) as im:
+            w, h = im.size
+            if (w, h) == (ref_h, ref_w) and ref_w != ref_h:
+                issues.append(
+                    f"PDF page {pdf_page} (Script #{script_num}, page {expected + 1}): "
+                    f"appears rotated 90°/270° ({w}x{h} vs expected {ref_w}x{ref_h}). Fix orientation manually."
+                )
+                continue
+            if (w, h) != (ref_w, ref_h):
+                issues.append(
+                    f"PDF page {pdf_page} (Script #{script_num}, page {expected + 1}): "
+                    f"dimensions {w}x{h} do not match expected {ref_w}x{ref_h}."
+                )
+                continue
+            if float(ref_arr.max()) <= 0.0:
+                continue
+            cur = _prepare_ink_map_4x(im)
+
+        if float(cur.max()) <= 0.0:
+            issues.append(
+                f"PDF page {pdf_page} (Script #{script_num}, page {expected + 1}): "
+                "page appears completely blank. Check physical scan."
+            )
+            continue
+
+        s_exp = _max_phase_score(ref_arr, cur)
+        cur_180 = cur[::-1, ::-1]
+        s_180 = _max_phase_score(ref_arr, cur_180)
+
+        best_other_idx = None
+        best_other_score = 0.0
+        best_other_flipped = False
+        for other in range(pages_per_student):
+            if other == expected:
+                continue
+            o_arr, o_size = refs_4x[other]
+            if o_size != (w, h) or float(o_arr.max()) <= 0.0:
+                continue
+            s0 = _max_phase_score(o_arr, cur)
+            s180 = _max_phase_score(o_arr, cur_180)
+            if s0 > best_other_score:
+                best_other_score = s0
+                best_other_idx = other
+                best_other_flipped = False
+            if s180 > best_other_score:
+                best_other_score = s180
+                best_other_idx = other
+                best_other_flipped = True
+
+        if s_180 > s_exp * 1.15 and s_180 >= best_other_score:
+            issues.append(
+                f"PDF page {pdf_page} (Script #{script_num}, page {expected + 1}): "
+                "appears upside-down (180° rotated). Fix orientation manually."
+            )
+        elif best_other_idx is not None and best_other_score > s_exp * 1.15:
+            flip_note = " and upside-down (180° rotated)" if best_other_flipped else ""
+            issues.append(
+                f"PDF page {pdf_page} (Script #{script_num}, page {expected + 1}): "
+                f"out of sequence — matches template page {best_other_idx + 1}{flip_note} "
+                f"instead of page {expected + 1}. Fix page order manually."
+            )
+
+    return issues

@@ -42,10 +42,12 @@
    Saving another edit invalidates approval; source PDF, page images or configuration
    changes block the run.
 
-## Scanner Shift and Page Alignment
+## Scanner Shift, Orientation, and Page Alignment
 
-Scanners commonly introduce vertical/horizontal shifts and slight skew across batches.
-- **Automatic alignment during `grade`**: Every rendered page is automatically aligned (rigid translation + small rotation via 4-quadrant phase correlation) to `output_dir/regions/images/` before cropping.
+Scanners commonly introduce vertical/horizontal shifts, slight skew, upside-down feeds, or out-of-order pages:
+- **Orientation & sequence validation (`check-scans`)**:
+  Run `handwriting-grader check-scans --exam /path/to/exam.yaml` (offline, 0 AI cost) after `prepare-regions` (and `grade` also runs it automatically before any Vertex AI calls). It flags any upside-down (`180°`), sideways (`90°/270°`), blank, or out-of-sequence page by exact PDF page number and script number. **Never auto-flip or auto-reorder pages** — instruct the user to fix the physical paper or source PDF manually and re-run `check-scans`.
+- **Automatic alignment during `grade`**: Every rendered page is automatically aligned (rigid translation + small rotation via 4-quadrant phase correlation with outlier-quadrant rejection) to `output_dir/regions/images/` before cropping.
 - **Recovering an existing unaligned run**:
   1. Run offline alignment (0 AI cost) and targeted re-OCR / regrade:
      - Align + re-OCR IDs: `handwriting-grader retry-grading --exam /path/to/exam.yaml --align-images --re-ocr-id`
