@@ -62,8 +62,9 @@ execute a notebook as a workaround, or claim a human approval occurred.
   `handwriting-grader discover-models --project <PROJECT> [--location <LOCATION>] [--write-config <PATH>]`
   to inspect live model properties and pricing online, allocating cost-efficient,
   high-throughput Flash models (e.g. `gemini-3.8-flash`) to high-volume steps (OCR,
-  grading, rubric extraction, region annotation, visual summaries) and reserving frontier reasoning models
-  (e.g. `gemini-4-argon`) strictly for batch moderation and deep cohort analytics.
+  grading, rubric extraction, visual summaries) and reserving frontier reasoning models
+  (e.g. `gemini-4-argon`) for low-volume, high-precision spatial annotation (`annotation`),
+  batch moderation, and deep cohort analytics.
 
 ## Prepare an exam
 
@@ -89,10 +90,18 @@ execute a notebook as a workaround, or claim a human approval occurred.
    model access or approval. Ask the user to confirm the layout and scan order.
    If attendance is configured, read `references/attendance.md` and obtain
    explicit review and approval before grading.
-6. For region setup and review, read `references/regions.md`:
+6. For rubric setup (MUST run BEFORE region suggestion so exact question IDs are known), read `references/grading.md`:
+   a. If the marking scheme is a DOCX, run `extract-rubric` (preview first,
+      obtain cost consent, then `--confirm-cost`) to extract questions and
+      marks into `output_dir/rubric/rubric.xlsx` using Gemini.
+   b. If the marking scheme is an existing XLSX, run `import-rubric`.
+   c. Have the teacher inspect `rubric.xlsx` and explicitly approve with
+      `approve-rubric --exam /path/to/exam.yaml --confirm-reviewed`.
+7. For region setup and review, read `references/regions.md`:
    a. Run `handwriting-grader prepare-regions --exam /path/to/exam.yaml`
       to render the first script's page images into `output_dir/regions/images/`.
-   b. Region setup must run Gemini for AI suggestion: preview `suggest-regions`
+   b. Region setup must run Gemini (`models.annotation`, Gemini 4 reasoning tier)
+      with the extracted rubric's question IDs: preview `suggest-regions`
       (with `--model-config`, `--project`, `--location`), explain the target and
       page count, obtain explicit cost consent, and run with `--confirm-cost`
       to generate `ai_suggestions.json`. Never skip Gemini AI suggestions or ask
@@ -102,13 +111,6 @@ execute a notebook as a workaround, or claim a human approval occurred.
       Provide the URL so the user can inspect the automatically loaded AI proposals
       across all pages, adjust boxes (`ID`, `NAME`, `CLASS`, questions), save each
       page, and approve.
-7. For rubric setup, read `references/grading.md`:
-   a. If the marking scheme is a DOCX, run `extract-rubric` (preview first,
-      obtain cost consent, then `--confirm-cost`) to extract questions and
-      marks into `output_dir/rubric/rubric.xlsx` using Gemini.
-   b. If the marking scheme is an existing XLSX, run `import-rubric`.
-   c. Have the teacher inspect `rubric.xlsx` and explicitly approve with
-      `approve-rubric --exam /path/to/exam.yaml --confirm-reviewed`.
 8. For grading, reporting and AI analysis read `references/grading.md`.
    Obtain the specified human confirmations; never infer approval.
    After grading and reporting are complete, always inform the user that results

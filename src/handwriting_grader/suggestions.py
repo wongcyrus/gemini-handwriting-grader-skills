@@ -81,6 +81,32 @@ def create_json_once(path, data):
         temp.unlink(missing_ok=True)
 
 
+def build_prompt(question_ids=None):
+    prompt = PROMPT
+    if question_ids:
+        id_list = ", ".join(question_ids)
+        prompt += (
+            f"\n\nExpected question IDs from the marking rubric: {id_list}.\n"
+            "You MUST locate the answer region for EVERY question from this list that appears on this page, "
+            "and use these exact question ID labels (do not invent other labels or skip sub-questions)."
+        )
+    return prompt
+
+
+def load_rubric_question_ids(config, config_dir):
+    from .rubric import read_rubric, rubric_root
+    rubric_path = rubric_root(config, config_dir) / "rubric.xlsx"
+    if not rubric_path.exists():
+        return []
+    questions = read_rubric(rubric_path)
+    ids = []
+    for q in questions:
+        val = q.get("question_number") or q.get("question") or ""
+        if str(val).strip():
+            ids.append(str(val).strip())
+    return ids
+
+
 def generate_suggestions(config, config_dir, config_path, model_config_path, project, location):
     """Send layout images to Vertex; caller must already have obtained consent."""
     model_path = Path(model_config_path).expanduser().resolve()
@@ -92,6 +118,8 @@ def generate_suggestions(config, config_dir, config_path, model_config_path, pro
     output = root / "ai_suggestions.json"
     if output.exists():
         raise ValueError("AI suggestions already exist; do not overwrite them")
+    question_ids = load_rubric_question_ids(config, config_dir)
+    prompt_text = build_prompt(question_ids)
     suggestions = {}
     agents = [name for name in enabled_agents(model_path) if name == "annotation"]
     cache = CachedGrader(None, cache_directory(model_path, root) if agents else root / "cache", agents,
@@ -103,7 +131,7 @@ def generate_suggestions(config, config_dir, config_path, model_config_path, pro
             def compute():
                 response = client.models.generate_content(
                     model=model,
-                    contents=[PROMPT, types.Part.from_bytes(data=image, mime_type="image/jpeg")],
+                    contents=[prompt_text, types.Part.from_bytes(data=image, mime_type="image/jpeg")],
                     config=types.GenerateContentConfig(
                         temperature=0, max_output_tokens=8192,
                         response_mime_type="application/json", response_schema=SuggestedBoxes,
@@ -121,7 +149,11 @@ def generate_suggestions(config, config_dir, config_path, model_config_path, pro
                 return parsed.model_dump()
 
             parsed = SuggestedBoxes.model_validate(cache.call(
-                "annotation", {"image_sha256": hashlib.sha256(image).hexdigest()}, compute, validate))
+                "annotation",
+                {"image_sha256": hashlib.sha256(image).hexdigest(), "question_ids": question_ids},
+                compute,
+                validate,
+            ))
             boxes = []
             for box in parsed.boxes:
                 left = round(box.x * page["width"] / 1000)

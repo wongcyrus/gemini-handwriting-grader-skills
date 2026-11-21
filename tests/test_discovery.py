@@ -30,7 +30,7 @@ class TestTieredDiscovery(unittest.TestCase):
     def test_resolve_step_models(self):
         tier_models = {"flash": "gemini-3.8-flash", "reasoning": "gemini-4-argon"}
         step_models = resolve_step_models(tier_models)
-        self.assertEqual(step_models["annotation"], "gemini-3.8-flash")
+        self.assertEqual(step_models["annotation"], "gemini-4-argon")
         self.assertEqual(step_models["ocr"], "gemini-3.8-flash")
         self.assertEqual(step_models["grading"], "gemini-3.8-flash")
         self.assertEqual(step_models["moderation"], "gemini-4-argon")

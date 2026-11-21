@@ -13,9 +13,9 @@ from .telemetry import DEFAULT_RATES
 
 STEP_REQUIREMENTS: Dict[str, Dict[str, str]] = {
     "annotation": {
-        "tier": "flash",
+        "tier": "reasoning",
         "description": "Bounding-box proposal on layout template pages",
-        "rationale": "High-speed multimodal detection; Flash is fast, lightweight, and cost-effective for box extraction.",
+        "rationale": "Low-volume (template pages only), high-precision spatial reasoning; Gemini 4 prevents missed sub-questions and misaligned boxes.",
     },
     "marking_scheme": {
         "tier": "flash",

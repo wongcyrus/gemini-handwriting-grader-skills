@@ -49,8 +49,8 @@ Always dynamically discover, profile, and allocate models online by capability a
 handwriting-grader discover-models --project <PROJECT_ID> [--location <LOCATION>] [--write-config /path/to/config.yaml]
 ```
 This queries Vertex AI online, inspects live model properties and quota, benchmarks pricing rates, and assigns:
-- **Fast / High-Volume Tier** (e.g. `gemini-3.8-flash` at ~$0.075/1M input): for `annotation`, `marking_scheme`, `ocr`, `grading`, and `analytics_image` (generates visual analytics and infographics efficiently without expensive image generators).
-- **Deep Reasoning Tier** (e.g. `gemini-4-argon` at ~$1.250/1M input, ~16.7x cost): reserved strictly for `moderation` (batch score calibration across scripts) and `analytics` (cohort pedagogical diagnosis).
+- **Fast / High-Volume Tier** (e.g. `gemini-3.8-flash` at ~$0.075/1M input): for `marking_scheme`, `ocr`, `grading`, and `analytics_image` (high-volume per-script stages and visual summaries).
+- **Deep Reasoning Tier** (e.g. `gemini-4-argon` at ~$1.250/1M input, ~16.7x cost): for low-volume, high-precision spatial reasoning (`annotation` on template pages) and cohort-wide reasoning (`moderation` and `analytics`).
 
 The skill runs this command during initial setup and configures `config.yaml` automatically with verified online models.
 
