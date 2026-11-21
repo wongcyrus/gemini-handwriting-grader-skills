@@ -113,12 +113,21 @@ execute a notebook as a workaround, or claim a human approval occurred.
       page, and approve.
 8. For grading, reporting and AI analysis read `references/grading.md`.
    Obtain the specified human confirmations; never infer approval.
-   If transient Vertex AI errors (5xx ServerError or timeouts) occur during grading,
-   never write ad-hoc scripts or restart the entire run from scratch. Run the
-   standard retry command:
-   `handwriting-grader retry-grading --exam /path/to/exam.yaml [--confirm-cost]`
-   which isolates and regrades only the failed crops using exponential backoff,
-   re-moderates affected questions, and cleanly refreshes the review draft.
+   
+   **Failure Diagnostics, Quota Protection, and User-Decision Gating**:
+   - The Python code uses built-in Google GenAI SDK retry primitives (`types.HttpRetryOptions` on `genai.Client`) with exponential backoff, jitter, and status code targeting (`[429, 500, 502, 503, 504]`). Never write ad-hoc Python retry loops or hack scripts.
+   - If grading finishes with any failed marks (`grading_failed=True`) or moderation errors after SDK-level retries:
+     **DO NOT automatically retry in Python**. Retrying in a Python loop is dangerous because GCP quotas (e.g. 429 ResourceExhausted) may be exhausted or backend limits reached; blind loops are futile, risk exhausting quota further, and can incur unapproved billing.
+     **NOTIFY THE USER IMMEDIATELY** with error diagnostics:
+     1. Exact count of failed marks and affected question numbers.
+     2. Specific error categories (e.g. 429 Quota Exhausted, 504 Deadline Exceeded, 5xx Server Error).
+     3. Inform the user that GCP quotas or backend stability may be affected.
+     4. Ask the user to decide how to proceed:
+        - **Option A (Targeted Retry)**: Inspect GCP quota / wait for quota window reset, preview with `handwriting-grader retry-grading --exam /path/to/exam.yaml`, obtain cost confirmation, and rerun with `--confirm-cost`.
+        - **Option B (Manual Review)**: Proceed to `review-grading` and assign manual marks in `review.xlsx` for those failed items without further API calls.
+        - **Option C (Wait / Investigate)**: Wait for GCP quota reset or investigate quota limits in the Google Cloud Console before proceeding.
+   - Never proceed with `retry-grading` without the user's explicit decision and cost confirmation.
+   
    After grading and reporting are complete, always inform the user that results
    and review history have been preserved, and ask if they would like to clean
    or archive intermediate output using:

@@ -32,14 +32,25 @@
    To inspect model usage, token count, and cost breakdown at any time, run:
    `.venv/bin/handwriting-grader cost-report --exam /path/to/exam.yaml`
    (generates `cost_report.xlsx` and `cost_summary.json` in the run directory).
-   If transient Vertex AI server errors (5xx, timeouts) cause any mark or question
-   moderation to fail, do not write ad-hoc scripts or regrade the whole cohort. Run:
-   `.venv/bin/handwriting-grader retry-grading --exam /path/to/exam.yaml`
-   Preview the count of failed marks and unmoderated questions, obtain cost confirmation,
-   and rerun with `--confirm-cost`. `retry-grading` isolates and regrades only the
-   failed crops using exponential backoff, runs moderation for affected questions once
-   all student marks are present, and refreshes `grading/review.xlsx` while preserving
-   any existing manual reviews.
+
+   **Handling Errors & User Decision Gating**:
+   Transient network or server errors are handled at the connection layer using built-in
+   Google GenAI SDK retry options (`types.HttpRetryOptions` on `genai.Client`).
+   If any items still fail after SDK retries:
+   - **Do NOT auto-retry in Python**: Never write ad-hoc loops or restart scripts. If GCP
+     quotas (429 ResourceExhausted) or deadlines (504) are reached, Python loops will
+     only burn quota or fail repeatedly.
+   - **Notice user for decision**: Immediately report the failure diagnostics (number of failed marks,
+     question numbers, error codes) to the teacher/user and ask whether they want to:
+     a) Wait for quota reset or investigate GCP quota, then run targeted `retry-grading`, or
+     b) Manually grade the failed items in `review.xlsx` without additional API calls.
+   - **User-Approved Retry**: Only upon explicit user decision and cost consent, run:
+     `.venv/bin/handwriting-grader retry-grading --exam /path/to/exam.yaml`
+     Preview the failed marks and unmoderated questions, obtain cost confirmation,
+     and rerun with `--confirm-cost`. `retry-grading` isolates and regrades only the
+     failed crops using exponential backoff, runs moderation for affected questions once
+     all student marks are present, and refreshes `grading/review.xlsx` while preserving
+     any existing manual reviews.
 4. Ask the teacher to run `review-grading --exam /path/to/exam.yaml` and open
    the full printed local URL. The score editor presents a one-page blind
    marksheet per question (hiding student IDs during question review), groups
@@ -128,6 +139,20 @@ approval hashes. Reports already generated do not automatically disappear
 when input changes; never share partial or stale reports. Pass-only samples
 require both explicit pass settings before the run; no threshold is assumed.
 Failed or flagged model outputs are not silently accepted as zero.
+
+### Transient errors, GCP quota exhaustion, and retry governance
+
+Gemini and Vertex AI calls employ built-in SDK retry options (`types.HttpRetryOptions` with exponential backoff and jitter on HTTP 429, 500, 502, 503, 504).
+
+When API operations exhaust their built-in retry attempts:
+- **No blind Python loops**: Never write ad-hoc retry scripts (`scratch/*.py`), while-loops, or automatic restart scripts. If GCP quota is exhausted or rate limits are reached, auto-retrying in Python will only prolong failures and burn quota.
+- **Human-in-the-loop notification**: The agent must inspect `results.json` and report error diagnostics to the user (failure count, question numbers, error types: 429 Quota / 504 Timeout / 5xx Server Error).
+- **User decision required**: The agent must prompt the user to choose:
+  1. Inspect/wait for GCP quota reset, then execute targeted `retry-grading --exam /path/to/exam.yaml [--confirm-cost]`.
+  2. Grade the failed items manually in `review.xlsx` without additional API calls.
+- **Targeted retry command**: When the user approves retrying:
+  `handwriting-grader retry-grading --exam /path/to/exam.yaml`
+  Preview the items, obtain cost confirmation, and add `--confirm-cost`. It regrades only failed crops, runs moderation for affected questions, and merges updates into `review.xlsx` preserving any existing manual entries.
 
 Runs refuse overwrite. Supported interrupted grading checkpoints can resume
 with `resume-grading --exam /path/to/exam.yaml`; preview the recorded target

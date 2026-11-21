@@ -38,7 +38,17 @@ def verify_rubric(config, config_dir, config_path, model_config_path, project, l
     report.add_heading("Marking Scheme Verification Report", 0)
     report.add_paragraph("AI-generated review; verify every claim and source. This does not approve the rubric.")
     try:
-        options = types.HttpOptions(timeout=120_000, retry_options=types.HttpRetryOptions(attempts=1))
+        options = types.HttpOptions(
+            timeout=180_000,
+            retry_options=types.HttpRetryOptions(
+                attempts=3,
+                initial_delay=2.0,
+                max_delay=30.0,
+                exp_base=2.0,
+                jitter=True,
+                http_status_codes=[429, 500, 502, 503, 504],
+            ),
+        )
         with genai.Client(vertexai=True, project=project, location=location, http_options=options) as client:
             for question in questions:
                 t0 = time.monotonic()

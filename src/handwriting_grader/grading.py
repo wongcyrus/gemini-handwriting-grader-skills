@@ -119,7 +119,17 @@ class VertexGrader:
         self.models = models
         self.client = genai.Client(
             vertexai=True, project=project, location=location,
-            http_options=types.HttpOptions(timeout=300_000, retry_options=types.HttpRetryOptions(attempts=3)),
+            http_options=types.HttpOptions(
+                timeout=300_000,
+                retry_options=types.HttpRetryOptions(
+                    attempts=3,
+                    initial_delay=2.0,
+                    max_delay=30.0,
+                    exp_base=2.0,
+                    jitter=True,
+                    http_status_codes=[429, 500, 502, 503, 504],
+                ),
+            ),
         )
 
     def __enter__(self):
@@ -128,20 +138,6 @@ class VertexGrader:
 
     def __exit__(self, *exc):
         return self.client.__exit__(*exc)
-
-    def _call_with_retry(self, model, contents, config, max_attempts=3):
-        last_exc = None
-        for attempt in range(1, max_attempts + 1):
-            try:
-                return self.client.models.generate_content(
-                    model=model, contents=contents, config=config,
-                )
-            except Exception as exc:
-                last_exc = exc
-                if attempt == max_attempts:
-                    raise
-                time.sleep(2 * attempt)
-        raise last_exc
 
     def ocr(self, image, field):
         prompt = (
@@ -153,7 +149,7 @@ class VertexGrader:
         ocr_config_kwargs = {"temperature": 0, "max_output_tokens": 4096}
         if "flash" in self.models["ocr"].lower():
             ocr_config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
-        response = self._call_with_retry(
+        response = self.client.models.generate_content(
             model=self.models["ocr"],
             contents=[prompt, types.Part.from_bytes(data=image, mime_type="image/png")],
             config=types.GenerateContentConfig(**ocr_config_kwargs),
@@ -199,7 +195,7 @@ class VertexGrader:
         }
         if "flash" in self.models["grading"].lower():
             grade_config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
-        response = self._call_with_retry(
+        response = self.client.models.generate_content(
             model=self.models["grading"], contents=contents,
             config=types.GenerateContentConfig(**grade_config_kwargs),
         )
@@ -229,7 +225,7 @@ class VertexGrader:
         )
         tracker = get_active_tracker()
         start = time.perf_counter()
-        response = self._call_with_retry(
+        response = self.client.models.generate_content(
             model=self.models["moderation"], contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0, max_output_tokens=16384, response_mime_type="application/json",

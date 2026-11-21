@@ -135,7 +135,17 @@ def generate_suggestions(config, config_dir, config_path, model_config_path, pro
     agents = [name for name in enabled_agents(model_path) if name == "annotation"]
     cache = CachedGrader(None, cache_directory(model_path, root) if agents else root / "cache", agents,
                          {"annotation": model}, project, location, source_files=["suggestions.py", "regions.py"])
-    options = types.HttpOptions(timeout=120_000, retry_options=types.HttpRetryOptions(attempts=1))
+    options = types.HttpOptions(
+        timeout=180_000,
+        retry_options=types.HttpRetryOptions(
+            attempts=3,
+            initial_delay=2.0,
+            max_delay=30.0,
+            exp_base=2.0,
+            jitter=True,
+            http_status_codes=[429, 500, 502, 503, 504],
+        ),
+    )
     with genai.Client(vertexai=True, project=project, location=location, http_options=options) as client:
         for index, page in enumerate(manifest["pages"]):
             image = (root / "images" / f"{index}.jpg").read_bytes()

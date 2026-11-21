@@ -212,7 +212,17 @@ def extract_rubric(config, config_dir, config_path, model_config_path, project, 
     agents = [name for name in enabled_agents(model_path) if name == "marking_scheme"]
     cache = CachedGrader(None, cache_directory(model_path, cache_root) if agents else cache_root / "cache", agents,
                          {"marking_scheme": model}, project, location, source_files=["rubric.py"])
-    options = types.HttpOptions(timeout=120_000, retry_options=types.HttpRetryOptions(attempts=1))
+    options = types.HttpOptions(
+        timeout=180_000,
+        retry_options=types.HttpRetryOptions(
+            attempts=3,
+            initial_delay=2.0,
+            max_delay=30.0,
+            exp_base=2.0,
+            jitter=True,
+            http_status_codes=[429, 500, 502, 503, 504],
+        ),
+    )
     with genai.Client(vertexai=True, project=project, location=location, http_options=options) as client:
         def compute():
             t0 = time.monotonic()
