@@ -44,7 +44,7 @@ Grading runs in three strictly decoupled, resilient phases:
   ```
 - **Prompt**: Strict extraction directive:
   > *"Extract only the handwritten {field} from this image. Preserve text and line breaks. Return an empty response if blank; do not guess."*
-- **Model**: Fast flash model (`gemini-3.8-flash`), temperature = 0.
+- **Model**: Fast flash model (`gemini-3.8-flash`), `temperature=0`, `thinking_budget=0` (disables unnecessary thinking tokens on single-field extraction).
 
 ---
 
@@ -61,13 +61,14 @@ Grading runs in three strictly decoupled, resilient phases:
       similarity_score: float    # Semantic similarity to marking criteria (0.0 to 1.0)
       reasoning: StrictStr       # Justification referencing rubric criteria
   ```
+- **Throughput & Model Tier**: Uses `gemini-3.8-flash` (`temperature=0`, `thinking_budget=0`) with bounded concurrency (`ThreadPoolExecutor(max_workers=10)`) across scripts per question, checkpointing atomically to `results.json` on the main thread with thread-safe telemetry locking.
 - **Prompt Guard**: Student handwriting is explicitly framed as data, not instructions, to defend against prompt injection in student submissions.
 
 ---
 
 ## 4. Stage 3: Batch Consistency Moderation
 
-Single-pass LLM grading can exhibit drift or variance across different scripts. To ensure fairness, moderation evaluates all student answers for a question simultaneously:
+Single-pass LLM grading can exhibit drift or variance across different scripts. To ensure fairness, moderation evaluates all student answers for a question simultaneously using the Frontier Reasoning tier (`gemini-4-argon`, full reasoning enabled):
 
 - **Input**: Array of all student answers, raw marks, and reasoning for question $Q$.
 - **Structured Response Schema (`ModerationResponse`)**:
