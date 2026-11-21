@@ -13,7 +13,7 @@ from pathlib import Path
 
 from google import genai
 from google.genai import types
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from PIL import Image, ImageEnhance
 from pydantic import BaseModel, StrictBool, StrictInt, StrictStr
 
@@ -119,7 +119,7 @@ class VertexGrader:
         self.models = models
         self.client = genai.Client(
             vertexai=True, project=project, location=location,
-            http_options=types.HttpOptions(timeout=120_000, retry_options=types.HttpRetryOptions(attempts=1)),
+            http_options=types.HttpOptions(timeout=300_000, retry_options=types.HttpRetryOptions(attempts=3)),
         )
 
     def __enter__(self):
@@ -128,6 +128,20 @@ class VertexGrader:
 
     def __exit__(self, *exc):
         return self.client.__exit__(*exc)
+
+    def _call_with_retry(self, model, contents, config, max_attempts=3):
+        last_exc = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return self.client.models.generate_content(
+                    model=model, contents=contents, config=config,
+                )
+            except Exception as exc:
+                last_exc = exc
+                if attempt == max_attempts:
+                    raise
+                time.sleep(2 * attempt)
+        raise last_exc
 
     def ocr(self, image, field):
         prompt = (
@@ -139,7 +153,7 @@ class VertexGrader:
         ocr_config_kwargs = {"temperature": 0, "max_output_tokens": 4096}
         if "flash" in self.models["ocr"].lower():
             ocr_config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
-        response = self.client.models.generate_content(
+        response = self._call_with_retry(
             model=self.models["ocr"],
             contents=[prompt, types.Part.from_bytes(data=image, mime_type="image/png")],
             config=types.GenerateContentConfig(**ocr_config_kwargs),
@@ -185,7 +199,7 @@ class VertexGrader:
         }
         if "flash" in self.models["grading"].lower():
             grade_config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
-        response = self.client.models.generate_content(
+        response = self._call_with_retry(
             model=self.models["grading"], contents=contents,
             config=types.GenerateContentConfig(**grade_config_kwargs),
         )
@@ -215,7 +229,7 @@ class VertexGrader:
         )
         tracker = get_active_tracker()
         start = time.perf_counter()
-        response = self.client.models.generate_content(
+        response = self._call_with_retry(
             model=self.models["moderation"], contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0, max_output_tokens=16384, response_mime_type="application/json",
@@ -252,27 +266,56 @@ def safe_append(sheet, values):
             cell.data_type = "s"
 
 
-def write_review(path, results):
+def write_review(path, results, overwrite=False):
+    existing_manual = {}
+    existing_scripts_reviewed = {}
+    path_obj = Path(path)
+    if overwrite and path_obj.exists():
+        try:
+            old_wb = load_workbook(path_obj, data_only=True)
+            if "Marks" in old_wb.sheetnames:
+                for row in old_wb["Marks"].iter_rows(min_row=2, values_only=True):
+                    if len(row) >= 12:
+                        si, q, manual, reviewed = row[0], row[1], row[10], row[11]
+                        if manual is not None or reviewed is not None:
+                            existing_manual[(si, str(q))] = (manual, reviewed)
+            if "Scripts" in old_wb.sheetnames:
+                for row in old_wb["Scripts"].iter_rows(min_row=2, values_only=True):
+                    if len(row) >= 5:
+                        si, r_id, r_status = row[0], row[3], row[4]
+                        if r_id is not None or r_status is not None:
+                            existing_scripts_reviewed[si] = (r_id, r_status)
+            old_wb.close()
+        except Exception:
+            pass
+
     workbook = Workbook()
     scripts = workbook.active
     scripts.title = "Scripts"
     scripts.append(["script_index", "id_ocr", "class_ocr", "reviewed_id", "reviewed", "name_ocr"])
     for script in results["scripts"]:
-        safe_append(scripts, [script["script_index"], script["id_ocr"], script["class_ocr"], "", "",
+        si = script["script_index"]
+        r_id, r_status = existing_scripts_reviewed.get(si, ("", ""))
+        safe_append(scripts, [si, script["id_ocr"], script["class_ocr"], r_id or "", r_status or "",
                               script.get("name_ocr")])
     marks = workbook.create_sheet("Marks")
     marks.append(["script_index", "question", "page_image", "answer", "raw_mark", "moderated_mark",
                   "reasoning", "moderator_flag", "moderator_note", "grading_failed", "manual_mark", "reviewed",
                   "similarity_score"])
     for result in results["marks"]:
+        si = result["script_index"]
+        q = str(result["question"])
+        manual, reviewed = existing_manual.get((si, q), ("", ""))
         safe_append(marks, [
             result["script_index"], result["question"], result["page_image"], result["answer"],
             result["raw_mark"], result["moderated_mark"], result["reasoning"],
-            result["moderator_flag"], result["moderator_note"], result["grading_failed"], "", "",
+            result["moderator_flag"], result["moderator_note"], result["grading_failed"],
+            manual or "", reviewed or "",
             result.get("similarity_score"),
         ])
+    mode = "wb" if overwrite else "xb"
     try:
-        with Path(path).open("xb") as file:
+        with path_obj.open(mode) as file:
             workbook.save(file)
     finally:
         workbook.close()
@@ -498,6 +541,165 @@ def resume_grading(config, config_dir, config_path, summary, provider_factory=Ve
                              manifest.get("metadata_fields", ["ID", "CLASS"]),
                              attendance_guard(config, config_dir, config_path, manifest))
         finish_grading(config, config_dir, config_path, target, manifest, results)
+    return target
+
+
+def inspect_retry_grading(config, config_dir, config_path, run_id=None):
+    from .grade_review import verify_grading_run
+
+    target, manifest, results, questions = verify_grading_run(
+        config, config_dir, config_path, require_completed=False, run_id=run_id
+    )
+    if (target / "approval.json").exists():
+        raise ValueError("Grading run has already been approved; cannot retry an approved run")
+    if (target / "processing.lock").exists():
+        raise ValueError("Another grading process or a stale lock exists")
+
+    questions_by_key = {question_key(q["question_number"]): q for q in questions}
+    failed_marks = [
+        m for m in results.get("marks", [])
+        if m.get("grading_failed") or m.get("raw_mark") is None
+    ]
+
+    unmoderated_questions = []
+    marks_by_q = {}
+    for m in results.get("marks", []):
+        marks_by_q.setdefault(m.get("question"), []).append(m)
+
+    for q_num, q_marks in marks_by_q.items():
+        q_key = question_key(q_num)
+        has_failed_mark = any(m.get("grading_failed") or m.get("raw_mark") is None for m in q_marks)
+        has_mod_error = any(
+            str(m.get("moderator_note", "")).startswith(("moderation_error:", "grading_error:", "moderation_skipped"))
+            for m in q_marks
+        )
+        if has_failed_mark or has_mod_error or q_key not in results.get("moderated_questions", []):
+            unmoderated_questions.append(q_num)
+
+    return {
+        "target": target,
+        "manifest": manifest,
+        "results": results,
+        "questions": questions,
+        "questions_by_key": questions_by_key,
+        "failed_marks": failed_marks,
+        "unmoderated_questions": unmoderated_questions,
+    }
+
+
+def retry_grading(config, config_dir, config_path, summary, run_id=None, provider_factory=VertexGrader):
+    from .cache import CachedGrader
+    from .local_filter import is_blank_cell
+
+    info = inspect_retry_grading(config, config_dir, config_path, run_id=run_id)
+    target = info["target"]
+    manifest = info["manifest"]
+    results = info["results"]
+    questions_by_key = info["questions_by_key"]
+    failed_marks = info["failed_marks"]
+    unmoderated_questions = info["unmoderated_questions"]
+
+    if not failed_marks and not unmoderated_questions:
+        return target
+
+    guard = attendance_guard(config, config_dir, config_path, manifest)
+    _, _, _, boxes = approved_inputs(config, config_dir, config_path)
+    tracker = get_active_tracker()
+
+    with grading_lock(target):
+        provider = provider_factory(manifest["models"], manifest["project"], manifest["location"])
+        cache_agents = manifest.get("cache_agents", [])
+        if cache_agents:
+            cache_root = Path(manifest.get("cache_root", target / "cache"))
+            provider = CachedGrader(provider, cache_root, cache_agents, manifest["models"])
+
+        # 1. Retry failed marks
+        if failed_marks:
+            for idx, mark in enumerate(failed_marks, 1):
+                guard()
+                q_num = mark["question"]
+                q_key = question_key(q_num)
+                question = questions_by_key[q_key]
+                page, box = boxes[q_key]
+                img_path = target / mark["page_image"]
+                crop = crop_image(img_path, box)
+
+                if is_blank_cell(crop):
+                    mark.update(
+                        answer="", raw_mark=0, moderated_mark=0,
+                        similarity_score=0.0, reasoning="Blank answer (local filter).",
+                        moderator_flag=False, grading_failed=False, moderator_note="",
+                    )
+                else:
+                    grade = provider.grade(question, image=crop)
+                    extracted = grade.get("answer")
+                    if not extracted and grade.get("mark", 0) > 0 and hasattr(provider, "ocr"):
+                        extracted = provider.ocr(crop, "answer")
+                    mark.update(
+                        answer=extracted or "",
+                        raw_mark=grade["mark"],
+                        moderated_mark=grade["mark"],
+                        similarity_score=grade["similarity_score"],
+                        reasoning=grade["reasoning"],
+                        grading_failed=False,
+                        moderator_note="",
+                        moderator_flag=False,
+                    )
+                atomic_json(target / "results.json", results)
+                if tracker:
+                    tracker.show_progress(
+                        phase="retry_grading",
+                        current=idx,
+                        total=len(failed_marks),
+                        item_label=f"Retried Q{q_num} Script #{mark['script_index'] + 1}",
+                    )
+
+        # 2. Re-moderate questions with resolved marks or previous moderation errors
+        moderated_set = set(results.get("moderated_questions", []))
+        for q_num in unmoderated_questions:
+            guard()
+            q_key = question_key(q_num)
+            question = questions_by_key[q_key]
+            q_marks = [m for m in results["marks"] if m.get("question") == q_num]
+            q_marks.sort(key=lambda m: m["script_index"])
+
+            if any(m.get("grading_failed") or m.get("raw_mark") is None for m in q_marks):
+                continue
+
+            entries = [
+                {
+                    "script_index": m["script_index"],
+                    "answer": m["answer"],
+                    "mark": m["raw_mark"],
+                    "reasoning": m["reasoning"],
+                }
+                for m in q_marks
+            ]
+            try:
+                mod_resp = provider.moderate(question, entries)
+                for m in q_marks:
+                    item = mod_resp[m["script_index"]]
+                    m["moderated_mark"] = item["moderated_mark"]
+                    m["moderator_flag"] = item["flag"] or (item["moderated_mark"] != m["raw_mark"])
+                    m["moderator_note"] = item["note"]
+                moderated_set.add(q_key)
+            except Exception as exc:
+                for m in q_marks:
+                    m["moderator_flag"] = True
+                    m["moderator_note"] = f"moderation_error:{type(exc).__name__}"
+
+            results["moderated_questions"] = sorted(list(moderated_set))
+            atomic_json(target / "results.json", results)
+
+        # 3. Finalize review.xlsx
+        all_failed = [m for m in results["marks"] if m.get("grading_failed") or m.get("raw_mark") is None]
+        if not all_failed:
+            results["completed"] = True
+        atomic_json(target / "results.json", results)
+        write_review(target / "review.xlsx", results, overwrite=True)
+        if tracker:
+            tracker.write_cost_report(target)
+
     return target
 
 

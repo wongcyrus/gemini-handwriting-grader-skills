@@ -32,6 +32,14 @@
    To inspect model usage, token count, and cost breakdown at any time, run:
    `.venv/bin/handwriting-grader cost-report --exam /path/to/exam.yaml`
    (generates `cost_report.xlsx` and `cost_summary.json` in the run directory).
+   If transient Vertex AI server errors (5xx, timeouts) cause any mark or question
+   moderation to fail, do not write ad-hoc scripts or regrade the whole cohort. Run:
+   `.venv/bin/handwriting-grader retry-grading --exam /path/to/exam.yaml`
+   Preview the count of failed marks and unmoderated questions, obtain cost confirmation,
+   and rerun with `--confirm-cost`. `retry-grading` isolates and regrades only the
+   failed crops using exponential backoff, runs moderation for affected questions once
+   all student marks are present, and refreshes `grading/review.xlsx` while preserving
+   any existing manual reviews.
 4. Ask the teacher to run `review-grading --exam /path/to/exam.yaml` and open
    the full printed local URL. The score editor presents a one-page blind
    marksheet per question (hiding student IDs during question review), groups

@@ -199,6 +199,10 @@ def main(argv=None):
     resume = commands.add_parser("resume-grading", help="Resume a supported interrupted grading checkpoint")
     resume.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     resume.add_argument("--confirm-cost", action="store_true", help="Confirm resumed paid calls")
+    retry_cmd = commands.add_parser("retry-grading", help="Retry failed marks and unmoderated questions in a grading run")
+    retry_cmd.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    retry_cmd.add_argument("--run", help="Target child run ID (default: original run)")
+    retry_cmd.add_argument("--confirm-cost", action="store_true", help="Confirm sending student work to Vertex AI")
     regrade_rubric = commands.add_parser("prepare-regrade-rubric", help="Prepare a replacement rubric for review")
     regrade_rubric.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     regrade_rubric.add_argument("--proposal", required=True, help="New rubric proposal ID")
@@ -682,6 +686,47 @@ def main(argv=None):
             print(f"Resume failed ({type(exc).__name__}); requests may have incurred charges.", file=sys.stderr)
             return 1
         print(f"Grading review saved to {output}. Human review is required.")
+        return 0
+    if args.command == "retry-grading":
+        from .grading import inspect_retry_grading, retry_grading
+        from .regions import resolve_path
+
+        try:
+            info = inspect_retry_grading(config, path.parent, path, run_id=args.run)
+            failed_marks = info["failed_marks"]
+            unmoderated_questions = info["unmoderated_questions"]
+            manifest = info["manifest"]
+        except (OSError, ValueError, KeyError) as exc:
+            print(f"Cannot inspect retry: {exc}", file=sys.stderr)
+            return 1
+
+        if not failed_marks and not unmoderated_questions:
+            print("All marks and moderations are complete; no failed items to retry.")
+            return 0
+
+        print(f"Retry target: project={manifest['project']}, location={manifest['location']}, "
+              f"models={manifest['models']}; run={args.run or 'original'}; "
+              f"{len(failed_marks)} failed mark(s), {len(unmoderated_questions)} question(s) to moderate. "
+              "In-flight requests can be repeated and billed.")
+
+        if not args.confirm_cost:
+            print("No request sent. Obtain user approval and rerun with --confirm-cost.", file=sys.stderr)
+            return 1
+
+        target_dir = resolve_path(path.parent, config["exam"]["output_dir"]) / "grading"
+        tracker = TelemetryTracker(log_dir=target_dir / "telemetry")
+        set_active_tracker(tracker)
+        try:
+            output = retry_grading(config, path.parent, path, summary, run_id=args.run)
+            tracker.write_cost_report(output)
+        except Exception as exc:
+            tracker.write_cost_report(target_dir)
+            print(f"Retry failed ({type(exc).__name__}); requests may have incurred charges.", file=sys.stderr)
+            return 1
+        finally:
+            set_active_tracker(None)
+
+        print(f"Grading review updated at {output}. Human review is required.")
         return 0
     if args.command == "report":
         from .reporting import create_reports

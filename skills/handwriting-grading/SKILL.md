@@ -113,6 +113,12 @@ execute a notebook as a workaround, or claim a human approval occurred.
       page, and approve.
 8. For grading, reporting and AI analysis read `references/grading.md`.
    Obtain the specified human confirmations; never infer approval.
+   If transient Vertex AI errors (5xx ServerError or timeouts) occur during grading,
+   never write ad-hoc scripts or restart the entire run from scratch. Run the
+   standard retry command:
+   `handwriting-grader retry-grading --exam /path/to/exam.yaml [--confirm-cost]`
+   which isolates and regrades only the failed crops using exponential backoff,
+   re-moderates affected questions, and cleanly refreshes the review draft.
    After grading and reporting are complete, always inform the user that results
    and review history have been preserved, and ask if they would like to clean
    or archive intermediate output using:
