@@ -3,6 +3,7 @@
 import json
 import os
 import sys
+import threading
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -37,6 +38,7 @@ class TelemetryTracker:
     def __init__(self, log_dir: Optional[Path] = None):
         self.log_dir = Path(log_dir) if log_dir else None
         self.traces: List[CallTrace] = []
+        self._lock = threading.Lock()
 
     def calculate_cost(
         self,
@@ -100,16 +102,16 @@ class TelemetryTracker:
             cost_usd=cost,
             cached_call=cached_call,
         )
-        self.traces.append(trace)
-
-        if self.log_dir:
-            try:
-                self.log_dir.mkdir(parents=True, exist_ok=True)
-                log_file = self.log_dir / "gemini_usage.jsonl"
-                with log_file.open("a", encoding="utf-8") as f:
-                    f.write(json.dumps(asdict(trace), ensure_ascii=False) + "\n")
-            except OSError:
-                pass
+        with self._lock:
+            self.traces.append(trace)
+            if self.log_dir:
+                try:
+                    self.log_dir.mkdir(parents=True, exist_ok=True)
+                    log_file = self.log_dir / "gemini_usage.jsonl"
+                    with log_file.open("a", encoding="utf-8") as f:
+                        f.write(json.dumps(asdict(trace), ensure_ascii=False) + "\n")
+                except OSError:
+                    pass
 
         return trace
 

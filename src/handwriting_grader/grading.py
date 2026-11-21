@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -134,10 +135,13 @@ class VertexGrader:
         )
         tracker = get_active_tracker()
         start = time.perf_counter()
+        ocr_config_kwargs = {"temperature": 0, "max_output_tokens": 4096}
+        if "flash" in self.models["ocr"].lower():
+            ocr_config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
         response = self.client.models.generate_content(
             model=self.models["ocr"],
             contents=[prompt, types.Part.from_bytes(data=image, mime_type="image/png")],
-            config=types.GenerateContentConfig(temperature=0, max_output_tokens=4096),
+            config=types.GenerateContentConfig(**ocr_config_kwargs),
         )
         duration = time.perf_counter() - start
         if tracker:
@@ -174,12 +178,15 @@ class VertexGrader:
             contents.append(f"Student answer: {answer}")
         tracker = get_active_tracker()
         start = time.perf_counter()
+        grade_config_kwargs = {
+            "temperature": 0, "max_output_tokens": 8192,
+            "response_mime_type": "application/json", "response_schema": GradeResponse,
+        }
+        if "flash" in self.models["grading"].lower():
+            grade_config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
         response = self.client.models.generate_content(
             model=self.models["grading"], contents=contents,
-            config=types.GenerateContentConfig(
-                temperature=0, max_output_tokens=8192, response_mime_type="application/json",
-                response_schema=GradeResponse,
-            ),
+            config=types.GenerateContentConfig(**grade_config_kwargs),
         )
         duration = time.perf_counter() - start
         if tracker:
@@ -329,11 +336,20 @@ def continue_grading(target, results, questions, boxes, summary, stride, models,
                 )
             else:
                 print(f"[{q_index + 1}/{total_q}] Grading question {question['question_number']} ({summary['students']} scripts)...", flush=True)
+            pending = []
+            rows_by_script = {}
             for script_index in range(summary["students"]):
                 box = (effective_crops or {}).get(key, [])[script_index] if key in (effective_crops or {}) else boxes[key][1]
-                row = marks.get((script_index, key))
-                if row is None:
-                    attendance_guard()
+                existing_row = marks.get((script_index, key))
+                if existing_row is not None:
+                    rows_by_script[script_index] = existing_row
+                else:
+                    pending.append((script_index, box))
+
+            if pending:
+                attendance_guard()
+
+                def grade_one(script_index, box):
                     image_index = script_index * stride + page
                     row = {
                         "script_index": script_index, "question": question["question_number"],
@@ -343,7 +359,6 @@ def continue_grading(target, results, questions, boxes, summary, stride, models,
                     }
                     try:
                         image = crop_image(image_dir / f"{image_index}.jpg", box)
-                        attendance_guard()
                         grade = provider.grade(question, image=image)
                         extracted = grade.get("answer")
                         if not extracted and grade["mark"] > 0 and hasattr(provider, "ocr"):
@@ -354,17 +369,27 @@ def continue_grading(target, results, questions, boxes, summary, stride, models,
                                    reasoning=grade["reasoning"], grading_failed=False)
                     except Exception as exc:
                         row["moderator_note"] = f"grading_error:{type(exc).__name__}"
-                    attendance_guard()
-                    results["marks"].append(row)
-                    atomic_json(target / "results.json", results)
-                    if tracker:
-                        tracker.show_progress(
-                            phase="grading_script",
-                            current=script_index + 1,
-                            total=summary["students"],
-                            item_label=f"Q{question['question_number']} Script #{script_index + 1}",
-                        )
-                rows.append(row)
+                    return script_index, row
+
+                completed_count = summary["students"] - len(pending)
+                with ThreadPoolExecutor(max_workers=10) as executor:
+                    futures = [executor.submit(grade_one, si, bx) for si, bx in pending]
+                    for future in as_completed(futures):
+                        si, row = future.result()
+                        attendance_guard()
+                        rows_by_script[si] = row
+                        results["marks"].append(row)
+                        atomic_json(target / "results.json", results)
+                        completed_count += 1
+                        if tracker:
+                            tracker.show_progress(
+                                phase="grading_script",
+                                current=completed_count,
+                                total=summary["students"],
+                                item_label=f"Q{question['question_number']} Script #{si + 1}",
+                            )
+
+            rows = [rows_by_script[i] for i in range(summary["students"])]
             if key in moderated:
                 continue
             entries = [{"script_index": row["script_index"], "answer": row["answer"],
