@@ -76,6 +76,19 @@ button.btn-primary { background: #2563eb; color: #ffffff; border-color: #1d4ed8;
 button.btn-primary:hover:not(:disabled) { background: #1d4ed8; }
 button.btn-success { background: #16a34a; color: #ffffff; border-color: #15803d; }
 button.btn-success:hover:not(:disabled) { background: #15803d; }
+button.btn-warn { background: #d97706; color: #ffffff; border-color: #b45309; }
+button.btn-warn:hover:not(:disabled) { background: #b45309; }
+.btn-filter-toggle {
+  background: #fef3c7; color: #92400e; border: 1.5px solid #fde68a;
+  padding: 0.22rem 0.6rem; border-radius: 4px; font-size: 0.8rem; font-weight: 700;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 0.3rem; transition: all 0.15s ease;
+  user-select: none;
+}
+.btn-filter-toggle:hover { background: #fde68a; color: #78350f; border-color: #f59e0b; }
+.btn-filter-toggle.active {
+  background: #d97706; color: #ffffff; border-color: #b45309;
+  box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.3);
+}
 
 .toggle-vis {
   padding: 0.2rem 0.5rem; font-size: 0.78rem; border-radius: 4px;
@@ -309,10 +322,12 @@ Keep this URL private and close spreadsheet editors while using this interface.<
     <label>Filter:
       <select id="marksheet-filter">
         <option value="all">All Students</option>
+        <option value="required">Needs Mark ⚠ (Action Required)</option>
         <option value="unreviewed">Not Reviewed</option>
         <option value="flagged">Flagged / Failed</option>
       </select>
     </label>
+    <button type="button" id="btn-filter-required" class="btn-filter-toggle" title="Filter to show only students who require a manual mark">Needs Mark (0)</button>
     <label id="cluster-mode-container" style="display: inline-flex; align-items: center; gap: 0.25rem; font-weight: 600; font-size: 0.8rem; color: #475569; margin-left: 0.5rem;">
       Grouping:
       <select id="marksheet-cluster-mode" title="Choose grouping method">
@@ -341,7 +356,7 @@ Keep this URL private and close spreadsheet editors while using this interface.<
         <th class="col-mark sortable" data-col="score" style="width: 105px;" title="Click to sort by mark">Mark<span class="sort-ind">⇅</span></th>
         <th class="col-sim sortable" data-col="similarity" style="width: 95px;" title="Click to sort by similarity">Similarity<span class="sort-ind">⇅</span></th>
         <th class="col-reason">Reasoning</th>
-        <th class="sortable" data-col="status" style="width: 115px;" title="Click to sort by review status">Status<span class="sort-ind">⇅</span></th>
+        <th class="sortable" data-col="status" style="width: 125px;" title="Click to sort by review status (Needs Mark ⚠ / Flagged / Auto / Reviewed)">Status<span class="sort-ind">⇅</span></th>
       </tr>
     </thead>
     <tbody id="marksheet-tbody"></tbody>
@@ -628,6 +643,16 @@ function renderTabs() {
   }
 }
 
+function getStatusPriority(item, isId) {
+  if (isId) {
+    return item.reviewed ? 2 : 0;
+  }
+  if (item.needsManual) return 0; // Needs manual mark ⚠ (Highest priority action item)
+  if (item.flagged && !item.reviewed) return 1; // Flagged / Borderline
+  if (!item.reviewed) return 2; // Auto (OK) / Pending review
+  return 3; // Reviewed ✓
+}
+
 async function renderMarksheetTable() {
   if (!state || !state.scripts) return;
   const tbody = byId("marksheet-tbody");
@@ -681,7 +706,10 @@ async function renderMarksheetTable() {
       ? (metaField === "name" ? (s.name_ocr || "") : (metaField === "class" ? (s.class_ocr || "") : (s.id_ocr || "")))
       : (mark ? mark.answer || "" : "");
     const isRev = isId ? Boolean(s.reviewed) : Boolean(mark && mark.reviewed);
+    const hasManual = !isId && mark && mark.manual_mark != null && String(mark.manual_mark).trim() !== "";
     const isFlg = !isId && mark && (mark.grading_failed || mark.moderator_flag);
+    const isAnsCorrected = !isId && mark && mark.answer_raw != null && mark.answer !== mark.answer_raw;
+    const needsManual = !isId && (isFlg || isAnsCorrected) && !hasManual;
 
     return {
       script: s,
@@ -692,13 +720,42 @@ async function renderMarksheetTable() {
       normAnswer: normalizeAnswer(ansText),
       reviewed: isRev,
       flagged: isFlg,
+      hasManual,
+      needsManual,
     };
   });
+
+  // Update "Needs Mark" button badge count and active state
+  const btnReq = byId("btn-filter-required");
+  if (btnReq) {
+    btnReq.hidden = isId;
+    if (!isId) {
+      const allQMarks = state.scripts.map(s => state.marks[s.script_index][qIdx]);
+      const totalReq = allQMarks.filter(m => {
+        if (!m) return false;
+        const hasMan = m.manual_mark != null && String(m.manual_mark).trim() !== "";
+        const flg = Boolean(m.grading_failed || m.moderator_flag);
+        const ansCorr = m.answer_raw != null && m.answer !== m.answer_raw;
+        return (flg || ansCorr) && !hasMan;
+      }).length;
+
+      const isFilteringReq = filterMode === "required";
+      btnReq.classList.toggle("active", isFilteringReq);
+      btnReq.textContent = isFilteringReq
+        ? `Showing Needs Mark (${totalReq}) ⚠`
+        : (totalReq > 0 ? `Needs Mark (${totalReq}) ⚠` : `Needs Mark (0)`);
+      btnReq.title = isFilteringReq
+        ? "Click to show all students"
+        : (totalReq > 0 ? `Click to filter: ${totalReq} student(s) require a manual mark` : "No students in this question require a manual mark");
+    }
+  }
 
   if (filterMode === "unreviewed") {
     entries = entries.filter(e => !e.reviewed);
   } else if (filterMode === "flagged") {
     entries = entries.filter(e => e.flagged);
+  } else if (filterMode === "required") {
+    entries = entries.filter(e => isId ? !e.reviewed : e.needsManual);
   }
 
   const reviewedCount = entries.filter(e => e.reviewed).length;
@@ -819,6 +876,20 @@ async function renderMarksheetTable() {
         tbody.append(createTableRow(item, isId, qIdx));
       }
     }
+
+    if (clusters.length === 0) {
+      const emptyRow = document.createElement("tr");
+      const emptyCell = document.createElement("td");
+      emptyCell.colSpan = 7;
+      emptyCell.style.textAlign = "center";
+      emptyCell.style.padding = "2rem";
+      emptyCell.style.color = "#64748b";
+      emptyCell.textContent = filterMode === "required"
+        ? "✓ No items require a manual mark for this question. All items have valid marks."
+        : "No students match the current filter.";
+      emptyRow.append(emptyCell);
+      tbody.append(emptyRow);
+    }
   } else {
     if (sortMode === "similarity-desc") {
       entries.sort((a, b) => b.similarity - a.similarity || a.script.script_index - b.script.script_index);
@@ -833,17 +904,31 @@ async function renderMarksheetTable() {
     } else if (sortMode === "answer-desc") {
       entries.sort((a, b) => b.normAnswer.localeCompare(a.normAnswer) || a.script.script_index - b.script.script_index);
     } else if (sortMode === "status-asc") {
-      entries.sort((a, b) => Number(a.reviewed) - Number(b.reviewed) || a.script.script_index - b.script.script_index);
+      entries.sort((a, b) => getStatusPriority(a, isId) - getStatusPriority(b, isId) || a.script.script_index - b.script.script_index);
     } else if (sortMode === "status-desc") {
-      entries.sort((a, b) => Number(b.reviewed) - Number(a.reviewed) || a.script.script_index - b.script.script_index);
+      entries.sort((a, b) => getStatusPriority(b, isId) - getStatusPriority(a, isId) || b.script.script_index - a.script.script_index);
     } else if (sortMode === "script-desc") {
       entries.sort((a, b) => b.script.script_index - a.script.script_index);
     } else {
       entries.sort((a, b) => a.script.script_index - b.script.script_index);
     }
 
-    for (const item of entries) {
-      tbody.append(createTableRow(item, isId, qIdx));
+    if (entries.length === 0) {
+      const emptyRow = document.createElement("tr");
+      const emptyCell = document.createElement("td");
+      emptyCell.colSpan = 7;
+      emptyCell.style.textAlign = "center";
+      emptyCell.style.padding = "2rem";
+      emptyCell.style.color = "#64748b";
+      emptyCell.textContent = filterMode === "required"
+        ? "✓ No items require a manual mark for this question. All items have valid marks."
+        : "No students match the current filter.";
+      emptyRow.append(emptyCell);
+      tbody.append(emptyRow);
+    } else {
+      for (const item of entries) {
+        tbody.append(createTableRow(item, isId, qIdx));
+      }
     }
   }
 
@@ -1069,10 +1154,10 @@ function createTableRow(item, isId, qIdx) {
   const cellAction = document.createElement("td");
   const revBtn = document.createElement("button");
   revBtn.id = `inline-rev-${sIdx}`;
-  revBtn.className = item.reviewed ? "btn-success" : "";
+  const needsManual = item.needsManual;
+  revBtn.className = item.reviewed ? "btn-success" : (needsManual ? "btn-warn" : "");
   revBtn.style.padding = "0.25rem 0.55rem";
   revBtn.style.fontSize = "0.78rem";
-  const needsManual = !isId && item.flagged && (m.manual_mark == null || String(m.manual_mark).trim() === "");
   revBtn.textContent = item.reviewed ? "Reviewed ✓" : (needsManual ? "Needs mark ⚠" : "Auto (OK)");
   revBtn.onclick = async () => {
     if (isId) {
@@ -1462,6 +1547,18 @@ byId("img-size").oninput = e => {
 
 byId("marksheet-filter").onchange = renderMarksheetTable;
 
+if (byId("btn-filter-required")) {
+  byId("btn-filter-required").onclick = () => {
+    const filterEl = byId("marksheet-filter");
+    if (filterEl.value === "required") {
+      filterEl.value = "all";
+    } else {
+      filterEl.value = "required";
+    }
+    renderMarksheetTable();
+  };
+}
+
 if (byId("marksheet-cluster-mode")) {
   byId("marksheet-cluster-mode").onchange = e => {
     if (state && state.has_clusters) {
@@ -1498,6 +1595,7 @@ async function render() {
   byId("script-fields").style.display = identity ? "flex" : "none";
   byId("mark-question-reviewed").hidden = identity;
   byId("cluster-mode-container").style.display = identity ? "none" : "inline-flex";
+  if (byId("btn-filter-required")) byId("btn-filter-required").hidden = identity;
 
   renderTabs();
   await renderMarksheetTable();
