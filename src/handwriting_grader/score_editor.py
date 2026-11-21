@@ -328,6 +328,19 @@ class ScoreServer(ThreadingHTTPServer):
         self.token = secrets.token_urlsafe(32)
         self.bulk_preview = None
         self.lock = threading.Lock()
+        self.image_cache = {}
+        self.image_lock = threading.Lock()
+
+        root, manifest, _, questions = verify_grading_run(config, config_dir, config_path, run_id=run_id)
+        self.root = root
+        self.questions = questions
+        self.effective_crops = manifest.get("effective_crops", {})
+        _, _, _, boxes = approved_inputs(config, config_dir, config_path)
+        self.boxes = boxes
+        roster = present_roster(config, config_dir, config_path)
+        self.num_scripts = len(roster)
+        self.pages_per_student = config["layout"]["pages_per_student"]
+
         load_state(self)
         super().__init__(("127.0.0.1", port), ScoreHandler)
 
@@ -340,13 +353,21 @@ class ScoreHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
-    def respond(self, status, data, content_type="application/json"):
+    def respond(self, status, data, content_type="application/json", cache_control="no-store", etag=None):
+        if etag and self.headers.get("If-None-Match") == etag:
+            self.send_response(304)
+            self.send_header("ETag", etag)
+            self.send_header("Cache-Control", cache_control)
+            self.end_headers()
+            return
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", cache_control)
+        if etag:
+            self.send_header("ETag", etag)
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src blob:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'")
+        self.send_header("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src blob: data: 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'")
         self.end_headers()
         self.wfile.write(data)
 
@@ -368,6 +389,72 @@ class ScoreHandler(BaseHTTPRequestHandler):
                                 "text/html; charset=utf-8")
         if not self.authorized():
             return self.json_response(403, {"error": "Unauthorized"})
+
+        segments = path.split("/")
+        if len(segments) == 5 and segments[1:3] == ["api", "image"]:
+            script_str, field = segments[3:]
+            full_page = field.startswith("full-")
+            context_crop = field.startswith("ctx-")
+            if full_page:
+                field = field[5:]
+            elif context_crop:
+                field = field[4:]
+            if not script_str.isascii() or not script_str.isdigit() or int(script_str) >= self.server.num_scripts:
+                return self.json_response(404, {"error": "Image not found"})
+            script_idx = int(script_str)
+
+            if field in {"id", "name", "class"}:
+                key = field.upper()
+            elif field.isascii() and field.isdigit() and int(field) < len(self.server.questions):
+                key = question_key(self.server.questions[int(field)]["question_number"])
+            else:
+                return self.json_response(404, {"error": "Image not found"})
+
+            pad_all = max(0, min(2000, int(query["pad"][0]))) if "pad" in query and query["pad"][0].isdigit() else 0
+            cache_key = (script_idx, key, full_page, context_crop, pad_all)
+            etag = f'"{hash(cache_key)}"'
+
+            if self.headers.get("If-None-Match") == etag:
+                return self.respond(304, b"", "image/png", cache_control="private, max-age=86400", etag=etag)
+
+            with self.server.image_lock:
+                cached = self.server.image_cache.get(cache_key)
+            if cached is not None:
+                content_type, data = cached
+                return self.respond(200, data, content_type, cache_control="private, max-age=86400", etag=etag)
+
+            try:
+                page, box = self.server.boxes[key]
+                if key in self.server.effective_crops:
+                    box = self.server.effective_crops[key][script_idx]
+                image_path = self.server.root / "images" / f"{script_idx * self.server.pages_per_student + page}.jpg"
+                if full_page:
+                    data = image_path.read_bytes()
+                    content_type = "image/jpeg"
+                else:
+                    if context_crop or pad_all > 0:
+                        with Image.open(image_path) as source:
+                            pad_x = pad_all if pad_all > 0 else max(80, int(box["width"] * 0.35))
+                            pad_y = pad_all if pad_all > 0 else max(80, int(box["height"] * 0.50))
+                            x0 = max(0, box["x"] - pad_x)
+                            y0 = max(0, box["y"] - pad_y)
+                            x1 = min(source.width, box["x"] + box["width"] + pad_x)
+                            y1 = min(source.height, box["y"] + box["height"] + pad_y)
+                            box = {
+                                "x": x0,
+                                "y": y0,
+                                "width": max(1, x1 - x0),
+                                "height": max(1, y1 - y0),
+                            }
+                    data = crop_image(image_path, box)
+                    content_type = "image/png"
+
+                with self.server.image_lock:
+                    self.server.image_cache[cache_key] = (content_type, data)
+                return self.respond(200, data, content_type, cache_control="private, max-age=86400", etag=etag)
+            except Exception:
+                return self.json_response(404, {"error": "Image not found"})
+
         try:
             with self.server.lock:
                 root, revision, roster, questions, scripts, marks = load_state(self.server)
@@ -387,46 +474,6 @@ class ScoreHandler(BaseHTTPRequestHandler):
                                                      [boxes[question_key(q["question_number"])][1]] * len(scripts))[i]
                                    for q in questions] for i in sorted(scripts)],
                     })
-                segments = path.split("/")
-                if len(segments) == 5 and segments[1:3] == ["api", "image"]:
-                    script, field = segments[3:]
-                    full_page = field.startswith("full-")
-                    context_crop = field.startswith("ctx-")
-                    if full_page:
-                        field = field[5:]
-                    elif context_crop:
-                        field = field[4:]
-                    if not script.isascii() or not script.isdigit() or int(script) not in scripts:
-                        return self.json_response(404, {"error": "Image not found"})
-                    if field in {"id", "name", "class"}:
-                        key = field.upper()
-                    elif field.isascii() and field.isdigit() and int(field) < len(questions):
-                        key = question_key(questions[int(field)]["question_number"])
-                    else:
-                        return self.json_response(404, {"error": "Image not found"})
-                    _, _, _, boxes = approved_inputs(self.server.config, self.server.config_dir, self.server.config_path)
-                    page, box = boxes[key]
-                    if key in effective_crops:
-                        box = effective_crops[key][int(script)]
-                    image = root / "images" / f"{int(script) * self.server.config['layout']['pages_per_student'] + page}.jpg"
-                    if full_page:
-                        return self.respond(200, image.read_bytes(), "image/jpeg")
-                    pad_all = max(0, min(2000, int(query["pad"][0]))) if "pad" in query and query["pad"][0].isdigit() else 0
-                    if context_crop or pad_all > 0:
-                        with Image.open(image) as source:
-                            pad_x = pad_all if pad_all > 0 else max(80, int(box["width"] * 0.35))
-                            pad_y = pad_all if pad_all > 0 else max(80, int(box["height"] * 0.50))
-                            x0 = max(0, box["x"] - pad_x)
-                            y0 = max(0, box["y"] - pad_y)
-                            x1 = min(source.width, box["x"] + box["width"] + pad_x)
-                            y1 = min(source.height, box["y"] + box["height"] + pad_y)
-                            box = {
-                                "x": x0,
-                                "y": y0,
-                                "width": max(1, x1 - x0),
-                                "height": max(1, y1 - y0),
-                            }
-                    return self.respond(200, crop_image(image, box), "image/png")
         except (OSError, ValueError, KeyError, TypeError):
             return self.json_response(409, {"error": "Run or review changed; stop and inspect it"})
         return self.json_response(404, {"error": "Not found"})
