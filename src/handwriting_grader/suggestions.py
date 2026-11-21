@@ -36,7 +36,9 @@ For metadata fields (NAME, ID, CLASS):
 - Use exact labels "NAME", "ID", and "CLASS".
 
 For question answer areas:
-- Return a box enclosing the complete student answer region for each question, labeled with its question number (e.g., "Q1", "Q2").
+- Expected question IDs from the marking rubric: {question_ids}.
+{question_details}- Return ONE bounding box enclosing the complete student answer area/table for each expected question ID that appears on this page.
+- Use ONLY the exact question ID labels listed above. Do NOT invent, rename, or subdivide labels beyond that list.
 - Do not include printed question instructions or titles in the answer box.
 
 Coordinates must use a normalized 0-to-1000 scale: x and y are the top-left corner, and width and height are the box dimensions. Ensure all boxes lie entirely inside the page. Return an empty list if no regions can be identified."""
@@ -81,30 +83,32 @@ def create_json_once(path, data):
         temp.unlink(missing_ok=True)
 
 
-def build_prompt(question_ids=None):
-    prompt = PROMPT
-    if question_ids:
-        id_list = ", ".join(question_ids)
-        prompt += (
-            f"\n\nExpected question IDs from the marking rubric: {id_list}.\n"
-            "You MUST locate the answer region for EVERY question from this list that appears on this page, "
-            "and use these exact question ID labels (do not invent other labels or skip sub-questions)."
-        )
-    return prompt
+def build_prompt(question_ids=None, question_summaries=None):
+    id_list = ", ".join(question_ids) if question_ids else "none"
+    details = ""
+    if question_summaries:
+        lines = [f"  - {qid}: {summary}" for qid, summary in question_summaries]
+        details = "- Question reference from rubric:\n" + "\n".join(lines) + "\n"
+    return PROMPT.format(question_ids=id_list, question_details=details)
 
 
-def load_rubric_question_ids(config, config_dir):
+def load_rubric_questions(config, config_dir):
     from .rubric import read_rubric, rubric_root
     rubric_path = rubric_root(config, config_dir) / "rubric.xlsx"
     if not rubric_path.exists():
-        return []
+        return [], []
     questions = read_rubric(rubric_path)
     ids = []
+    summaries = []
     for q in questions:
-        val = q.get("question_number") or q.get("question") or ""
-        if str(val).strip():
-            ids.append(str(val).strip())
-    return ids
+        val = str(q.get("question_number") or q.get("question") or "").strip()
+        if val:
+            ids.append(val)
+            text = " ".join(str(q.get("question_text") or "").split())
+            if len(text) > 100:
+                text = text[:97] + "..."
+            summaries.append((val, text))
+    return ids, summaries
 
 
 def generate_suggestions(config, config_dir, config_path, model_config_path, project, location):
@@ -118,13 +122,13 @@ def generate_suggestions(config, config_dir, config_path, model_config_path, pro
     output = root / "ai_suggestions.json"
     if output.exists():
         raise ValueError("AI suggestions already exist; do not overwrite them")
-    question_ids = load_rubric_question_ids(config, config_dir)
+    question_ids, question_summaries = load_rubric_questions(config, config_dir)
     if not question_ids:
         raise ValueError(
             "Cannot suggest regions without a marking rubric question list. "
             "Extract or import the rubric first (extract-rubric / import-rubric)."
         )
-    prompt_text = build_prompt(question_ids)
+    prompt_text = build_prompt(question_ids, question_summaries)
     suggestions = {}
     agents = [name for name in enabled_agents(model_path) if name == "annotation"]
     cache = CachedGrader(None, cache_directory(model_path, root) if agents else root / "cache", agents,
