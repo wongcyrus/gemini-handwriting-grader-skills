@@ -30,12 +30,13 @@ When a teacher supplies a Word document (`exam.marking_scheme: scheme.docx`), `e
    - `mammoth` extracts raw text and tables from DOCX.
    - Sends criteria to Vertex AI using structured Pydantic response schema:
      ```python
-     class RubricItem(BaseModel):
+     class RubricQuestion(BaseModel):
          question_number: StrictStr
          question_text: StrictStr
          marking_scheme: StrictStr
          marks: float
      ```
+   - **Sub-Question Granularity**: Prompt instructs Gemini to split individually marked sub-parts or fill-in-the-blank items into separate entries with their combined label and individual marks rather than collapsing them into a parent row, enabling 1-to-1 bounding-box matching in `suggest-regions` and `grade`.
    - Writes `output/rubric/rubric.xlsx`.
 2. **Safety Gate**:
    - Preview shows prompt shape and target model.

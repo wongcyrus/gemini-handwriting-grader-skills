@@ -23,8 +23,8 @@ flowchart TD
         G2 --> H2["rubric/approval.json (SHA-256 bound)"]
 
         D1 & E1 --> I2["prepare-regions (pypdfium2 200 DPI)"]
-        I2 --> J2["suggest-regions (Gemini Multimodal Proposals)"]
-        J2 --> K2["review-regions (Local Browser Editor)"]
+        F2 & I2 --> J2["suggest-regions (Gemini 4 + Rubric Question IDs)"]
+        J2 --> K2["review-regions (Local Browser Editor + Missing-Box Alert)"]
         K2 --> L2["regions/approval.json (SHA-256 bound)"]
     end
 
@@ -94,10 +94,12 @@ The exam lifecycle moves through strictly defined states:
       │ preflight
       ▼
 [PREFLIGHT_PASSED] 
-      │ prepare-regions, review-regions
+      │ import-rubric / extract-rubric, approve-rubric
+      ▼
+[RUBRIC_READY]
+      │ prepare-regions, suggest-regions (Gemini 4), review-regions
       ▼
 [REGIONS_APPROVED] 
-      │ import-rubric / extract-rubric, approve-rubric
       ▼
 [RUBRIC_APPROVED] 
       │ grade --confirm-cost

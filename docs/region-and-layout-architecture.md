@@ -38,13 +38,15 @@ Exam answer sheets use physical pixel bounding boxes anchored to rendered 200 DP
 
 ## 3. Vertex AI Bounding Box Proposals (`suggest-regions`)
 
-Teachers can request automated proposal boxes using Gemini Multimodal:
+Teachers can request automated proposal boxes using Gemini 4 (`models.annotation`):
 ```bash
 handwriting-grader suggest-regions --exam exam.yaml \
   --model-config config.yaml --project PROJECT_ID --location LOCATION --confirm-cost
 ```
-- Transmits layout images to Gemini with instructions to locate student identity areas and designated question writing zones.
-- Generates `output/regions/suggestions.json`.
+- **Rubric-First Requirement**: `suggest-regions` requires an extracted or imported `output/rubric/rubric.xlsx` and refuses to run if no question ID list exists.
+- **Dynamic Prompt Injection**: `load_rubric_questions()` reads every `question_number` and a short text summary from `rubric.xlsx`, and `build_prompt()` injects them dynamically into the prompt (with zero hardcoded label examples). `question_ids` is included in the cache key so rubric changes invalidate stale suggestions.
+- **Model Tier**: Uses the reasoning tier (`gemini-4-argon`) for high spatial precision across all sub-question cells and metadata fields (`NAME`, `ID`, `CLASS`).
+- Generates `output/regions/ai_suggestions.json`.
 - **Safety Rule**: Suggestions are non-destructive proposals. They never automatically overwrite manual bounding boxes.
 
 ---
@@ -55,8 +57,10 @@ A zero-dependency local web server implemented in [`src/handwriting_grader/edito
 - Binds strictly to `127.0.0.1` on a free ephemeral or user-selected port (`--port`).
 - Enforces access control via a cryptographically random URL fragment token (`http://127.0.0.1:PORT/#TOKEN`).
 - Prevents cross-origin attacks via strict `Origin` header validation.
+- `/api/state` returns `expected_questions` from `rubric.xlsx` alongside page dimensions and draft annotations.
 - Interactive UI (`editor.html`):
   - Zoom and pan scanned pages.
-  - "Load AI Suggestions" button to import proposals from `suggestions.json`.
+  - Auto-loads proposals from `ai_suggestions.json` (or via "Load AI suggestions").
+  - **Live Missing-Box Warning**: Normalizes labels across all pages with `questionKey()` and displays an alert banner whenever `ID` on Page 1 or any expected rubric question is missing a bounding box.
   - Draw, drag, resize, and label boxes.
-  - "Approve" button saves `annotations.json` and records cryptographic `approval.json`.
+  - "Approve all regions" saves `annotations.json` and records cryptographic `approval.json`.
