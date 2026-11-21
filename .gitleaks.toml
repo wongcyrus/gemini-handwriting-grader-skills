@@ -1,0 +1,19 @@
+title = "Gitleaks PII & Secrets Configuration"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "hkid-number"
+description = "Hong Kong Identity Card (HKID) Number"
+regex = '''\b[A-Z]{1,2}\d{6}\([0-9Aa]\)'''
+
+[[rules]]
+id = "student-email"
+description = "Student Email Address"
+regex = '''\b[a-zA-Z0-9._%+-]+@(?:stu\.vtc\.edu\.hk|student\.[a-zA-Z0-9.-]+)\b'''
+
+[[rules]]
+id = "hk-student-id"
+description = "9-digit Student ID"
+regex = '''\b2\d{8}\b'''
