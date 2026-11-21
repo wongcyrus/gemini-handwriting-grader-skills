@@ -134,6 +134,11 @@ button.btn-warn:hover:not(:disabled) { background: #b45309; }
   box-shadow: 0 1px 2px rgba(0,0,0,0.03); overflow-x: auto; margin-bottom: 1.25rem;
 }
 table.marksheet { border-collapse: collapse; width: 100%; font-size: 0.85rem; table-layout: auto; }
+table.marksheet.hide-img .col-img { display: none !important; }
+table.marksheet.hide-ans .col-ans { display: none !important; }
+table.marksheet.hide-mark .col-mark { display: none !important; }
+table.marksheet.hide-sim .col-sim { display: none !important; }
+table.marksheet.hide-reason .col-reason { display: none !important; }
 table.marksheet th, table.marksheet td {
   border: 1px solid #e2e8f0; padding: 0.5rem 0.65rem; vertical-align: middle; text-align: left;
 }
@@ -403,8 +408,16 @@ if (token) {
 const byId = id => document.getElementById(id);
 let state, script = 0, section = "id", dirty = false, imageUrl = null, imageGeneration = 0;
 let busy = false, imageReady = false, suggestion = null, bulk = null;
-let marksheetSort = {col: "answer", mode: "group"};
+let savedSortCol = "answer", savedSortMode = "group";
+try {
+  savedSortCol = localStorage.getItem("handwriting_grader_sort_col") || "answer";
+  savedSortMode = localStorage.getItem("handwriting_grader_sort_mode") || "group";
+} catch (_) {}
+let marksheetSort = {col: savedSortCol, mode: savedSortMode};
 let questionStatusFilter = "all";
+try {
+  questionStatusFilter = localStorage.getItem("handwriting_grader_q_status_filter") || "all";
+} catch (_) {}
 const tableImageUrls = new Map();
 const qClusterCache = new Map();
 const qClusterLoading = new Set();
@@ -497,11 +510,17 @@ function renderTabs() {
   const useCompactPicker = questions.length > 10;
 
   const qStats = questions.map((q, i) => {
-    let qReviewed = 0, qFlagged = 0;
+    let qReviewed = 0, qFlagged = 0, qNeedsMark = 0;
     for (const s of state.scripts) {
       const m = state.marks[s.script_index][i];
       if (m && m.reviewed) qReviewed++;
       if (m && (m.grading_failed || m.moderator_flag) && !m.reviewed) qFlagged++;
+      if (m) {
+        const hasMan = m.manual_mark != null && String(m.manual_mark).trim() !== "";
+        const flg = Boolean(m.grading_failed || m.moderator_flag);
+        const ansCorr = m.answer_raw != null && m.answer !== m.answer_raw;
+        if ((flg || ansCorr) && !hasMan) qNeedsMark++;
+      }
     }
     const qDone = totalScripts > 0 && qReviewed === totalScripts;
     if (qDone) {
@@ -515,16 +534,18 @@ function renderTabs() {
         }
       }
     }
-    return {q, i, qReviewed, qFlagged, qDone};
+    return {q, i, qReviewed, qFlagged, qNeedsMark, qDone};
   });
 
   if (questions.length > 0) {
+    const totalNeedsMarkQs = qStats.filter(x => x.qNeedsMark > 0).length;
     const qFilterSelect = document.createElement("select");
     qFilterSelect.id = "question-status-filter";
     qFilterSelect.title = "Filter questions by review status";
     qFilterSelect.style.fontSize = "0.78rem";
     qFilterSelect.append(
       option("all", `Show Qs: All (${questions.length})`),
+      option("needs_mark", `Needs Mark (${totalNeedsMarkQs}) ⚠`),
       option("pending", `Needs Review (${questions.length - totalDoneQuestions})`),
       option("flagged", `Flagged (${qStats.filter(x => x.qFlagged > 0).length})`),
       option("done", `Reviewed ✓ (${totalDoneQuestions})`)
@@ -532,6 +553,7 @@ function renderTabs() {
     qFilterSelect.value = questionStatusFilter;
     qFilterSelect.onchange = e => {
       questionStatusFilter = e.target.value;
+      try { localStorage.setItem("handwriting_grader_q_status_filter", questionStatusFilter); } catch (_) {}
       renderTabs();
     };
     nav.append(qFilterSelect);
@@ -572,8 +594,9 @@ function renderTabs() {
     nav.append(prevQ, picker, nextQ);
   }
 
-  qStats.forEach(({q, i, qReviewed, qFlagged, qDone}) => {
+  qStats.forEach(({q, i, qReviewed, qFlagged, qNeedsMark, qDone}) => {
     const matchesFilter = questionStatusFilter === "all" ||
+      (questionStatusFilter === "needs_mark" && qNeedsMark > 0) ||
       (questionStatusFilter === "pending" && !qDone) ||
       (questionStatusFilter === "flagged" && qFlagged > 0) ||
       (questionStatusFilter === "done" && qDone);
@@ -1492,10 +1515,12 @@ byId("zoom-out").onclick = () => {
 
 byId("table-image-mode").onchange = e => {
   const mode = e.target.value;
+  try { localStorage.setItem("handwriting_grader_table_img_mode", mode); } catch (_) {}
   if (mode !== "" && Number(byId("img-size").value) < 480) {
     byId("img-size").value = "480";
     byId("currentImgSize").textContent = "480px";
     document.documentElement.style.setProperty("--img-size", "480px");
+    try { localStorage.setItem("handwriting_grader_img_size", "480"); } catch (_) {}
   }
   loadTableImages();
 };
@@ -1505,12 +1530,15 @@ byId("box-pad").oninput = e => {
 byId("box-pad").onchange = e => {
   const pad = Number(e.target.value) || 0;
   byId("currentBoxPad").textContent = `+${pad}px`;
+  try { localStorage.setItem("handwriting_grader_box_pad", String(pad)); } catch (_) {}
   if (pad > 0) {
     byId("table-image-mode").value = "";
+    try { localStorage.setItem("handwriting_grader_table_img_mode", ""); } catch (_) {}
     if (Number(byId("img-size").value) < 480) {
       byId("img-size").value = "480";
       byId("currentImgSize").textContent = "480px";
       document.documentElement.style.setProperty("--img-size", "480px");
+      try { localStorage.setItem("handwriting_grader_img_size", "480"); } catch (_) {}
     }
   }
   loadTableImages();
@@ -1528,24 +1556,72 @@ if (!("closedBy" in HTMLDialogElement.prototype)) {
   }
 }
 
-document.querySelectorAll(".toggle-vis").forEach(btn => {
-  btn.onclick = () => {
-    btn.classList.toggle("active");
-    const colClass = "col-" + btn.dataset.col;
-    const isVisible = btn.classList.contains("active");
-    document.querySelectorAll("." + colClass).forEach(el => {
-      el.style.display = isVisible ? "" : "none";
-    });
-  };
-});
+function initPreferences() {
+  const table = byId("marksheet");
+  // 1. Column visibility persistence
+  document.querySelectorAll(".toggle-vis").forEach(btn => {
+    const col = btn.dataset.col;
+    let saved = null;
+    try { saved = localStorage.getItem("handwriting_grader_vis_" + col); } catch (_) {}
+    const isVisible = saved === null ? true : (saved === "1");
+    btn.classList.toggle("active", isVisible);
+    if (table) table.classList.toggle("hide-" + col, !isVisible);
+
+    btn.onclick = () => {
+      const active = !btn.classList.contains("active");
+      btn.classList.toggle("active", active);
+      if (table) table.classList.toggle("hide-" + col, !active);
+      try { localStorage.setItem("handwriting_grader_vis_" + col, active ? "1" : "0"); } catch (_) {}
+    };
+  });
+
+  // 2. Marksheet filter persistence
+  try {
+    const savedFilter = localStorage.getItem("handwriting_grader_marksheet_filter");
+    if (savedFilter && byId("marksheet-filter")) {
+      byId("marksheet-filter").value = savedFilter;
+    }
+  } catch (_) {}
+
+  // 3. Image size persistence
+  try {
+    const savedImgSize = localStorage.getItem("handwriting_grader_img_size");
+    if (savedImgSize) {
+      byId("img-size").value = savedImgSize;
+      byId("currentImgSize").textContent = savedImgSize + "px";
+      document.documentElement.style.setProperty("--img-size", savedImgSize + "px");
+    }
+  } catch (_) {}
+
+  // 4. Box pad persistence
+  try {
+    const savedBoxPad = localStorage.getItem("handwriting_grader_box_pad");
+    if (savedBoxPad !== null && savedBoxPad !== undefined) {
+      byId("box-pad").value = savedBoxPad;
+      byId("currentBoxPad").textContent = `+${savedBoxPad}px`;
+    }
+  } catch (_) {}
+
+  // 5. Table image mode persistence
+  try {
+    const savedMode = localStorage.getItem("handwriting_grader_table_img_mode");
+    if (savedMode !== null && savedMode !== undefined && byId("table-image-mode")) {
+      byId("table-image-mode").value = savedMode;
+    }
+  } catch (_) {}
+}
 
 byId("img-size").oninput = e => {
   const val = e.target.value;
   byId("currentImgSize").textContent = val + "px";
   document.documentElement.style.setProperty("--img-size", val + "px");
+  try { localStorage.setItem("handwriting_grader_img_size", val); } catch (_) {}
 };
 
-byId("marksheet-filter").onchange = renderMarksheetTable;
+byId("marksheet-filter").onchange = e => {
+  try { localStorage.setItem("handwriting_grader_marksheet_filter", e.target.value); } catch (_) {}
+  renderMarksheetTable();
+};
 
 if (byId("btn-filter-required")) {
   byId("btn-filter-required").onclick = () => {
@@ -1555,6 +1631,7 @@ if (byId("btn-filter-required")) {
     } else {
       filterEl.value = "required";
     }
+    try { localStorage.setItem("handwriting_grader_marksheet_filter", filterEl.value); } catch (_) {}
     renderMarksheetTable();
   };
 }
@@ -1582,6 +1659,10 @@ document.querySelectorAll("#marksheet th.sortable").forEach(th => {
       const asc = `${col}-asc`, desc = `${col}-desc`;
       marksheetSort = {col, mode: marksheetSort.col === col && marksheetSort.mode === asc ? desc : asc};
     }
+    try {
+      localStorage.setItem("handwriting_grader_sort_col", marksheetSort.col);
+      localStorage.setItem("handwriting_grader_sort_mode", marksheetSort.mode);
+    } catch (_) {}
     renderMarksheetTable();
   };
 });
@@ -1797,6 +1878,7 @@ document.addEventListener("keydown", e => {
   setBusy(true);
   try {
     if (!token) throw new Error("Open the full URL printed by the review command.");
+    initPreferences();
     await reload(); message("Review each identity and every mark before approval.");
     setBusy(false);
   } catch (e) { message(e.message); }
