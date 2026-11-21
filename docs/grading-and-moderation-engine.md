@@ -93,3 +93,42 @@ To prevent loss of work or duplicate billing if a network error occurs:
 - `output/grading/results.json` records every completed script and question atomically via `atomic_json()`.
 - `resume-grading --exam exam.yaml --confirm-cost` skips already graded and moderated questions, continuing from the exact failure point.
 - Protected by `processing.lock` to prevent concurrent execution races.
+
+---
+
+## 6. Built-in SDK Retry Primitives & Targeted `retry-grading` Recovery
+
+### Built-in GenAI SDK / ADK Retry Architecture
+Connection-level transient errors (429 RateLimit/ResourceExhausted, 500 Internal, 502 Bad Gateway, 503 ServiceUnavailable, 504 DeadlineExceeded) are handled automatically by the Google GenAI SDK client via `types.HttpOptions`:
+```python
+http_options=types.HttpOptions(
+    timeout=300_000,
+    retry_options=types.HttpRetryOptions(
+        attempts=3,
+        initial_delay=2.0,
+        max_delay=30.0,
+        exp_base=2.0,
+        jitter=True,
+        http_status_codes=[429, 500, 502, 503, 504],
+    ),
+)
+```
+No custom `while True` or `time.sleep()` loops are used around API calls.
+
+### Human-in-the-Loop Governance: User Decision Gating
+When SDK-level retries are exhausted and items fail (`grading_failed=True` or moderation errors):
+- **Prohibition on Blind Python Loops**: Auto-retrying in Python loops is strictly forbidden because GCP quotas or service outages make blind loops futile, risk exhausting daily quotas, and run up unapproved billing.
+- **Diagnostic Notification**: The agent must immediately report failure counts, question numbers, and error status codes to the user.
+- **User Decision Required**: The user decides whether to:
+  1. Wait for GCP quota reset, preview `retry-grading`, and run with explicit `--confirm-cost`.
+  2. Manually grade failed items directly in `review.xlsx` without additional API calls.
+
+### Targeted `retry-grading` Command
+When the user approves retry:
+```sh
+handwriting-grader retry-grading --exam exam.yaml [--confirm-cost]
+```
+1. **Isolated Execution**: Identifies only items with `grading_failed=True` or `raw_mark is None`.
+2. **Local Pre-Filter**: Runs `is_blank_cell` before any API call.
+3. **Question Re-moderation**: Re-moderates affected questions once all student marks are restored.
+4. **Preserved Manual Reviews**: Refreshes `review.xlsx` while merging and preserving any previously entered manual marks and reviewed flags.

@@ -17,8 +17,11 @@ are implemented. Formatting and cache coverage differ from the notebooks.
    Save original-image pixel coordinates in `annotations.json` and approve all
    layouts.
 5. **Grading:** request approval for paid calls before OCR, grading and
-   moderation. A teacher reviews IDs, OCR, exceptions, moderation flags and
-   mark overrides.
+   moderation. Built-in SDK retry options handle transient connection errors.
+   If any items still fail or moderation encounters errors, notify the user
+   with diagnostics to decide whether to retry via `retry-grading` (after
+   preview and cost consent) or proceed to manual review. A teacher reviews
+   IDs, OCR, exceptions, moderation flags and mark overrides.
 6. **Reports:** reconcile the complete present roster and marks, validate ranges and
    have the teacher approve final scores and feedback. After reporting, prompt
    the user if they want to archive or clean intermediate grading runs with `clean`.

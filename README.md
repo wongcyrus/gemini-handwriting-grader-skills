@@ -201,8 +201,19 @@ Default Credentials. Preview the target and maximum request count:
 
 After explicit approval to send student work and incur charges, repeat with
 `--confirm-cost`. During execution, real-time step progress and token usage
-are displayed following ADK conventions. A partial failure can still incur charges. Supported
-interrupted runs can be resumed with `resume-grading --exam exam.yaml`,
+are displayed following ADK conventions. A partial failure can still incur charges.
+
+If transient Vertex AI errors (e.g. 429 quota limits, 504 timeouts, 5xx server errors) cause any mark or moderation to fail:
+```sh
+# 1. Preview failed items and unmoderated questions (read-only, no API calls)
+.venv/bin/handwriting-grader retry-grading --exam exam.yaml
+
+# 2. Confirm cost consent and rerun only the failed items with exponential backoff:
+.venv/bin/handwriting-grader retry-grading --exam exam.yaml --confirm-cost
+```
+`retry-grading` isolates failed crops, applies the local blank-cell filter, regrades failed items with built-in GenAI SDK retry options (`types.HttpRetryOptions`), re-moderates affected questions once all student marks are present, and refreshes `grading/review.xlsx` while preserving any existing manual marks and reviewed flags.
+
+Supported interrupted runs can be resumed with `resume-grading --exam exam.yaml`,
 followed by `--confirm-cost` after review; in-flight requests may repeat and
 be billed. Older checkpoints and existing reviews cannot be resumed. A stale
 `processing.lock` requires manual investigation; never remove a live lock.

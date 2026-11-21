@@ -125,7 +125,8 @@ The exam lifecycle moves through strictly defined states:
 
 | Failure Scenario | Detection Mechanism | Recovery Procedure |
 | :--- | :--- | :--- |
-| **Network or Quota Drop during Grading** | Unhandled exception caught; `processing.lock` released. | Run `resume-grading --exam exam.yaml --confirm-cost`. Skips already finished questions. |
+| **Interrupted Run (Crash / Power Loss)** | Process dies mid-run; `processing.lock` stale or released. | Run `resume-grading --exam exam.yaml --confirm-cost`. Skips already finished questions. |
+| **Transient Vertex AI 5xx/429/504 Errors on Finished Run** | `grading_failed=True` or moderation errors in `results.json`. | Agent alerts user with diagnostics; user decides whether to grade manually or run `retry-grading --exam exam.yaml --confirm-cost`. |
 | **Student Wrote Outside the Bounding Box** | Teacher detects cut-off handwriting in `review-grading`. | Click **Expand Box** or open **Full Page** modal in editor to inspect, and adjust mark inline. |
 | **Systemic Rubric or Crop Error on One Question** | Teacher realizes a question's criteria or crop was flawed across all scripts. | Follow [`regrading.md`](skills/handwriting-grading/references/regrading.md): create isolated child run (`regrade --run revision-1`). Never overwrites parent. |
 | **Incomplete Human Review** | Unreviewed row or missing manual mark on flagged question. | `check-grading-review` reports exact script index and question; `approve-grading` halts. |
