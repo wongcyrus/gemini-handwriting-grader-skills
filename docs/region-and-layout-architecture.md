@@ -28,11 +28,13 @@ Exam answer sheets use physical pixel bounding boxes anchored to rendered 200 DP
 
 ---
 
-## 2. Layout Preparation (`prepare-regions`)
+## 2. Scan Validation (`check-scans`) & Layout Preparation (`prepare-regions`)
 
-1. Reads `exam.scanned_pdf` and `layout.pages_per_student`.
-2. Uses `render_pdf_to_images` (`pypdfium2`) to render the first script's $N$ pages into `output/regions/images/0.jpg`, `1.jpg`, etc.
-3. Generates `output/regions/manifest.json` recording pixel dimensions `(width, height)` and SHA-256 hashes for each layout page.
+1. **Before `prepare-regions`**, run `handwriting-grader check-scans --exam exam.yaml` (offline, 0 AI cost). Using majority-consensus 4x downsampled FFT phase correlation across scripts, it detects upside-down (`180°`), sideways (`90°/270°`), blank, or out-of-sequence pages — even if Script 1 itself is wrong — and reports exact 1-based PDF page numbers for manual correction.
+2. `prepare-regions` reads `exam.scanned_pdf` and `layout.pages_per_student`.
+3. Uses `render_pdf_to_images` (`pypdfium2`) to render the first script's $N$ pages into `output/regions/images/0.jpg`, `1.jpg`, etc.
+4. Generates `output/regions/manifest.json` recording pixel dimensions `(width, height)` and SHA-256 hashes for each layout page.
+5. Regions can be approved interactively in `review-regions` or headlessly after editing `annotations.json` via `handwriting-grader approve-regions --exam exam.yaml --confirm-reviewed`.
 
 ---
 

@@ -102,8 +102,17 @@ LibreOffice, select an output directory it can access (often not `/tmp`).
 
 ## Review regions
 
-PDF pages are rendered automatically at 200 DPI via `pypdfium2` (cross-platform). After confirming scan order,
-page count and the shared-layout assumption:
+Before preparing regions, validate the scanned PDF offline so an upside-down or
+out-of-sequence first script cannot corrupt all region bounding boxes:
+
+```sh
+.venv/bin/handwriting-grader check-scans --exam exam.yaml
+```
+
+If any page is flagged (upside-down `180°`, sideways `90°/270°`, blank, or out of
+sequence), fix the physical scan or source PDF manually and re-run `check-scans`.
+
+PDF pages are rendered automatically at 200 DPI via `pypdfium2` (cross-platform). After `check-scans` passes and confirming page count and the shared-layout assumption:
 
 ```sh
 .venv/bin/handwriting-grader prepare-regions --exam exam.yaml
@@ -203,15 +212,20 @@ After explicit approval to send student work and incur charges, repeat with
 `--confirm-cost`. During execution, real-time step progress and token usage
 are displayed following ADK conventions. A partial failure can still incur charges.
 
-If transient Vertex AI errors (e.g. 429 quota limits, 504 timeouts, 5xx server errors) cause any mark or moderation to fail:
+If transient Vertex AI errors (e.g. 429 quota limits, 504 timeouts, 5xx server errors) cause any mark or moderation to fail, or if scanner drift requires aligning images and re-running ID OCR or one question:
 ```sh
 # 1. Preview failed items and unmoderated questions (read-only, no API calls)
 .venv/bin/handwriting-grader retry-grading --exam exam.yaml
 
 # 2. Confirm cost consent and rerun only the failed items with exponential backoff:
 .venv/bin/handwriting-grader retry-grading --exam exam.yaml --confirm-cost
+
+# 3. Align existing unaligned images offline (0 AI cost) and re-run ID OCR or one question:
+.venv/bin/handwriting-grader retry-grading --exam exam.yaml --align-images
+.venv/bin/handwriting-grader retry-grading --exam exam.yaml --re-ocr-id --confirm-cost
+.venv/bin/handwriting-grader retry-grading --exam exam.yaml --question 1.1 --confirm-cost
 ```
-`retry-grading` isolates failed crops, applies the local blank-cell filter, regrades failed items with built-in GenAI SDK retry options (`types.HttpRetryOptions`), re-moderates affected questions once all student marks are present, and refreshes `grading/review.xlsx` while preserving any existing manual marks and reviewed flags.
+During `grade`, pages are automatically registered (rigid translation + small rotation) to `regions/images/` before cropping. `retry-grading` isolates failed crops or requested fields/questions, applies the local blank-cell filter, regrades with built-in GenAI SDK retry options (`types.HttpRetryOptions`), re-moderates affected questions, syncs manifest hashes, and refreshes `grading/review.xlsx` while preserving any existing manual marks and reviewed flags.
 
 Supported interrupted runs can be resumed with `resume-grading --exam exam.yaml`,
 followed by `--confirm-cost` after review; in-flight requests may repeat and

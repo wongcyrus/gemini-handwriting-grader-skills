@@ -12,7 +12,8 @@ The entire grading pipeline is structured as a series of strictly decoupled, uni
 flowchart TD
     subgraph S1["Stage 1: Preflight & Preparation"]
         A1["exam.yaml + Roster + Scans PDF + Marking Scheme"] --> B1["preflight"]
-        B1 --> C1{"Attendance Configured?"}
+        B1 --> B2["check-scans (Consensus Orientation & Sequence Check)"]
+        B2 --> C1{"Attendance Configured?"}
         C1 -->|Yes| D1["prepare-attendance -> approve-attendance"]
         C1 -->|No| E1["All roster students present"]
     end
@@ -30,7 +31,8 @@ flowchart TD
 
     subgraph S3["Stage 3: Resumable Multimodal Grading"]
         H2 & L2 --> M3["grade / resume-grading (with --confirm-cost)"]
-        M3 --> N3["Phase A: Metadata OCR (ID, CLASS, NAME)"]
+        M3 --> M4["Check Scans + Rigid Page Alignment (alignment.py)"]
+        M4 --> N3["Phase A: Metadata OCR (ID, CLASS, NAME)"]
         N3 --> O3["Phase B: Question Grading (Handwriting, Diagrams, ERD)"]
         O3 --> P3["Phase C: Batch Consistency Moderation"]
         P3 --> Q3["results.json (Atomic Checkpoint)"]
@@ -91,13 +93,13 @@ The exam lifecycle moves through strictly defined states:
 
 ```
 [UNCONFIGURED] 
-      │ preflight
+      │ preflight -> check-scans (offline)
       ▼
 [PREFLIGHT_PASSED] 
       │ import-rubric / extract-rubric, approve-rubric
       ▼
 [RUBRIC_READY]
-      │ prepare-regions, suggest-regions (Gemini 4), review-regions
+      │ prepare-regions, suggest-regions (Gemini 4), review-regions / approve-regions
       ▼
 [REGIONS_APPROVED] 
       ▼
@@ -129,5 +131,7 @@ The exam lifecycle moves through strictly defined states:
 | **Transient Vertex AI 5xx/429/504 Errors on Finished Run** | `grading_failed=True` or moderation errors in `results.json`. | Agent alerts user with diagnostics; user decides whether to grade manually or run `retry-grading --exam exam.yaml --confirm-cost`. |
 | **Student Wrote Outside the Bounding Box** | Teacher detects cut-off handwriting in `review-grading`. | Click **Expand Box** or open **Full Page** modal in editor to inspect, and adjust mark inline. |
 | **Systemic Rubric or Crop Error on One Question** | Teacher realizes a question's criteria or crop was flawed across all scripts. | Follow [`regrading.md`](skills/handwriting-grading/references/regrading.md): create isolated child run (`regrade --run revision-1`). Never overwrites parent. |
+| **Upside-Down / Out-of-Order Scan** | `check-scans` or `grade` flags PDF page & script numbers via consensus correlation. | Halts before region setup or AI calls; user fixes the physical scan or PDF manually and re-runs `check-scans`. |
+| **Scanner Shift / Clipped ID or Question** | Scanner drift shifts page relative to template. | `grade` auto-aligns pages; for existing runs, run `retry-grading --align-images --re-ocr-id` (or `--question Q`), or adjust boxes + `approve-regions`. |
 | **Incomplete Human Review** | Unreviewed row or missing manual mark on flagged question. | `check-grading-review` reports exact script index and question; `approve-grading` halts. |
 | **Input File Modified Mid-Run** | SHA-256 mismatch against `manifest.json`. | Halts immediately. Run cannot be approved with stale or modified inputs. |

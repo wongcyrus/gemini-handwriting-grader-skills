@@ -124,11 +124,12 @@ When SDK-level retries are exhausted and items fail (`grading_failed=True` or mo
   2. Manually grade failed items directly in `review.xlsx` without additional API calls.
 
 ### Targeted `retry-grading` Command
-When the user approves retry:
+When the user approves retry or needs to recover from scanner shift:
 ```sh
-handwriting-grader retry-grading --exam exam.yaml [--confirm-cost]
+handwriting-grader retry-grading --exam exam.yaml [--align-images] [--re-ocr-id | --re-ocr-metadata] [--question Q] [--confirm-cost]
 ```
-1. **Isolated Execution**: Identifies only items with `grading_failed=True` or `raw_mark is None`.
-2. **Local Pre-Filter**: Runs `is_blank_cell` before any API call.
-3. **Question Re-moderation**: Re-moderates affected questions once all student marks are restored.
-4. **Preserved Manual Reviews**: Refreshes `review.xlsx` while merging and preserving any previously entered manual marks and reviewed flags.
+1. **Offline Page Alignment (`--align-images`)**: Aligns existing `grading/images/*.jpg` to `regions/images/` via 4-quadrant FFT phase correlation with outlier-quadrant rejection (0 AI cost; automatically applied on all new `grade` runs via `alignment.py`).
+2. **Isolated Retry & Targeted Re-runs**: Retries `grading_failed=True` / `raw_mark is None` items, or re-runs only metadata OCR (`--re-ocr-id`, `--re-ocr-metadata`) or a single question (`--question Q`).
+3. **Local Pre-Filter**: Runs `is_blank_cell` before any grading API call.
+4. **Question Re-moderation**: Re-moderates affected questions once all student marks are restored.
+5. **Preserved Manual Reviews**: Syncs `manifest.json` region/image hashes and refreshes `review.xlsx` while preserving any previously entered manual marks and reviewed flags.
