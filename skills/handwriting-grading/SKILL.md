@@ -136,6 +136,9 @@ execute a notebook as a workaround, or claim a human approval occurred.
       `annotations.json` and run `approve-regions --exam /path/to/exam.yaml --confirm-reviewed`.)
 8. For grading, reporting and AI analysis read `references/grading.md`.
    Obtain the specified human confirmations; never infer approval.
+   - **Grading Modes**: `grade` supports `--mode batch` (default, fast multimodal structured output pass per question with `models.batch_grading`) and `--mode item` (sequential student-by-student + cohort moderation). Both modes output identical `results.json` and `review.xlsx` schemas.
+   - Blank answer cells are automatically detected and scored 0 locally by Pillow before calling the AI, minimizing quota and cost.
+   - Student metadata (`ID`, `CLASS`, `NAME`) OCR automatically injects candidate rosters from `attendance` or `roster` to eliminate character confusion and ensure exact roster matching.
    
    **Failure Diagnostics, Quota Protection, and User-Decision Gating**:
    - The Python code uses built-in Google GenAI SDK retry primitives (`types.HttpRetryOptions` on `genai.Client`) with exponential backoff, jitter, and status code targeting (`[429, 500, 502, 503, 504]`). Never write ad-hoc Python retry loops or hack scripts.
@@ -150,7 +153,15 @@ execute a notebook as a workaround, or claim a human approval occurred.
         - **Option B (Manual Review)**: Proceed to `review-grading` and assign manual marks in `review.xlsx` for those failed items without further API calls.
         - **Option C (Wait / Investigate)**: Wait for GCP quota reset or investigate quota limits in the Google Cloud Console before proceeding.
    - Never proceed with `retry-grading` without the user's explicit decision and cost confirmation.
-   
+
+   **Semantic Answer Clustering (Optional, After OCR/Grading, Before Review)**:
+   - Pre-computing semantic answer clusters is optional:
+     `handwriting-grader cluster-answers --exam /path/to/exam.yaml [--threshold 0.82]`
+   - Uses Google's frontier `gemini-embedding-2` model to embed unique student answers, compute cosine similarities, and group conceptually equivalent handwritten answers together into `clusters.json` and `.embedding_cache.json`.
+   - **Cross-Question & Cross-Assignment Caching**: Embeddings are keyed per embedding model in a shared cache (`~/.cache/gemini-handwriting-grader/embeddings/<model>.json` or `caching.directory`). Any answer text embedded once is reused across all questions and across all assignments on the machine with zero GCP calls and zero cost.
+   - Enables instantaneous, intelligent answer grouping (📌) in `review-grading`.
+   - **Skipping Clustering**: If the user skips this step or prefers to work offline, `review-grading` automatically falls back to client-side Jaccard word-overlap similarity (`Word Overlap (Local)`) with zero API calls. The teacher can also switch grouping modes at any time using the `Grouping` selector in the review table header.
+
    After grading and reporting are complete, always inform the user that results
    and review history have been preserved, and ask if they would like to clean
    or archive intermediate output using:

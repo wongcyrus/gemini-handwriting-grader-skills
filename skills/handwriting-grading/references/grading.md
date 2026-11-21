@@ -25,13 +25,31 @@
    source. Run `approve-rubric --exam /path/to/exam.yaml --confirm-reviewed`
    only after explicit human approval. Complete region review separately.
 3. Run `grade --exam /path/to/exam.yaml --model-config /path/to/config.yaml
-   --project PROJECT_ID --location LOCATION` to preview. Explain the request
-   count and data sent; repeat with `--confirm-cost` only after approval.
+   --project PROJECT_ID --location LOCATION [--mode batch|item] [--concurrency 3]` to preview.
+   Explain the request count and data sent; repeat with `--confirm-cost` only after approval.
+
+   **Grading Modes**:
+   - `--mode batch` (default): Fast multimodal structured output grading per question.
+     Batches all student answer crops for a question into a single model pass (using `models.batch_grading`,
+     typically `gemini-4-argon`). Blank cells are filtered locally with Pillow and pre-scored as 0 (0 AI cost).
+     Multiple questions run concurrently (`--concurrency 3` by default). Greatly reduces API round-trips
+     (e.g. 45 calls vs 3,375 calls) and improves cross-cohort grading consistency.
+   - `--mode item`: Classical student-by-student grading (`models.grading`, e.g. `gemini-3.8-flash`) followed
+     by whole-question moderation (`models.moderation`, e.g. `gemini-4-argon`).
+   Both modes produce identical downstream schemas (`results.json`, `review.xlsx`, telemetry) and support
+   resuming and retrying.
+
    During grading, real-time step progress and token usage are monitored
    following ADK observability conventions.
    To inspect model usage, token count, and cost breakdown at any time, run:
    `.venv/bin/handwriting-grader cost-report --exam /path/to/exam.yaml`
    (generates `cost_report.xlsx` and `cost_summary.json` in the run directory).
+
+   **Candidate-Assisted Metadata OCR (Roster Matching)**:
+   When extracting student metadata (`ID`, `CLASS`, `NAME`), the grading engine automatically checks for an approved attendance roster or configured exam roster (`attendance` or `roster` in `exam.yaml`). If available, known valid candidate values are injected directly into Gemini's extraction prompt:
+   - Constrained candidate matching eliminates handwriting ambiguity (e.g. `0` vs `O`, `1` vs `I` vs `7`, `8` vs `B`) and guarantees exact roster conformity.
+   - Preserves safety guards: if an image is blank or contains text not matching any enrolled candidate, Gemini returns empty or the raw text as read without guessing or forcing false matches.
+   - If no roster or attendance is configured, the engine gracefully falls back to open unconstrained OCR.
 
    **Handling Errors & User Decision Gating**:
    Transient network or server errors are handled at the connection layer using built-in
@@ -51,6 +69,16 @@
      failed crops using exponential backoff, runs moderation for affected questions once
      all student marks are present, and refreshes `grading/review.xlsx` while preserving
      any existing manual reviews.
+3b. **Semantic Answer Clustering (Optional, After OCR/Grading, Before Review)**:
+    Optionally pre-compute semantic embedding clusters across all questions:
+    `.venv/bin/handwriting-grader cluster-answers --exam /path/to/exam.yaml [--threshold 0.82]`
+    - Generates 3072-dimensional vector embeddings for unique student answers using `gemini-embedding-2`.
+    - **How Cluster Count is Decided**: Uses greedy threshold clustering over pairwise cosine similarity rather than fixed $K$-means. The number of clusters is data-driven by how many conceptually distinct answers students wrote (e.g. 2–4 clusters for True/False; 15–20+ for complex reasoning). Tune with `--threshold`: higher (e.g. `0.90`) yields more/tighter clusters; lower (e.g. `0.75`) yields fewer/broader clusters.
+    - **Identity Exclusion**: Student metadata (`ID`, `Class`, `Name`) is strictly excluded from clustering, and the Grouping selector is hidden in Identity review to preserve student privacy and blind grading.
+    - **Cross-Question & Cross-Assignment Caching**: Embeddings are cached per embedding model in `~/.cache/gemini-handwriting-grader/embeddings/<model>.json` (or `caching.directory`). Any answer text embedded once is reused indefinitely across all questions and across all assignments on the machine with zero GCP calls and zero cost.
+    - Saves clusters to `clusters.json` and syncs embeddings to assignment-local `.embedding_cache.json`.
+    - Subsequent runs and review editor sessions load directly from cache with zero GCP calls and zero cost.
+    - **Fallback**: If skipped or if the user selects "Word Overlap (Local)" in the review UI, the score editor automatically groups similar answers using client-side word-overlap similarity (Jaccard) without making any AI or network calls. The dropdown automatically disables "AI Embedding" if clusters were not pre-computed.
 4. Ask the teacher to run `review-grading --exam /path/to/exam.yaml` and open
    the full printed local URL. The score editor presents a one-page blind
    marksheet per question (hiding student IDs during question review), groups
@@ -154,7 +182,7 @@ When API operations exhaust their built-in retry attempts:
   - `handwriting-grader retry-grading --exam /path/to/exam.yaml`: Retries failed marks and completes unmoderated questions.
   - `handwriting-grader retry-grading --exam /path/to/exam.yaml --align-images`: Aligns all scanned page images to the approved reference layout (offline, 0 AI cost). Can be combined with `--re-ocr-id`, `--re-ocr-metadata`, or `--question`.
   - `handwriting-grader retry-grading --exam /path/to/exam.yaml --re-ocr-id`: Re-runs student ID OCR for all scripts using the approved bounding box.
-  - `handwriting-grader retry-grading --exam /path/to/exam.yaml --re-ocr-metadata`: Re-runs student ID, class, and name OCR for all scripts using approved boxes.
+  - `handwriting-grader retry-grading --exam /path/to/exam.yaml --re-ocr-metadata`: Re-runs student ID, class, and name OCR across scripts in fast multimodal batch chunks (chunk size 35) cross-referenced against the enrolled roster, reducing hundreds of sequential calls to 1–3 batch requests and achieving 100% roster triangulation accuracy in ~40s.
   - `handwriting-grader retry-grading --exam /path/to/exam.yaml --question <Q_NUM>`: Re-grades and re-moderates a specific question using its approved box.
   Always preview the action plan without `--confirm-cost`, obtain explicit user cost confirmation, and rerun with `--confirm-cost`. The command updates `results.json`, syncs manifest hashes to current region approvals, and updates `review.xlsx` while preserving existing manual reviews.
 

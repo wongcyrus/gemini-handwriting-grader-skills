@@ -34,12 +34,16 @@ Thresholds are marks, not percentages; each must be within its question's
 maximum. Only listed questions receive pass counts and rates. Both fields
 must be supplied together, and canonical question labels must be unique.
 
-Use the original project's `config.yaml` for Vertex mode and model selection:
-`models.annotation` for suggestions, `models.marking_scheme` for DOCX
-extraction and search review, `models.ocr`, `models.grading`,
-`models.moderation` for grading, `models.analytics` for AI analysis and
-`models.analytics_image` for optional infographics. `vertex_ai.use_vertexai`
-must be true.
+Use the project's `config.yaml` for Vertex mode and model selection:
+- `models.annotation`: Automated bounding box proposals on layout template pages (Reasoning tier).
+- `models.marking_scheme`: DOCX rubric extraction and search verification (Flash tier).
+- `models.one_pass_metadata_ocr` (or `batch_metadata_ocr`): High-throughput batch student metadata OCR (ID, Class, Name; Flash tier).
+- `models.one_pass_grading` (or `batch_grading`): Cohort-wide multimodal structured question batch grading (Reasoning tier).
+- `models.ocr`, `models.grading`, `models.moderation`: Legacy item-by-item sequential fallbacks.
+- `models.analytics`: Pedagogical feedback and misconception diagnosis (Reasoning tier).
+- `models.analytics_image`: Infographic chart and visual summary generation (Flash tier).
+- `models.embedding`: Semantic clustering of student answers before review (default: `gemini-embedding-2`).
+`vertex_ai.use_vertexai` must be true.
 
 ### Dynamic online model discovery & cost-tiered configuration policy
 Never hardcode static model versions or recommend non-existent or deprecated models (e.g. Gemini 1.x, 2.x, or dedicated image generators for multimodal text/visual tasks). Google continuously updates and retires models online. Never use expensive frontier reasoning models (Gemini 4) across all stages, as high-volume tasks (OCR, grading, template annotation) become slow and cost-prohibitive.
@@ -49,12 +53,12 @@ Always dynamically discover, profile, and allocate models online by capability a
 handwriting-grader discover-models --project <PROJECT_ID> [--location <LOCATION>] [--write-config /path/to/config.yaml]
 ```
 This queries Vertex AI online, inspects live model properties and quota, benchmarks pricing rates, and assigns:
-- **Fast / High-Volume Tier** (e.g. `gemini-3.8-flash` at ~$0.075/1M input): for `marking_scheme`, `ocr`, `grading`, and `analytics_image` (high-volume per-script stages and visual summaries).
-- **Deep Reasoning Tier** (e.g. `gemini-4-argon` at ~$1.250/1M input, ~16.7x cost): for low-volume, high-precision spatial reasoning (`annotation` on template pages) and cohort-wide reasoning (`moderation` and `analytics`).
+- **Fast / High-Volume Tier** (e.g. `gemini-3.8-flash` at ~$0.075/1M input): for `marking_scheme`, `ocr`, `grading` (item mode), and `analytics_image` (high-volume per-script stages and visual summaries).
+- **Deep Reasoning Tier** (e.g. `gemini-4-argon` at ~$1.250/1M input, ~16.7x cost): for low-volume, high-precision spatial reasoning (`annotation` on template pages), cohort-wide question grading (`batch_grading` in batch mode), and cohort-wide reasoning (`moderation` and `analytics`).
 
 The skill runs this command during initial setup and configures `config.yaml` automatically with verified online models.
 
-Enabled caches apply to `ocr`, `grading`, `moderation`,
+Enabled caches apply to `ocr`, `grading`, `batch_grading`, `moderation`,
 `annotation`, `marking_scheme` extraction and `analytics`; they
 default to one run. Cross-run reuse requires explicit `caching.scope: shared`
 and `caching.directory`, relative to the model configuration. The directory
