@@ -41,7 +41,6 @@ Use the project's `config.yaml` for Vertex mode and model selection:
 - `models.one_pass_grading` (or `batch_grading`): Cohort-wide multimodal structured question batch grading (Reasoning tier).
 - `models.ocr`, `models.grading`, `models.moderation`: Legacy item-by-item sequential fallbacks.
 - `models.analytics`: Pedagogical feedback and misconception diagnosis (Reasoning tier).
-- `models.analytics_image`: Infographic chart and visual summary generation (Flash tier).
 - `models.embedding`: Semantic clustering of student answers before review (default: `gemini-embedding-2`).
 `vertex_ai.use_vertexai` must be true.
 
@@ -53,7 +52,7 @@ Always dynamically discover, profile, and allocate models online by capability a
 handwriting-grader discover-models --project <PROJECT_ID> [--location <LOCATION>] [--write-config /path/to/config.yaml]
 ```
 This queries Vertex AI online, inspects live model properties and quota, benchmarks pricing rates, and assigns:
-- **Fast / High-Volume Tier** (e.g. `gemini-3.8-flash` at ~$0.075/1M input): for `marking_scheme`, `ocr`, `grading` (item mode), and `analytics_image` (high-volume per-script stages and visual summaries).
+- **Fast / High-Volume Tier** (e.g. `gemini-3.8-flash` at ~$0.075/1M input): for `marking_scheme`, `ocr`, and `grading` (item mode).
 - **Deep Reasoning Tier** (e.g. `gemini-4-argon` at ~$1.250/1M input, ~16.7x cost): for low-volume, high-precision spatial reasoning (`annotation` on template pages), cohort-wide question grading (`batch_grading` in batch mode), and cohort-wide reasoning (`moderation` and `analytics`).
 
 The skill runs this command during initial setup and configures `config.yaml` automatically with verified online models.
@@ -65,7 +64,7 @@ and `caching.directory`, relative to the model configuration. The directory
 must be private and user-owned; it contains sensitive answers and has no
 automatic retention policy. Model aliases can change without cache-key
 changes, so do not reuse cached results when freshness is required. Grounded
-verification and infographics are not cached; logging settings are not applied.
+verification is not cached; logging settings are not applied.
 Cache hits never substitute for cost consent or review. Credentials must remain
 outside configuration and Git.
 Preflight does not contact Vertex AI or confirm model access. Changing any

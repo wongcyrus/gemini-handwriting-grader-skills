@@ -14,7 +14,7 @@ The grading pipeline operates on student educational records (scanned handwritin
    if output and any(p == output or output in p.parents for key, p in paths.items()):
        errors.append("output_dir contains an input file; choose a separate output directory")
    ```
-3. **Explicit Cost & Privacy Gates**: Any operation that transmits student handwriting or answers to Google Vertex AI (`suggest-regions`, `grade`, `regrade`, `ai-analysis`, `infographics`, `verify-rubric`) requires explicit human consent flags (`--confirm-cost`) and warns of financial and data transmission implications.
+3. **Explicit Cost & Privacy Gates**: Any operation that transmits student handwriting or answers to Google Vertex AI (`suggest-regions`, `grade`, `regrade`, `ai-analysis`, `verify-rubric`) requires explicit human consent flags (`--confirm-cost`) and warns of financial and data transmission implications.
 4. **Email Dispatch Double-Gate**: Email preview generation is read-only. Transmitting emails requires two distinct human gates:
    - `approve-email --confirm-reviewed` (validates exact recipient list and attachments).
    - `send-email --confirm-send` (authorizes actual SMTP dispatch).

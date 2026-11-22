@@ -32,7 +32,6 @@ models:
 
   # --- Reporting & Insights ---
   analytics: gemini-4-argon               # AI feedback & misconception analysis (Reasoning tier)
-  analytics_image: gemini-3.8-flash       # Infographic generation (Flash tier)
 
 caching:
   enabled: true
@@ -64,7 +63,7 @@ python -m handwriting_grader.cli discover-models --project <PROJECT_ID> [--locat
 1. **Live Vertex AI Query**: Calls `client.models.list()` live against your Google Cloud project and location to discover currently deployed publisher models.
 2. **Quota & Connectivity Ping**: Conducts a zero-cost live ping to verify that the project has active quota and valid regional routing (e.g. `global` vs regional endpoints).
 3. **Capability & Cost Tier Allocation**:
-   - **Flash Tier** (e.g. `gemini-3.8-flash` @ ~$0.075/1M input): Assigned to high-volume batch tasks (`ocr`, `grading`, `marking_scheme`, `analytics_image`).
+   - **Flash Tier** (e.g. `gemini-3.8-flash` @ ~$0.075/1M input): Assigned to high-volume batch tasks (`ocr`, `grading`, `marking_scheme`).
    - **Frontier Reasoning Tier** (e.g. `gemini-4-argon` @ ~$1.250/1M input): Assigned to low-volume spatial precision (`annotation`) and complex cohort synthesis tasks (`moderation`, `analytics`).
 4. **Transparent Cost Table**: Outputs an ASCII cost and throughput breakdown before writing the configuration.
 

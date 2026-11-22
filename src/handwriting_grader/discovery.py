@@ -57,11 +57,6 @@ STEP_REQUIREMENTS: Dict[str, Dict[str, str]] = {
         "description": "Cohort-wide misconception diagnosis and pedagogical feedback",
         "rationale": "Complex synthesis of student misconceptions and recommendations; benefits from deep reasoning.",
     },
-    "analytics_image": {
-        "tier": "flash",
-        "description": "Infographic text and visual summary generation",
-        "rationale": "Summary visualization; Flash generates multimodal infographic prompts efficiently.",
-    },
 }
 
 

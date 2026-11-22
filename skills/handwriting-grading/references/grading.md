@@ -147,13 +147,6 @@
    `approve-analysis --exam /path/to/exam.yaml --confirm-reviewed`.
    `advanced-report --exam /path/to/exam.yaml` writes a teacher DOCX and
    class PPTX with a question-score chart. Review both before sharing.
-8. Optional `infographics --exam /path/to/exam.yaml --model-config
-   /path/to/config.yaml --project PROJECT_ID --location LOCATION` previews
-   use of `models.analytics_image` (`gemini-3.8-flash` for high-throughput visual asset generation). Obtain separate approval for transmitting
-   reviewed analysis and generation cost before adding `--confirm-cost`.
-   Review images and use `advanced-report --include-infographics
-   --confirm-images-reviewed` to include them only after explicit approval;
-   the image/model and analysis approvals must remain current.
 
 For an approved parent needing one-question regrading, read
 `regrading.md`. Child-specific review, reports and later stages use `--run`
@@ -196,7 +189,7 @@ Optional OCR/grading/moderation, annotation, rubric-extraction and analytics
 caches contain sensitive data.
 Shared caching needs an explicitly configured private, user-owned directory;
 it has no automatic cleanup and can become stale when model aliases change.
-Grounded verification and infographics do not use these caches. Preserve
+Grounded verification does not use these caches. Preserve
 partial runs and never delete them automatically.
 Calls already made may be billed even if grading fails. These approvals are
 local records, not tamper-proof audit logs. Email requires separate review.

@@ -40,7 +40,7 @@ All `--exam /path/to/exam.yaml` and `--model-config /path/to/config.yaml` paths 
 Use the Python tools in this repository, not notebooks. Answer sheets, preflight, rubric
 import/extraction, explicit reviewed attendance, region review, Vertex grading, human score review and
 basic reports, offline statistics, optional search-grounded verification,
-reviewed AI analysis, optional infographics, resumable checkpoints, opt-in
+reviewed AI analysis, resumable checkpoints, opt-in
 model caches, targeted question regrading and gated email are implemented. Report formatting and cache
 coverage differ from the notebooks.
 Stop and tell the user when a requested stage is unavailable; never simulate success,

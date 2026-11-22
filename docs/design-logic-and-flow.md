@@ -76,7 +76,7 @@ $$\text{hash}(\text{current\_input}) \ne \text{manifest}[\text{"input\_sha256"}]
 
 ### Pillar 2: Strict Human-in-the-Loop Gating
 AI models propose; authorized human educators verify and approve.
-1. **Financial Gating (`--confirm-cost`)**: Any stage communicating with Google Cloud Vertex AI (`suggest-regions`, `grade`, `regrade`, `ai-analysis`, `infographics`, `verify-rubric`) prints the exact request count and target model, and refuses execution unless `--confirm-cost` is explicitly passed.
+1. **Financial Gating (`--confirm-cost`)**: Any stage communicating with Google Cloud Vertex AI (`suggest-regions`, `grade`, `regrade`, `ai-analysis`, `verify-rubric`) prints the exact request count and target model, and refuses execution unless `--confirm-cost` is explicitly passed.
 2. **Review Gating (`--confirm-reviewed`)**: Approvals refuse to register unless every single student identifier and question mark has `reviewed = "yes"` in the review workbook.
 3. **Dispatch Gating (`--confirm-send`)**: Email delivery requires an approved preview followed by a separate `--confirm-send` flag immediately before opening SMTP connections.
 

@@ -276,16 +276,8 @@ def main(argv=None):
     analysis_approve = commands.add_parser("approve-analysis", help="Approve human-reviewed AI feedback")
     analysis_approve.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     analysis_approve.add_argument("--confirm-reviewed", action="store_true", help="Confirm all feedback reviewed")
-    infographics = commands.add_parser("infographics", help="Generate optional Vertex AI images from reviewed analysis")
-    infographics.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
-    infographics.add_argument("--model-config", required=True, type=Path, help="Path to existing AI config.yaml")
-    infographics.add_argument("--project", required=True, help="Explicit Google Cloud project")
-    infographics.add_argument("--location", required=True, help="Explicit Vertex AI location")
-    infographics.add_argument("--confirm-cost", action="store_true", help="Confirm sending reviewed analysis")
     advanced_report = commands.add_parser("advanced-report", help="Generate reviewed Word and PowerPoint reports")
     advanced_report.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
-    advanced_report.add_argument("--include-infographics", action="store_true", help="Include current AI images")
-    advanced_report.add_argument("--confirm-images-reviewed", action="store_true", help="Confirm infographic review")
     cost_report = commands.add_parser("cost-report", help="Generate or display token, model and cost breakdown")
     cost_report.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     clean = commands.add_parser("clean", help="Safely archive (.zip) or purge output runs after human confirmation")
@@ -308,7 +300,7 @@ def main(argv=None):
     discover_models.add_argument("--location", default="global", help="Vertex AI location (default: global)")
     discover_models.add_argument("--write-config", type=Path, help="Path to write/update model configuration YAML")
     for selected in (resume, grade_review, grade_check, grade_approve, report, analytics, ai_analysis, analysis_approve,
-                     infographics, advanced_report, cost_report, clean, email_preview, email_approve, email_send):
+                     advanced_report, cost_report, clean, email_preview, email_approve, email_send):
         selected.add_argument("--run", help="Child run ID (default: original run)")
     args = parser.parse_args(argv)
     if args.command == "discover-models":
@@ -888,49 +880,11 @@ def main(argv=None):
             return 1
         print("AI analysis approved; later changes invalidate the approval.")
         return 0
-    if args.command == "infographics":
-        from .advanced import create_infographics, read_approved_analysis
-        from .suggestions import load_model_settings
-
-        if (not args.project.strip() or not args.location.strip()
-                or any(char.isspace() for char in args.project)
-                or any(char.isspace() for char in args.location)):
-            print("Vertex project and location must be provided", file=sys.stderr)
-            return 1
-        try:
-            root, validated, _, _, _, _ = read_approved_analysis(config, path.parent, path, run_id=args.run)
-            model = load_model_settings(args.model_config, "analytics_image")
-            if (root / "infographics").exists():
-                raise ValueError("Infographics already exist; do not overwrite")
-        except (OSError, ValueError, KeyError, yaml.YAMLError) as exc:
-            print(f"Cannot prepare infographics: {exc}", file=sys.stderr)
-            return 1
-        print(f"Vertex target: project={args.project}, location={args.location}, model={model}. "
-              f"Up to {len(validated[3]) + 1} image requests send reviewed analysis and may incur charges.")
-        if not args.confirm_cost:
-            print("No request sent. Obtain user approval and rerun with --confirm-cost.", file=sys.stderr)
-            return 1
-        tracker = TelemetryTracker(log_dir=root / "telemetry")
-        set_active_tracker(tracker)
-        try:
-            output = create_infographics(config, path.parent, path, args.model_config, args.project, args.location,
-                                         run_id=args.run)
-            tracker.write_cost_report(root)
-        except Exception as exc:
-            tracker.write_cost_report(root)
-            print(f"Infographic generation failed ({type(exc).__name__}); requests may have incurred charges.",
-                  file=sys.stderr)
-            return 1
-        finally:
-            set_active_tracker(None)
-        print(f"Infographics saved to {output}. Review them before sharing.")
-        return 0
     if args.command == "advanced-report":
         from .advanced import create_advanced_report
 
         try:
-            output = create_advanced_report(config, path.parent, path, include_infographics=args.include_infographics,
-                                            confirm_images_reviewed=args.confirm_images_reviewed, run_id=args.run)
+            output = create_advanced_report(config, path.parent, path, run_id=args.run)
         except (OSError, ValueError, KeyError) as exc:
             print(f"Advanced reporting failed: {exc}", file=sys.stderr)
             return 1

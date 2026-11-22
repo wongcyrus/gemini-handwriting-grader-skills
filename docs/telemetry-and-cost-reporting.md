@@ -6,7 +6,7 @@ This document describes the observability architecture, real-time step progress 
 
 ## 1. Observability Goals
 
-1. **Sub-Step Visibility**: Long-running batch operations (identifier OCR, question grading, moderation, AI feedback, infographic generation) must display immediate visual progress without waiting for the batch to finish.
+1. **Sub-Step Visibility**: Long-running batch operations (identifier OCR, question grading, moderation, AI feedback) must display immediate visual progress without waiting for the batch to finish.
 2. **Deterministic Token Accounting**: Capture input, candidate, cached, and thought tokens directly from Gemini's `usage_metadata`.
 3. **Financial Transparency**: Provide auditable cost tracking both during execution and via offline reports.
 4. **Resilience**: Telemetry logging must be append-only (`.jsonl`) so that interrupted runs retain all billable metrics.
@@ -43,7 +43,7 @@ Every model invocation generates a typed `CallTrace` record:
 @dataclass
 class CallTrace:
     timestamp: str          # ISO 8601 UTC timestamp
-    phase: str              # 'ocr', 'grading', 'moderation', 'ai_analysis', 'infographics'
+    phase: str              # 'ocr', 'grading', 'moderation', 'ai_analysis'
     step_label: str         # Human-readable step label (e.g. 'Grade Q1 Script #2')
     model: str              # Vertex AI model name
     prompt_tokens: int      # Input tokens
@@ -65,7 +65,7 @@ Standard rates configured in [`src/handwriting_grader/telemetry.py`](../src/hand
 
 | Model Family | Input / 1M Tokens | Output / 1M Tokens | Cached / 1M Tokens | Role |
 | :--- | :--- | :--- | :--- | :--- |
-| `gemini-3.8-flash` | $0.075 | $0.300 | $0.01875 | High-Throughput (OCR, Grading, Marking Scheme, Annotations, Infographics) |
+| `gemini-3.8-flash` | $0.075 | $0.300 | $0.01875 | High-Throughput (OCR, Grading, Marking Scheme, Annotations) |
 | `gemini-4-argon` | $1.250 | $5.000 | $0.31250 | Frontier Reasoning (Moderation, Misconception Analytics) |
 
 Calculation Formula:
@@ -94,7 +94,7 @@ Components:
 
 ## 6. Audit Reports: `cost_report.xlsx` and `cost_summary.json`
 
-Generated at the end of `grade`, `ai-analysis`, `infographics`, or anytime via:
+Generated at the end of `grade`, `ai-analysis`, or anytime via:
 ```bash
 handwriting-grader cost-report --exam /path/to/exam.yaml [--run CHILD_RUN]
 ```
@@ -112,12 +112,11 @@ Structured JSON export designed for programmatic ingestion by dashboards or exte
   "total_candidate_tokens": 4850,
   "total_cached_tokens": 0,
   "total_images": 6,
-  "total_cost_usd": 0.18342,
+  "total_cost_usd": 0.00842,
   "by_phase": {
     "ocr": { "calls": 12, "total_tokens": 3360, "cost_usd": 0.00035 },
     "grading": { "calls": 8, "total_tokens": 11200, "cost_usd": 0.00192 },
-    "moderation": { "calls": 2, "total_tokens": 4900, "cost_usd": 0.00615 },
-    "infographics": { "calls": 6, "total_tokens": 0, "cost_usd": 0.18000 }
+    "moderation": { "calls": 2, "total_tokens": 4900, "cost_usd": 0.00615 }
   }
 }
 ```

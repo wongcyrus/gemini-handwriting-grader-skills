@@ -257,7 +257,7 @@ in the model config; relative directories resolve from that config. Its
 private cache directory must be owned by the user and inaccessible to group
 or others. It contains sensitive answers and is never automatically deleted.
 Model aliases can change; avoid shared cache reuse when freshness is required.
-Grounded search verification and infographics are not cached; logging settings
+Grounded search verification is not cached; logging settings
 are not implemented. Cache hits never replace cost consent or human review.
 An isolated regrade can explicitly reuse its approved parent's run cache with
 `--reuse-parent-cache`; this may reuse responses instead of regenerating them.
@@ -340,12 +340,7 @@ feedback, and set each `reviewed` cell to `yes`. Then:
 ```
 
 The reports include a teacher Word report and a PowerPoint with a question
-mean chart. Optionally, after analysis approval, preview `infographics --exam
-exam.yaml --model-config /path/to/config.yaml --project PROJECT_ID --location
-LOCATION`; it uses `models.analytics_image` and sends reviewed analysis.
-After separate cost/data consent, rerun with `--confirm-cost`, review the
-images, then add `--include-infographics --confirm-images-reviewed` to `advanced-report`. Reports
-contain sensitive information and must be reviewed before sharing. Later edits
+mean chart. Reports contain sensitive information and must be reviewed before sharing. Later edits
 invalidate approval; existing reports do not automatically disappear.
 
 ## Optional email distribution

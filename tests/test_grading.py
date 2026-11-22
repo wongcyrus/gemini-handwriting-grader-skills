@@ -1123,60 +1123,10 @@ class GradingTests(unittest.TestCase):
         mail = json.loads((root.parent / "email" / "preview.json").read_text())
         self.assertIn("Reviewed feedback.", mail["messages"][0]["body"])
         self.assertEqual(main(["approve-email", "--exam", str(self.exam), "--confirm-reviewed"]), 0)
-        settings["models"]["analytics_image"] = "image-model"
-        image_models = self.root / "image-models.yaml"
-        image_models.write_text(yaml.safe_dump(settings))
-        image_args = ["infographics", "--exam", str(self.exam), "--model-config", str(image_models),
-                      "--project", "test-project", "--location", "global"]
-        with patch("handwriting_grader.advanced.create_infographics") as create:
-            self.assertEqual(main(image_args), 1)
-            create.assert_not_called()
-        from google.genai import Client
-        from google.oauth2.credentials import Credentials
-        calls = []
-
-        class FakeImageVertex(BaseHTTPRequestHandler):
-            def log_message(self, format, *args):
-                pass
-
-            def do_POST(self):
-                calls.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
-                image = Image.new("RGB", (100, 60), "white")
-                buffer = io.BytesIO()
-                image.save(buffer, "PNG")
-                image.close()
-                text = base64.b64encode(buffer.getvalue()).decode()
-                body = json.dumps({"candidates": [{
-                    "content": {"role": "model", "parts": [{"inlineData": {"mimeType": "image/png", "data": text}}]},
-                    "finishReason": "STOP",
-                }]}).encode()
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
-
-        service = ThreadingHTTPServer(("127.0.0.1", 0), FakeImageVertex)
-        thread = threading.Thread(target=service.serve_forever, daemon=True)
-        thread.start()
-        try:
-            def local_client(**kwargs):
-                kwargs["http_options"].base_url = f"http://127.0.0.1:{service.server_port}"
-                return Client(**kwargs, credentials=Credentials(token="local-test-token"))
-            with patch("handwriting_grader.advanced.genai.Client", side_effect=local_client):
-                self.assertEqual(main(image_args + ["--confirm-cost"]), 0)
-            self.assertEqual(len(calls), 2)
-            self.assertEqual(calls[0]["generationConfig"]["responseModalities"], ["IMAGE"])
-        finally:
-            service.shutdown()
-            thread.join(timeout=5)
-            service.server_close()
-        self.assertEqual(main(["advanced-report", "--exam", str(self.exam), "--include-infographics"]), 1)
-        self.assertEqual(main(["advanced-report", "--exam", str(self.exam), "--include-infographics",
-                               "--confirm-images-reviewed"]), 0)
+        self.assertEqual(main(["advanced-report", "--exam", str(self.exam)]), 0)
         report = output / "reports"
         self.assertTrue(any("Reviewed feedback." in p.text for p in Document(report / "teacher-report.docx").paragraphs))
-        self.assertEqual(len(Presentation(report / "class-presentation.pptx").slides), 5)
+        self.assertEqual(len(Presentation(report / "class-presentation.pptx").slides), 3)
         self.assertTrue(json.loads((report / "manifest.json").read_text())["completed"])
         book = load_workbook(output / "review.xlsx")
         book["Class"]["A2"] = "Changed"

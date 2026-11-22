@@ -51,11 +51,9 @@ Generates pedagogical feedback using Gemini Pro (`advanced.py`):
 
 ---
 
-## 4. Infographics & Advanced Office Reports (`infographics`, `advanced-report`)
+## 4. Advanced Office Reports (`advanced-report`)
 
-1. **Infographics**:
-   - Uses `gemini-3.8-flash` to render visual summary infographics for class overview and individual question takeaways.
-   - Built-in rate-limit backoff and retry handling (`advanced.py`).
-2. **Advanced Reports**:
-   - Generates executive Word document (`teacher-report.docx`) with embedded tables and analysis.
-   - Generates PowerPoint presentation (`class-presentation.pptx`) with native editable bar charts and slide-by-slide question breakdowns.
+1. **Teacher Report (`teacher-report.docx`)**:
+   - Generates executive Word document with class overview, question breakdown, and individual student feedback.
+2. **Class Presentation (`class-presentation.pptx`)**:
+   - Generates PowerPoint presentation with native editable bar charts and slide-by-slide question breakdowns.

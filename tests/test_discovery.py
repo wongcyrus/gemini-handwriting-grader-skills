@@ -35,7 +35,6 @@ class TestTieredDiscovery(unittest.TestCase):
         self.assertEqual(step_models["grading"], "gemini-3.8-flash")
         self.assertEqual(step_models["moderation"], "gemini-4-argon")
         self.assertEqual(step_models["analytics"], "gemini-4-argon")
-        self.assertEqual(step_models["analytics_image"], "gemini-3.8-flash")
 
     def test_write_model_config(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -47,7 +46,6 @@ class TestTieredDiscovery(unittest.TestCase):
                 "grading": "gemini-3.8-flash",
                 "moderation": "gemini-4-argon",
                 "analytics": "gemini-4-argon",
-                "analytics_image": "gemini-3.8-flash",
             }
             write_model_config(target, "my-proj", "global", step_models)
             self.assertTrue(target.is_file())

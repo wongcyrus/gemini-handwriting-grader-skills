@@ -135,7 +135,7 @@ the user explicitly approves all reviews, use the browser approval button or:
 .venv/bin/handwriting-grader report --exam /private/exam.yaml --run revision-1
 ```
 
-Child reports, analytics, AI analysis, infographics and email are isolated
+Child reports, analytics, AI analysis and email are isolated
 under the child directory. Pass `--run revision-1` to each downstream
 command; without it, the command selects the original run. Each stage still
 requires its own review, consent and output checks. A pass policy configured

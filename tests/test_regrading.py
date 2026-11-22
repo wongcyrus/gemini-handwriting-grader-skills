@@ -599,25 +599,7 @@ class RegradingTests(unittest.TestCase):
         book.close()
         self.assertEqual(main(["approve-analysis", "--exam", str(self.exam), "--run", "child",
                                "--confirm-reviewed"]), 0)
-        image_config = self.root / "image-model.yaml"
-        image_config.write_text(yaml.safe_dump({"vertex_ai": {"use_vertexai": True},
-                                               "models": {"analytics_image": "fake-image"}}))
-        image_args = ["infographics", "--exam", str(self.exam), "--run", "child",
-                      "--model-config", str(image_config), "--project", "project", "--location", "global"]
-        image = Image.new("RGB", (10, 10), "white")
-        buffer = BytesIO()
-        image.save(buffer, "PNG")
-        image.close()
-        part = SimpleNamespace(inline_data=SimpleNamespace(data=buffer.getvalue()))
-        response = SimpleNamespace(candidates=[SimpleNamespace(content=SimpleNamespace(parts=[part]))])
-        with patch("handwriting_grader.advanced.genai.Client") as client:
-            client.return_value.__enter__.return_value.models.generate_content.return_value = response
-            self.assertEqual(main(image_args), 1)
-            client.assert_not_called()
-            self.assertEqual(main(image_args + ["--confirm-cost"]), 0)
-            self.assertEqual(client.return_value.__enter__.return_value.models.generate_content.call_count, 3)
-        self.assertEqual(main(["advanced-report", "--exam", str(self.exam), "--run", "child",
-                               "--include-infographics", "--confirm-images-reviewed"]), 0)
+        self.assertEqual(main(["advanced-report", "--exam", str(self.exam), "--run", "child"]), 0)
         self.assertTrue((analysis / "reports" / "teacher-report.docx").exists())
         self.assertFalse((self.root / "output" / "ai-analysis").exists())
 

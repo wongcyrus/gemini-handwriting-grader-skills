@@ -79,7 +79,7 @@ cannot safely be implemented by merely copying files, changing `output_dir`
 and bypassing these checks.
 
 Introduce an explicit run context and run selector across grading review,
-reporting, analytics, AI analysis, infographic and email commands. The
+reporting, analytics, AI analysis and email commands. The
 existing root-level run remains the default for backward compatibility.
 Each new child run has a unique, privately created directory and a manifest
 identifying its parent, selected question, immutable input hashes, model

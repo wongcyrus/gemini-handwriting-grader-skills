@@ -27,7 +27,7 @@ For testing the skill and tools safely, see the [testing guide](testing-skills.m
 | Adjust similarity controls to recalculate marks across a question. | Preview per-answer or bulk suggestions with an explicit threshold and increment. | Suggestions ignore moderation. Bulk selection requires confirmation and saves unreviewed manual drafts; no mark is automatically approved. |
 | Run Step 5 checks and optionally cleanup/reset history. | Optional reviewed attendance and read-only `check-grading-review`, then `approve-grading`; edits and approvals remain separate. | Absences are explicit; failed/flagged grades and changed answers require manual marks. Automatic cleanup/reset is intentionally absent. |
 | Run Step 6.1 to create marked PDFs, workbooks, samples and backups. | `report` after score approval. | Outputs and formatting differ; no automatic archive or history cleanup. Pass-only samples require an explicit policy. |
-| Run Step 6.2 to create AI analysis, charts, Word and PowerPoint. | `analytics` for offline statistics; optional `ai-analysis`, `approve-analysis`, `infographics` and `advanced-report`. | AI feedback and images have separate review/consent gates. Workbook sheets, charts, document layout and slide notes are not exact replicas. |
+| Run Step 6.2 to create AI analysis, charts, Word and PowerPoint. | `analytics` for offline statistics; optional `ai-analysis`, `approve-analysis` and `advanced-report`. | AI feedback has separate review/consent gates. Workbook sheets, charts, document layout and slide notes are not exact replicas. |
 | Configure SMTP and call the Step 7 notebook. | Provide a private settings YAML and present-student `ID,EMAIL` CSV; `preview-email`, `approve-email`, then `send-email`. | Review exact messages and attachments; sending requires separate confirmation. An ambiguous delivery is not automatically retried. |
 | Reuse notebook ADK cache and logging settings. | Explicit per-agent Python caches, disabled by default. | Existing notebook cache format is not imported; not all original cache and logging options are implemented. |
 
@@ -322,18 +322,6 @@ then explicitly approve it and produce the teacher DOCX and class PPTX:
 .venv/bin/handwriting-grader advanced-report --exam "$EXAM"
 ```
 
-Optional `infographics` require another paid-call approval and image review:
-
-```sh
-.venv/bin/handwriting-grader infographics --exam "$EXAM" \
-  --model-config "$MODELS" --project PROJECT_ID --location LOCATION
-```
-
-Only after consent, repeat with `--confirm-cost`. If the images are reviewed
-and explicitly approved, include them in an advanced report with
-`advanced-report --exam "$EXAM" --include-infographics
---confirm-images-reviewed`. Choose this form **instead of** the previous
-`advanced-report` command: an existing report directory is not overwritten.
 These reports differ from the notebook's layouts and charts.
 
 ### E. Optional email
@@ -410,7 +398,7 @@ student or assessment data:
 | `grading/` | All page images, manifest, raw results, review workbook, approval and browser-review history; optional run cache. |
 | `reports/` | Reviewed score workbooks, numbered scored PDFs, combined/sampled PDFs and manifest. |
 | `analytics/` | Offline statistics workbook, question box-plot PNGs and manifest. |
-| `ai-analysis/` | Review workbook and approval; optional infographic and advanced report directories. |
+| `ai-analysis/` | Review workbook and approval; advanced report directories. |
 | `email/` | Exact-message previews, approval and delivery journal. |
 | `model-cache/` | Optional per-run rubric extraction cache; other stage caches may be inside their respective output directories. |
 
@@ -424,7 +412,7 @@ private to a run by default; shared caches need explicit private configuration.
 For a regrade, `--reuse-parent-cache` explicitly selects the approved parent's
 existing private cache; matching responses may be reused rather than rerun.
 See the [regrading procedure](../skills/handwriting-grading/references/regrading.md).
-Grounded search and infographics are not cached. A model alias can change
+Grounded search is not cached. A model alias can change
 without changing a cache key; do not use cached output when freshness matters.
 
 ## Verification and boundaries
