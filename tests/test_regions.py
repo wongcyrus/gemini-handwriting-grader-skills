@@ -1,5 +1,6 @@
 import json
 import importlib.util
+import os
 import select
 import shutil
 import signal
@@ -25,7 +26,6 @@ from handwriting_grader.regions import approval_is_current, prepare_regions, ver
 from handwriting_grader.suggestions import generate_suggestions
 
 
-@unittest.skipUnless(shutil.which("pdftoppm"), "Poppler is required")
 class RegionWorkflowTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -52,6 +52,12 @@ class RegionWorkflowTests(unittest.TestCase):
             "layout": {"pages_per_student": 2, "same_layout_for_all": True},
         }
         self.regions = prepare_regions(self.config, self.root, 2)
+        from handwriting_grader.rubric import write_rubric
+        (self.root / "output" / "rubric").mkdir(parents=True, exist_ok=True)
+        write_rubric(
+            self.root / "output" / "rubric" / "rubric.xlsx",
+            [{"question_number": "1", "question_text": "Q1", "marking_scheme": "Award two", "marks": 2}],
+        )
 
     def start_server(self):
         self.server = RegionServer(self.config, self.root)
@@ -102,9 +108,12 @@ class RegionWorkflowTests(unittest.TestCase):
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         )
         try:
-            ready, _, _ = select.select([process.stdout], [], [], 10)
-            self.assertTrue(ready, "CLI editor did not become ready")
-            line = process.stdout.readline().strip()
+            if os.name == "nt":
+                line = process.stdout.readline().strip()
+            else:
+                ready, _, _ = select.select([process.stdout], [], [], 10)
+                self.assertTrue(ready, "CLI editor did not become ready")
+                line = process.stdout.readline().strip()
             self.assertTrue(line.startswith("Open http://127.0.0.1:"), line)
             url, token = line.removeprefix("Open ").split("#", 1)
             request = urllib.request.Request(
@@ -115,7 +124,10 @@ class RegionWorkflowTests(unittest.TestCase):
                 self.assertEqual(len(json.load(response)["pages"]), 2)
         finally:
             if process.poll() is None:
-                process.send_signal(signal.SIGINT)
+                if os.name == "nt":
+                    process.terminate()
+                else:
+                    process.send_signal(signal.SIGINT)
             process.communicate(timeout=10)
 
     def test_save_approve_and_invalidate_review(self):

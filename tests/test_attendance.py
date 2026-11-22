@@ -22,7 +22,6 @@ from handwriting_grader.score_editor import ScoreServer, load_state
 from test_grading import FakeGrader
 
 
-@unittest.skipUnless(shutil.which("pdftoppm"), "Poppler is required")
 class AttendanceTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -56,7 +55,7 @@ class AttendanceTests(unittest.TestCase):
         self.exam.write_text(yaml.safe_dump(self.config))
         self.models = self.root / "models.yaml"
         self.models.write_text(yaml.safe_dump({"vertex_ai": {"use_vertexai": True},
-            "models": {"ocr": "ocr", "grading": "grading", "moderation": "moderation"}}))
+            "models": {"ocr": "gemini-3.8-flash", "grading": "gemini-3.8-flash", "moderation": "gemini-4-argon"}}))
         self.write_attendance([("001", "present"), ("002", "absent"), ("003", "present")])
 
     def write_attendance(self, rows):

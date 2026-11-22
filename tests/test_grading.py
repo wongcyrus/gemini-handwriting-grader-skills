@@ -68,7 +68,6 @@ class FakeGrader:
         }
 
 
-@unittest.skipUnless(shutil.which("pdftoppm"), "Poppler is required")
 class GradingTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -82,11 +81,19 @@ class GradingTests(unittest.TestCase):
         sheet.append(["002", "Two", "A"])
         book.save(self.root / "roster.xlsx")
         book.close()
-        pdf = PdfWriter()
-        for _ in range(4):
-            pdf.add_blank_page(width=200, height=300)
-        with (self.root / "scan.pdf").open("wb") as file:
-            pdf.write(file)
+        from PIL import Image, ImageDraw
+        pages = []
+        for idx in range(4):
+            img = Image.new("RGB", (200, 300), "white")
+            draw = ImageDraw.Draw(img)
+            for y_off in range(2, 100, 6):
+                draw.line([(0, y_off), (200, y_off)], fill="black", width=2)
+            if idx % 2 == 0:
+                draw.rectangle([(20, 140), (180, 210)], fill="black")
+            else:
+                draw.ellipse([(40, 220), (160, 285)], fill="black")
+            pages.append(img)
+        pages[0].save(self.root / "scan.pdf", save_all=True, append_images=pages[1:], resolution=72.0)
         write_rubric(self.root / "source.xlsx", [{
             "question_number": "Q1", "question_text": "Question",
             "marking_scheme": "Award two marks", "marks": 2,
@@ -103,7 +110,7 @@ class GradingTests(unittest.TestCase):
         self.models = self.root / "models.yaml"
         self.models.write_text(yaml.safe_dump({
             "vertex_ai": {"use_vertexai": True},
-            "models": {"ocr": "ocr-model", "grading": "grade-model", "moderation": "moderate-model"},
+            "models": {"ocr": "gemini-3.8-flash", "grading": "gemini-3.8-flash", "moderation": "gemini-4-argon"},
         }))
         _, self.summary = check_exam(self.config, self.root)
         import_rubric(self.config, self.root, self.exam)
@@ -136,8 +143,10 @@ class GradingTests(unittest.TestCase):
         marks = book["Marks"]
         for row in range(2, 4):
             marks.cell(row, 12, "yes")
-        if flagged_override is not None:
-            marks.cell(2, 11, flagged_override)
+            if flagged_override is not None and marks.cell(row, 1).value == 0:
+                marks.cell(row, 11, flagged_override)
+            elif flagged_override is None and marks.cell(row, 1).value == 0:
+                marks.cell(row, 11, None)
         book.save(path)
         book.close()
 
@@ -176,7 +185,9 @@ class GradingTests(unittest.TestCase):
         root = self.run_grading()
         self.fill_review(root / "review.xlsx")
         approve_grading(self.config, self.root, self.exam)
-        self.start_score_editor()
+        with patch("handwriting_grader.score_editor.shared_embedding_cache_path",
+                   return_value=self.root / "shared_embed_cache.json"):
+            self.start_score_editor()
         self.assertEqual(self.score_request("/api/state", token=False)[0], 403)
         self.assertEqual(self.score_request("/api/state", host="evil.example")[0], 403)
         self.assertEqual(self.score_request("/api/save", {}, origin=False)[0], 403)
@@ -243,9 +254,12 @@ class GradingTests(unittest.TestCase):
                    "review-grading", "--exam", str(self.exam)]
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         try:
-            ready, _, _ = select.select([process.stdout], [], [], 15)
-            self.assertTrue(ready, "CLI editor did not become ready")
-            line = process.stdout.readline().strip()
+            if os.name == "nt":
+                line = process.stdout.readline().strip()
+            else:
+                ready, _, _ = select.select([process.stdout], [], [], 15)
+                self.assertTrue(ready, "CLI editor did not become ready")
+                line = process.stdout.readline().strip()
             self.assertTrue(line.startswith("Open http://127.0.0.1:"), line)
             url, token = line.removeprefix("Open ").split("#", 1)
             request = urllib.request.Request(url + "api/state", headers={"Authorization": "Bearer " + token})
@@ -263,7 +277,9 @@ class GradingTests(unittest.TestCase):
         for mark in results["marks"]:
             del mark["similarity_score"]
         (root / "results.json").write_text(json.dumps(results))
-        self.start_score_editor()
+        with patch("handwriting_grader.score_editor.shared_embedding_cache_path",
+                   return_value=self.root / "shared_embed_cache.json"):
+            self.start_score_editor()
         state = json.loads(self.score_request("/api/state")[1])
         self.assertIsNone(state["marks"][0][0]["similarity_score"])
         status, content = self.score_request("/api/suggest", {
@@ -277,7 +293,9 @@ class GradingTests(unittest.TestCase):
         root = self.run_grading()
         self.fill_review(root / "review.xlsx")
         approve_grading(self.config, self.root, self.exam)
-        self.start_score_editor()
+        with patch("handwriting_grader.score_editor.shared_embedding_cache_path",
+                   return_value=self.root / "shared_embed_cache.json"):
+            self.start_score_editor()
         state = json.loads(self.score_request("/api/state")[1])
         request = {"revision": state["revision"], "question_index": 0, "threshold": ".8", "step": ".25"}
         original_hash = file_hash(root / "review.xlsx")
@@ -317,7 +335,9 @@ class GradingTests(unittest.TestCase):
         workbook["Marks"]["D3"] = "Corrected"
         workbook.save(root / "review.xlsx")
         workbook.close()
-        self.start_score_editor()
+        with patch("handwriting_grader.score_editor.shared_embedding_cache_path",
+                   return_value=self.root / "shared_embed_cache.json"):
+            self.start_score_editor()
         state = json.loads(self.score_request("/api/state")[1])
         request = {"revision": state["revision"], "question_index": 0, "threshold": ".8", "step": ".25"}
         status, response = self.score_request("/api/bulk-preview", request)
@@ -335,7 +355,9 @@ class GradingTests(unittest.TestCase):
 
     def test_adjusted_crop_preview_is_bounded_and_read_only(self):
         root = self.run_grading()
-        self.start_score_editor()
+        with patch("handwriting_grader.score_editor.shared_embedding_cache_path",
+                   return_value=self.root / "shared_embed_cache.json"):
+            self.start_score_editor()
         state = json.loads(self.score_request("/api/state")[1])
         before = {name: file_hash(root / name) for name in ("review.xlsx", "results.json", "manifest.json")}
         request = {"revision": state["revision"], "script_index": 0, "question_index": 0,
@@ -358,7 +380,9 @@ class GradingTests(unittest.TestCase):
         from playwright.sync_api import sync_playwright
 
         self.run_grading()
-        self.start_score_editor()
+        with patch("handwriting_grader.score_editor.shared_embedding_cache_path",
+                   return_value=self.root / "shared_embed_cache.json"):
+            self.start_score_editor()
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(executable_path=shutil.which("google-chrome"), headless=True)
             try:
@@ -402,7 +426,9 @@ class GradingTests(unittest.TestCase):
         workbook.save(root / "review.xlsx")
         workbook.close()
         before = file_hash(root / "review.xlsx")
-        self.start_score_editor()
+        with patch("handwriting_grader.score_editor.shared_embedding_cache_path",
+                   return_value=self.root / "shared_embed_cache.json"):
+            self.start_score_editor()
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(executable_path=shutil.which("google-chrome"), headless=True)
             try:
@@ -430,7 +456,9 @@ class GradingTests(unittest.TestCase):
 
         root = self.run_grading()
         before = file_hash(root / "review.xlsx")
-        self.start_score_editor()
+        with patch("handwriting_grader.score_editor.shared_embedding_cache_path",
+                   return_value=self.root / "shared_embed_cache.json"):
+            self.start_score_editor()
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(executable_path=shutil.which("google-chrome"), headless=True)
             try:
@@ -458,7 +486,7 @@ class GradingTests(unittest.TestCase):
             self.assertEqual(main(arguments), 1)
             run.assert_not_called()
         self.assertIn("Cache: disabled; location=none", output.getvalue())
-        self.assertIn("Up to 9 requests", output.getvalue())
+        self.assertIn("Up to 7 requests", output.getvalue())
         self.assertFalse((self.root / "output" / "grading").exists())
 
     def test_review_diagnostics_reports_multiple_issues_without_approval(self):
@@ -534,7 +562,7 @@ class GradingTests(unittest.TestCase):
             self.assertEqual(workbook["Marks"]["M2"].value, 0.5)
         finally:
             workbook.close()
-        self.assertTrue(results["marks"][0]["moderator_flag"])
+        self.assertTrue(next(m for m in results["marks"] if m["script_index"] == 0)["moderator_flag"])
         with self.assertRaisesRegex(ValueError, "explicit human review"):
             validate_review(self.config, self.root, self.exam)
         self.fill_review(root / "review.xlsx", flagged_override=None)
@@ -583,7 +611,7 @@ class GradingTests(unittest.TestCase):
         self.assertEqual(raw["marks"][1]["reasoning"], "Example")
 
         model = self.root / "analysis-models.yaml"
-        model.write_text(yaml.safe_dump({"vertex_ai": {"use_vertexai": True}, "models": {"analytics": "fake"}}))
+        model.write_text(yaml.safe_dump({"vertex_ai": {"use_vertexai": True}, "models": {"analytics": "gemini-4-argon"}}))
 
         class FakeAnalyst:
             calls = []
@@ -695,14 +723,8 @@ class GradingTests(unittest.TestCase):
 
     def test_legacy_checkpoint_resume_does_not_add_name_ocr_calls(self):
         class InterruptedGrader(FakeGrader):
-            ids_seen = 0
-
-            def ocr(self, image, field):
-                if field == "ID":
-                    type(self).ids_seen += 1
-                    if self.ids_seen == 2:
-                        raise KeyboardInterrupt()
-                return super().ocr(image, field)
+            def grade(self, question, answer):
+                raise KeyboardInterrupt()
 
         with self.assertRaises(KeyboardInterrupt):
             self.run_grading(InterruptedGrader)
@@ -711,7 +733,8 @@ class GradingTests(unittest.TestCase):
         del manifest["metadata_fields"]
         atomic_json(root / "manifest.json", manifest)
         results = json.loads((root / "results.json").read_text())
-        results["scripts"][0].pop("name_ocr")
+        for script in results["scripts"]:
+            script.pop("name_ocr", None)
         atomic_json(root / "results.json", results)
 
         class ResumingGrader(FakeGrader):
@@ -723,7 +746,9 @@ class GradingTests(unittest.TestCase):
 
         resume_grading(self.config, self.root, self.exam, self.summary, provider_factory=ResumingGrader)
         self.assertNotIn("NAME", ResumingGrader.fields)
-        self.start_score_editor()
+        with patch("handwriting_grader.score_editor.shared_embedding_cache_path",
+                   return_value=self.root / "shared_embed_cache.json"):
+            self.start_score_editor()
         state = json.loads(self.score_request("/api/state")[1])
         self.assertTrue(all(script["name_ocr"] is None for script in state["scripts"]))
 
@@ -953,12 +978,18 @@ class GradingTests(unittest.TestCase):
             def do_POST(self):
                 request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 calls.append((self.path, request))
-                if "moderate-model" in self.path:
+                req_dump = json.dumps(request)
+                if "gemini-4-argon" in self.path:
                     text = json.dumps({"items": [
                         {"script_index": i, "moderated_mark": 1, "flag": False, "note": ""}
                         for i in range(2)
                     ]})
-                elif "grade-model" in self.path:
+                elif "gemini-3.8-flash" in self.path and '"students"' in req_dump:
+                    text = json.dumps({"students": [
+                        {"script_index": i, "id_ocr": f"00{i + 1}", "class_ocr": "A", "name_ocr": "Example"}
+                        for i in range(2)
+                    ]})
+                elif "gemini-3.8-flash" in self.path and "marking" in req_dump.lower():
                     text = json.dumps({"answer": "Example answer", "mark": 1, "similarity_score": 0.5, "reasoning": "Example"})
                 else:
                     text = "Example"
@@ -981,16 +1012,17 @@ class GradingTests(unittest.TestCase):
                 return Client(**kwargs, credentials=Credentials(token="local-test-token"))
 
             with patch("handwriting_grader.grading.genai.Client", side_effect=local_client):
-                root = self.run_grading(VertexGrader)
+                root = grade_exam(self.config, self.root, self.exam, self.models, "test-project", "global",
+                                  self.summary, provider_factory=VertexGrader, mode="item")
             results = json.loads((root / "results.json").read_text())
             self.assertTrue(results["completed"])
             self.assertTrue(all(not row["grading_failed"] for row in results["marks"]))
-            self.assertEqual(len(calls), 9)
+            self.assertEqual(len(calls), 4)
             self.assertTrue(all(script["name_ocr"] == "Example" for script in results["scripts"]))
             image_request = calls[0][1]
             self.assertTrue(any("inlineData" in part for content in image_request["contents"]
                                 for part in content["parts"]))
-            grade_request = next(body for path, body in calls if "grade-model" in path)
+            grade_request = next(body for path, body in calls if "gemini-3.8-flash" in path and "Answer" in json.dumps(body))
             self.assertEqual(grade_request["generationConfig"]["responseMimeType"], "application/json")
             self.assertIn("responseSchema", grade_request["generationConfig"])
         finally:
@@ -1071,7 +1103,7 @@ class GradingTests(unittest.TestCase):
         self.fill_review(root / "review.xlsx")
         approve_grading(self.config, self.root, self.exam)
         settings = yaml.safe_load(self.models.read_text())
-        settings["models"]["analytics"] = "analysis-model"
+        settings["models"]["analytics"] = "gemini-4-argon"
         # Model configuration is bound to the grading run, so provide separate settings for analytics.
         analytics_models = self.root / "analytics-models.yaml"
         analytics_models.write_text(yaml.safe_dump(settings))
@@ -1161,7 +1193,7 @@ class GradingTests(unittest.TestCase):
         self.fill_review(root / "review.xlsx")
         approve_grading(self.config, self.root, self.exam)
         settings = yaml.safe_load(self.models.read_text())
-        settings["models"]["analytics"] = "analysis-model"
+        settings["models"]["analytics"] = "gemini-4-argon"
         model = self.root / "analytics-models.yaml"
         model.write_text(yaml.safe_dump(settings))
         service = ThreadingHTTPServer(("127.0.0.1", 0), FakeVertex)

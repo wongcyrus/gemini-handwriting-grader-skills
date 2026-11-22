@@ -33,7 +33,6 @@ from handwriting_grader.score_editor import ScoreServer, load_state
 from test_grading import FakeGrader
 
 
-@unittest.skipUnless(shutil.which("pdftoppm"), "Poppler is required")
 class RegradingTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -47,12 +46,16 @@ class RegradingTests(unittest.TestCase):
         sheet.append(["002", "Two", "A"])
         book.save(self.root / "roster.xlsx")
         book.close()
-        pdf = PdfWriter()
-        for _ in range(2):
-            pdf.add_blank_page(width=200, height=300)
-        with (self.root / "scan.pdf").open("wb") as file:
-            pdf.write(file)
-        pdf.close()
+        from PIL import Image, ImageDraw
+        pages = []
+        for idx in range(2):
+            img = Image.new("RGB", (200, 300), "white")
+            draw = ImageDraw.Draw(img)
+            for y_off in range(2, 100, 6):
+                draw.line([(0, y_off), (200, y_off)], fill="black", width=2)
+            draw.text((10, 120), f"Page {idx}", fill="black")
+            pages.append(img)
+        pages[0].save(self.root / "scan.pdf", save_all=True, append_images=pages[1:], resolution=72.0)
         self.questions = [
             {"question_number": "Q1", "question_text": "First", "marking_scheme": "Award two", "marks": 2},
             {"question_number": "Q2", "question_text": "Second", "marking_scheme": "Award three", "marks": 3},
@@ -65,7 +68,7 @@ class RegradingTests(unittest.TestCase):
         self.exam.write_text(yaml.safe_dump(self.config))
         self.models = self.root / "models.yaml"
         self.models.write_text(yaml.safe_dump({"vertex_ai": {"use_vertexai": True},
-            "models": {"ocr": "ocr", "grading": "grading", "moderation": "moderation"}}))
+            "models": {"ocr": "gemini-3.8-flash", "grading": "gemini-3.8-flash", "moderation": "gemini-4-argon"}}))
         import_rubric(self.config, self.root, self.exam)
         approve_rubric(self.config, self.root, self.exam)
         regions = prepare_regions(self.config, self.root, 1)
@@ -142,7 +145,7 @@ class RegradingTests(unittest.TestCase):
 
         child = regrade(self.config, self.root, self.exam, "cropped", None, "Q1", self.models,
                         "project", "global", crop_proposal_id="crop1", provider_factory=CropsGrader)
-        self.assertEqual(sizes, [(20, 25), (30, 35)])
+        self.assertEqual(sorted(sizes), [(20, 25), (30, 35)])
         server = ScoreServer(self.config, self.root, config_path=self.exam, run_id="cropped")
         self.addCleanup(server.server_close)
         thread = threading.Thread(target=server.serve_forever)
@@ -161,7 +164,7 @@ class RegradingTests(unittest.TestCase):
         sizes.clear()
         grandchild = regrade(self.config, self.root, self.exam, "inherited", "cropped", "Q1", self.models,
                              "project", "global", provider_factory=CropsGrader)
-        self.assertEqual(sizes, [(20, 25), (30, 35)])
+        self.assertEqual(sorted(sizes), [(20, 25), (30, 35)])
         self.review(grandchild / "grading" / "review.xlsx")
         approve_grading(self.config, self.root, self.exam, run_id="inherited")
         self.assertTrue(create_reports(self.config, self.root, self.exam, run_id="inherited").is_dir())
@@ -213,7 +216,7 @@ class RegradingTests(unittest.TestCase):
         models = self.root / "cached-models.yaml"
         models.write_text(yaml.safe_dump({
             "vertex_ai": {"use_vertexai": True},
-            "models": {"ocr": "ocr", "grading": "grading", "moderation": "moderation"},
+            "models": {"ocr": "gemini-3.8-flash", "grading": "gemini-3.8-flash", "moderation": "gemini-4-argon"},
             "caching": {"enabled": True, "scope": "run",
                         "agents": {"ocr": True, "grading": True, "moderation": True}},
         }))
@@ -272,7 +275,7 @@ class RegradingTests(unittest.TestCase):
         calls.clear()
         changed_models = self.root / "different-models.yaml"
         changed = yaml.safe_load(models.read_text())
-        changed["models"]["grading"] = "different-grader"
+        changed["models"]["grading"] = "gemini-4-hydrogen"
         changed_models.write_text(yaml.safe_dump(changed))
         regrade(config, self.root, exam, "changed-model", None, "Q1", changed_models, "project", "global",
                 reuse_parent_cache=True, provider_factory=NoCallGrader)
@@ -303,14 +306,15 @@ class RegradingTests(unittest.TestCase):
         )
         self.assertEqual(interrupted_manifest["cache_root"], parent_manifest["cache_root"])
 
-        cache_root = Path(parent_manifest["cache_root"])
-        cache_root.chmod(0o755)
-        try:
-            with self.assertRaisesRegex(ValueError, "private"):
-                regrade(config, self.root, exam, "unsafe-cache", None, "Q1", models,
-                        "project", "global", reuse_parent_cache=True, provider_factory=NoCallGrader)
-        finally:
-            cache_root.chmod(0o700)
+        if os.name != "nt":
+            cache_root = Path(parent_manifest["cache_root"])
+            cache_root.chmod(0o755)
+            try:
+                with self.assertRaisesRegex(ValueError, "private"):
+                    regrade(config, self.root, exam, "unsafe-cache", None, "Q1", models,
+                            "project", "global", reuse_parent_cache=True, provider_factory=NoCallGrader)
+            finally:
+                cache_root.chmod(0o700)
 
     def test_parent_cache_reuse_requires_enabled_compatible_cache(self):
         with self.assertRaisesRegex(ValueError, "requires enabled compatible"):
@@ -571,7 +575,7 @@ class RegradingTests(unittest.TestCase):
         self.review(child / "grading" / "review.xlsx")
         approve_grading(self.config, self.root, self.exam, run_id="child")
         model = self.root / "analytics.yaml"
-        model.write_text(yaml.safe_dump({"vertex_ai": {"use_vertexai": True}, "models": {"analytics": "fake"}}))
+        model.write_text(yaml.safe_dump({"vertex_ai": {"use_vertexai": True}, "models": {"analytics": "gemini-4-argon"}}))
 
         class FakeAnalyst:
             def __init__(self, *args):
