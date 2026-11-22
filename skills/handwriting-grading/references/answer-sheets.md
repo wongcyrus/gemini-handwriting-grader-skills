@@ -16,7 +16,7 @@ LibreOffice must be installed.
 ## Procedure and review
 
 1. Confirm with the user that creating private output at the selected path is
-   intended, then run `.venv/bin/handwriting-grader answer-sheets --exam
+   intended, then run `handwriting-grader answer-sheets --exam
    /path/to/exam.yaml`.
 2. Inspect `output_dir/answer-sheets/manifest.json` for completion. Open
    `combined.pdf` and individual files, verify every student identity and

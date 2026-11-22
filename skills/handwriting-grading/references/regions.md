@@ -8,12 +8,12 @@
 - **Approved rubric (`output_dir/rubric/rubric.xlsx` + `approval.json`)**: Always extract/import
   and approve the rubric (`approve-rubric --confirm-reviewed`) before running `suggest-regions`
   so Gemini receives the finalized list of question IDs and does not waste calls or miss sub-questions.
-- Poppler `pdftoppm` on `PATH`, plus the project's Python environment.
+- The project's Python environment (PDF rendering uses pure-Python `pypdfium2`; no Poppler install needed).
 - An approved output location; `output_dir/regions` must not already exist.
 
 ## Procedure
 
-1. Run `.venv/bin/handwriting-grader prepare-regions --exam /path/to/exam.yaml`.
+1. Run `handwriting-grader prepare-regions --exam /path/to/exam.yaml`.
    It renders the first script into `output_dir/regions/images/`; it does not
    make model calls or modify the original PDF.
 2. Automated Gemini AI proposals: run `suggest-regions` with `--exam`, `--model-config`
@@ -25,7 +25,7 @@
    repeating it with `--confirm-cost`. One page is submitted per request;
    retries or partial failures can add cost. Check model access and current
    pricing separately. A failure is not proof that no requests were billed.
-3. Run `.venv/bin/handwriting-grader review-regions --exam /path/to/exam.yaml`.
+3. Run `handwriting-grader review-regions --exam /path/to/exam.yaml`.
    Open the complete localhost URL shown in the terminal. Do not share its
    temporary token. The server runs until stopped with Ctrl+C; once regions are
    approved, stop the local `review-regions` server.

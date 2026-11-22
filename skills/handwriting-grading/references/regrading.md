@@ -24,7 +24,7 @@ order and labels, and must not change any other question's text, criteria or
 marks. A general guide affecting other questions is therefore not allowed.
 
 ```sh
-.venv/bin/handwriting-grader prepare-regrade-rubric --exam /private/exam.yaml \
+handwriting-grader prepare-regrade-rubric --exam /private/exam.yaml \
   --proposal rubric-v2 --question Q1 --rubric /private/replacement.xlsx
 ```
 
@@ -33,7 +33,7 @@ proposal workbook against the parent and source; review the selected
 question's entire text, criteria and maximum marks. After explicit approval:
 
 ```sh
-.venv/bin/handwriting-grader approve-regrade-rubric --exam /private/exam.yaml \
+handwriting-grader approve-regrade-rubric --exam /private/exam.yaml \
   --proposal rubric-v2 --confirm-reviewed
 ```
 
@@ -60,7 +60,7 @@ approved page; moving the question to another page is unsupported.
 ```
 
 ```sh
-.venv/bin/handwriting-grader prepare-regrade-crops --exam /private/exam.yaml \
+handwriting-grader prepare-regrade-crops --exam /private/exam.yaml \
   --proposal crop-v2 --question Q1 --crops /private/crops.json
 ```
 
@@ -70,7 +70,7 @@ parent score editor's visual crop preview. Script indices start at zero;
 the browser's script labels start at one. Only after explicit human review:
 
 ```sh
-.venv/bin/handwriting-grader approve-regrade-crops --exam /private/exam.yaml \
+handwriting-grader approve-regrade-crops --exam /private/exam.yaml \
   --proposal crop-v2 --confirm-reviewed
 ```
 
@@ -86,7 +86,7 @@ new proposal rather than overwriting old files.
 Select a new child ID and preview with no paid calls:
 
 ```sh
-.venv/bin/handwriting-grader regrade --exam /private/exam.yaml \
+handwriting-grader regrade --exam /private/exam.yaml \
   --run revision-1 --question Q1 --model-config /private/model-config.yaml \
   --project PROJECT_ID --location LOCATION
 ```
@@ -119,7 +119,7 @@ selected answers cannot be moderated together, the selected answers are
 flagged for manual review.
 
 ```sh
-.venv/bin/handwriting-grader review-grading --exam /private/exam.yaml --run revision-1
+handwriting-grader review-grading --exam /private/exam.yaml --run revision-1
 ```
 
 Open the printed private local URL. Previous approved answers, reasoning and
@@ -130,9 +130,9 @@ again. Failed, flagged or corrected answers require manual marks. Only after
 the user explicitly approves all reviews, use the browser approval button or:
 
 ```sh
-.venv/bin/handwriting-grader approve-grading --exam /private/exam.yaml \
+handwriting-grader approve-grading --exam /private/exam.yaml \
   --run revision-1 --confirm-reviewed
-.venv/bin/handwriting-grader report --exam /private/exam.yaml --run revision-1
+handwriting-grader report --exam /private/exam.yaml --run revision-1
 ```
 
 Child reports, analytics, AI analysis and email are isolated
@@ -147,7 +147,7 @@ An interrupted child with a valid manifest and checkpoint, but without a
 review workbook or approval, may be resumed:
 
 ```sh
-.venv/bin/handwriting-grader resume-grading --exam /private/exam.yaml --run revision-1
+handwriting-grader resume-grading --exam /private/exam.yaml --run revision-1
 ```
 
 Review the printed original target, then obtain fresh cost approval before

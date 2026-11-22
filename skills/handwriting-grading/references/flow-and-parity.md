@@ -26,14 +26,15 @@ confirm:
    Cloud project, location and authentication; or email recipients, sender
    and SMTP settings. Never put passwords in configuration files.
 
-Use the repository's virtual environment. Poppler is required for rendering
-scans; LibreOffice is required for answer-sheet conversion. Resolve paths
-relative to the exam YAML, and keep configuration, data, caches and outputs
-outside version control.
+Use the repository's Python environment (`handwriting-grader`). PDF rendering uses
+pure-Python `pypdfium2` (no Poppler needed); LibreOffice is only required for
+optional answer-sheet DOCX-to-PDF conversion. Resolve paths relative to the exam
+YAML, and keep configuration, data, caches and outputs outside version control.
 
 ## Stage-by-stage flow
 
-Each command below is invoked as `.venv/bin/handwriting-grader COMMAND`.
+Each command below is invoked as `handwriting-grader COMMAND` (from an active
+virtual environment or via `.venv/bin/handwriting-grader` on Unix / `.venv\Scripts\handwriting-grader` on Windows).
 The relevant references specify required arguments and error handling.
 
 | Stage | Inputs and command | Output and required human decision |

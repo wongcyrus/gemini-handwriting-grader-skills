@@ -14,7 +14,7 @@ Never print or commit credentials, previews, student data or generated PDFs.
 
 ## Procedure
 
-1. Run `.venv/bin/handwriting-grader preview-email --exam /path/to/exam.yaml
+1. Run `handwriting-grader preview-email --exam /path/to/exam.yaml
    --settings /private/email.yaml --recipients /private/recipients.csv`.
    This creates private `.eml` files and `email/preview.json`; it sends nothing.
 2. Ask the user to review every exact recipient, subject, body and PDF

@@ -11,7 +11,7 @@
 
 ## Procedure
 
-1. Import an XLSX with `.venv/bin/handwriting-grader import-rubric --exam
+1. Import an XLSX with `handwriting-grader import-rubric --exam
    /path/to/exam.yaml`. Its `Marking Scheme` sheet requires the columns
    `question_number`, `question_text`, `marking_scheme`, `marks`. For a DOCX
    use `extract-rubric` with `--model-config`, `--project` and `--location`;
@@ -45,7 +45,7 @@
    During grading, real-time step progress and token usage are monitored
    following ADK observability conventions.
    To inspect model usage, token count, and cost breakdown at any time, run:
-   `.venv/bin/handwriting-grader cost-report --exam /path/to/exam.yaml`
+   `handwriting-grader cost-report --exam /path/to/exam.yaml`
    (generates `cost_report.xlsx` and `cost_summary.json` in the run directory).
 
    **Candidate-Assisted Metadata OCR (Roster Matching)**:
@@ -66,7 +66,7 @@
      a) Wait for quota reset or investigate GCP quota, then run targeted `retry-grading`, or
      b) Manually grade the failed items in `review.xlsx` without additional API calls.
    - **User-Approved Retry**: Only upon explicit user decision and cost consent, run:
-     `.venv/bin/handwriting-grader retry-grading --exam /path/to/exam.yaml`
+     `handwriting-grader retry-grading --exam /path/to/exam.yaml`
      Preview the failed marks and unmoderated questions, obtain cost confirmation,
      and rerun with `--confirm-cost`. `retry-grading` isolates and regrades only the
      failed crops using exponential backoff, runs moderation for affected questions once
@@ -74,7 +74,7 @@
      any existing manual reviews.
 3b. **Semantic Answer Clustering (Optional, After OCR/Grading, Before Review)**:
     Optionally pre-compute semantic embedding clusters across all questions:
-    `.venv/bin/handwriting-grader cluster-answers --exam /path/to/exam.yaml [--threshold 0.82]`
+    `handwriting-grader cluster-answers --exam /path/to/exam.yaml [--threshold 0.82]`
     - Generates 3072-dimensional vector embeddings for unique student answers using `gemini-embedding-2`.
     - **How Cluster Count is Decided**: Uses greedy threshold clustering over pairwise cosine similarity rather than fixed $K$-means. The number of clusters is data-driven by how many conceptually distinct answers students wrote (e.g. 2–4 clusters for True/False; 15–20+ for complex reasoning). Tune with `--threshold`: higher (e.g. `0.90`) yields more/tighter clusters; lower (e.g. `0.75`) yields fewer/broader clusters.
     - **Identity Exclusion**: Student metadata (`ID`, `Class`, `Name`) is strictly excluded from clustering, and the Grouping selector is hidden in Identity review to preserve student privacy and blind grading.
@@ -86,9 +86,11 @@
    the full printed local URL. The score editor presents a one-page blind
    marksheet per question (hiding student IDs during question review), groups
    similar answers together, lets the teacher sort by clicking table headers
-   (`Answer`, `Script`, `Mark`, `Similarity`, `Status`), expand bounding boxes
-   (`Expand Box`), resize or zoom/pan handwriting crops (`+Context` / `Full Page`),
-   toggle columns, and edit marks, answers, and reasoning inline. Review
+   (`Answer`, `Script`, `Mark`, `Similarity`, `Status`), filter to only rows
+   requiring a mark/review, expand bounding boxes (`Expand Box`), resize or
+   zoom/pan handwriting crops (`+Context` / `Full Page`), toggle columns, and
+   edit marks, answers, and reasoning inline (display, grouping, filter, and
+   sort preferences persist across questions). Review
    identities and each answer against the crop or expanded/full page, edit text
    and marks, then explicitly mark every item reviewed. The approval button asks
    for confirmation and uses the same validator as `approve-grading`. Once review
