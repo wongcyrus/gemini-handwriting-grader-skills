@@ -51,17 +51,17 @@ The grading pipeline cannot function with arbitrary models. Every step relies on
 2. **Pydantic structured output schemas**: Complex response schemas (`QuestionBatchGradeResponse`, `MetadataBatchResponse`, `SuggestedBoxes`, `ExtractedRubric`) require Gemini's native JSON schema engine (`response_schema`, `response_mime_type="application/json"`).
 3. **Dynamic thinking budget**: Reasoning tasks require `ThinkingConfig(thinking_budget=-1)` (supported on Gemini 3.8 and Gemini 4). Legacy Gemini 1.x models reject this configuration.
 
-| Model Tier | Allowed / Supported Models | Assigned Pipeline Steps | Rationale |
+| Model Tier | Allowed / Supported Models (Gemini 3.8+ Only) | Assigned Pipeline Steps | Rationale |
 |---|---|---|---|
-| **Fast / High-Volume (Flash)** | `gemini-3.8-flash`<br>`gemini-2.5-flash` | `marking_scheme`<br>`one_pass_metadata_ocr`<br>`ocr`<br>`grading` (item mode) | High throughput, lowest token cost (~$0.075/1M input). SOTA OCR and structured grading against clear rubrics. |
-| **Deep Reasoning** | `gemini-4-argon`<br>`gemini-2.5-pro` | `annotation`<br>`one_pass_grading`<br>`moderation`<br>`analytics` | Frontier spatial precision for template box proposals; deep cross-script reasoning for cohort consistency moderation and misconception diagnosis. |
-| **Semantic Embedding** | `gemini-embedding-2`<br>`text-embedding-004` | `embedding` | Semantic clustering of student answers in the human review browser interface. |
+| **Fast / High-Volume (Flash)** | `gemini-3.8-flash` | `marking_scheme`<br>`one_pass_metadata_ocr`<br>`ocr`<br>`grading` (item mode) | High throughput, lowest token cost (~$0.075/1M input). SOTA OCR and structured grading against rubrics. |
+| **Deep Reasoning** | `gemini-4-argon`<br>`gemini-4-hydrogen` | `annotation`<br>`one_pass_grading`<br>`moderation`<br>`analytics` | Frontier spatial precision for template box proposals; deep cross-script reasoning for cohort consistency moderation and misconception diagnosis. |
+| **Semantic Embedding** | `gemini-embedding-2` | `embedding` | Semantic clustering of student answers in the human review browser interface. |
 
 #### Strictly Incompatible & Prohibited Models
-- **Non-Gemini models** (`claude-*`, `gpt-*`, `llama-*`, `gemma-*`, `palm-*`, etc.): Incompatible with Vertex AI GenAI SDK structured JSON schemas and image payload types.
+- **Non-Gemini models** (`claude-*`, `gpt-*`, `llama-*`, `gemma-*`, `palm-*`, `text-embedding-*`, etc.): Only Google Gemini models are permitted across the entire pipeline.
+- **Gemini models older than 3.8** (`gemini-1.x`, `gemini-2.0-*`, `gemini-2.5-*`, `gemini-3.0-*`, `gemini-3.5-*`): Models below Gemini 3.8 are strictly rejected.
 - **Dedicated media/image generation models** (`imagen-*`, `veo-*`, `chirp-*`): Cannot accept bounding box/rubric instructions or output structured grading JSON.
 - **Text-only models**: Cannot receive cropped student handwriting images.
-- **Legacy Gemini 1.x models** (`gemini-1.0-*`, `gemini-1.5-*`): Deprecated; lack dynamic thinking budget (`-1`) and modern batch structured output schemas.
 - **Specialized variants** (`*-tts`, `*-audio`, `*-live`, `*-robotics`, `*-computer-use`): Unsupported for exam grading.
 - **Cross-tier assignment**: Embedding models (`gemini-embedding-2`) cannot be used for grading/OCR/annotation.
 

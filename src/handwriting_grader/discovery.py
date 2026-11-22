@@ -26,37 +26,34 @@ DISALLOWED_MODEL_KEYWORDS: Tuple[str, ...] = (
 
 SUPPORTED_FLASH_MODELS: Tuple[str, ...] = (
     "gemini-3.8-flash",
-    "gemini-2.5-flash",
 )
 
 SUPPORTED_REASONING_MODELS: Tuple[str, ...] = (
     "gemini-4-argon",
     "gemini-4-hydrogen",
-    "gemini-2.5-pro",
 )
 
 SUPPORTED_EMBEDDING_MODELS: Tuple[str, ...] = (
     "gemini-embedding-2",
-    "text-embedding-004",
 )
 
 
 def validate_model_eligibility(model: str, agent: Optional[str] = None) -> None:
-    """Validate that a model satisfies the multimodal, structured schema, and thinking budget requirements.
+    """Validate that a model is a Gemini 3.8+ model meeting multimodal, schema, and thinking requirements.
 
-    The handwriting grading pipeline requires:
-    1. Multimodal image input support (types.Part.from_bytes) for handwritten student scripts.
-    2. Native structured JSON output support (response_schema with Pydantic models).
-    3. Dynamic thinking budget support (-1) for complex reasoning and calibration steps.
+    The handwriting grading pipeline strictly uses native Google Gemini models (version >= 3.8) because:
+    1. Multimodal image input support (types.Part.from_bytes) is required for handwritten student scripts.
+    2. Native structured JSON output support (response_schema with Pydantic models) is required.
+    3. Dynamic thinking budget support (-1) is required for complex reasoning and calibration steps.
 
     Allowed models by tier:
-    - Flash Tier (OCR, grading, rubric): gemini-3.8-flash, gemini-2.5-flash
-    - Reasoning Tier (annotation, batch grading, moderation, analytics): gemini-4-argon, gemini-2.5-pro
-    - Embedding Tier (clustering): gemini-embedding-2, text-embedding-004
+    - Flash Tier (OCR, grading, rubric): gemini-3.8-flash (or higher)
+    - Reasoning Tier (annotation, batch grading, moderation, analytics): gemini-4-argon, gemini-4-hydrogen
+    - Embedding Tier (clustering): gemini-embedding-2
 
     Explicitly disallowed:
-    - Non-Gemini models (Claude, GPT, Llama, Gemma, PaLM, Mistral).
-    - Legacy Gemini 1.x models (gemini-1.0, gemini-1.5) due to lack of dynamic thinking budget (-1) and modern batch schemas.
+    - Any non-Gemini models (Claude, GPT, Llama, Gemma, PaLM, Mistral, text-embedding-*).
+    - Any Gemini model older than 3.8 (e.g. Gemini 1.x, 2.0, 2.5, 3.0, 3.5).
     - Dedicated media generation models (Imagen, Veo, Chirp).
     - Audio, TTS, Live, and Robotics variants.
     """
@@ -64,21 +61,21 @@ def validate_model_eligibility(model: str, agent: Optional[str] = None) -> None:
         raise ValueError(f"Invalid model configuration: model name must be a non-empty string (agent={agent}).")
     model_name = model.strip().lower()
 
-    if agent == "embedding":
-        if not ("embedding" in model_name or "embed" in model_name):
-            raise ValueError(
-                f"Invalid model '{model}' for agent 'embedding': "
-                f"The semantic embedding step requires a supported embedding model (e.g. 'gemini-embedding-2' or 'text-embedding-004')."
-            )
-        return
-
-    # All LLM perception and reasoning agents require Gemini multimodal models
+    # Strictly Gemini-only across the entire pipeline
     if not model_name.startswith("gemini"):
         raise ValueError(
             f"Unsupported model '{model}' for agent '{agent}': "
-            f"The handwriting grading pipeline requires native Google Gemini multimodal models with Pydantic structured JSON schema support. "
-            f"Non-Gemini models (such as Claude, GPT, Llama, Gemma, or PaLM) are not supported."
+            f"Only Google Gemini models are supported. "
+            f"Non-Gemini models (such as Claude, GPT, Llama, Gemma, or text-embedding-*) are not permitted."
         )
+
+    if agent == "embedding":
+        if "embedding" not in model_name:
+            raise ValueError(
+                f"Invalid model '{model}' for agent 'embedding': "
+                f"The semantic embedding step requires a Gemini embedding model (e.g. 'gemini-embedding-2')."
+            )
+        return
 
     for kw in DISALLOWED_MODEL_KEYWORDS:
         if kw in model_name:
@@ -93,12 +90,20 @@ def validate_model_eligibility(model: str, agent: Optional[str] = None) -> None:
             f"Embedding models cannot generate content, extract regions, or grade student scripts."
         )
 
-    # Legacy models check (e.g. gemini-1.0, gemini-1.5)
-    if re.search(r"gemini-1(?:\.[05])?", model_name):
+    # Enforce minimum Gemini version >= 3.8
+    ver_match = re.match(r"^gemini-(\d+)(?:\.(\d+))?(?:-|$)", model_name)
+    if not ver_match:
         raise ValueError(
-            f"Unsupported legacy model '{model}' for agent '{agent}': "
-            f"Gemini 1.x models are not supported because they lack support for dynamic thinking budget (-1) and modern structured batch output schemas. "
-            f"Please use a supported model tier: Flash tier ('gemini-3.8-flash', 'gemini-2.5-flash') or Reasoning tier ('gemini-4-argon', 'gemini-2.5-pro')."
+            f"Unsupported model '{model}' for agent '{agent}': "
+            f"Model must be a versioned Gemini 3.8+ model (e.g. 'gemini-3.8-flash' or 'gemini-4-argon')."
+        )
+    major = int(ver_match.group(1))
+    minor = int(ver_match.group(2) or 0)
+    if (major, minor) < (3, 8):
+        raise ValueError(
+            f"Unsupported model '{model}' for agent '{agent}': "
+            f"Models older than Gemini 3.8 are not supported. "
+            f"Please use Gemini 3.8+ models: Flash tier ('gemini-3.8-flash') or Reasoning tier ('gemini-4-argon')."
         )
 
 

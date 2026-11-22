@@ -60,16 +60,16 @@ execute a notebook as a workaround, or claim a human approval occurred.
   2. Native structured JSON schema outputs (`response_schema` with Pydantic models).
   3. Dynamic thinking budget support (`thinking_budget=-1`) for complex reasoning stages.
   
-  **Allowed models by tier**:
-  - **Flash Tier** (high-throughput, cost-efficient OCR, item grading, rubric extraction): `gemini-3.8-flash` (recommended), `gemini-2.5-flash` (fallback).
-  - **Reasoning Tier** (high-precision spatial template annotation, cohort-wide batch question grading, moderation, misconception analytics): `gemini-4-argon` (recommended), `gemini-2.5-pro` (fallback).
+  **Allowed models (Gemini-only, version 3.8+)**:
+  - **Flash Tier** (high-throughput, cost-efficient OCR, item grading, rubric extraction): `gemini-3.8-flash` (or newer Flash >= 3.8).
+  - **Reasoning Tier** (high-precision spatial template annotation, cohort-wide batch question grading, moderation, misconception analytics): `gemini-4-argon`, `gemini-4-hydrogen` (or newer Pro/Reasoning >= 3.8).
   - **Embedding Tier** (semantic clustering of student answers): `gemini-embedding-2`.
 
   **Strictly prohibited and rejected models**:
-  - Any non-Gemini models (e.g. Claude, GPT, Llama, Gemma, PaLM) — incompatible with Vertex AI GenAI schemas and payloads.
+  - Any non-Gemini models (e.g. Claude, GPT, Llama, Gemma, PaLM, `text-embedding-*`) — only Google Gemini models are permitted.
+  - Any Gemini model older than version 3.8 (`gemini-1.x`, `gemini-2.0-*`, `gemini-2.5-*`, `gemini-3.0-*`, `gemini-3.5-*`) — only Gemini 3.8+ is supported.
   - Dedicated media/image generation models (e.g. Imagen, Veo, Chirp) — cannot process grading rubrics or output evaluation JSON.
   - Text-only models — cannot read handwritten student script images.
-  - Legacy Gemini 1.x models (`gemini-1.0-*`, `gemini-1.5-*`) — lack dynamic thinking budget (`-1`) and modern batch output schemas.
   - Experimental or non-grading variants (Audio/TTS, Live, Robotics, Computer-Use).
 
   Never use expensive frontier models (Gemini 4) for all steps, as high-volume tasks (OCR, grading, annotation) become prohibitively slow and expensive. Always run dynamic tiered model discovery:
