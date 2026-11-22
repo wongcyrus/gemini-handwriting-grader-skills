@@ -199,8 +199,8 @@ sources and review the marking scheme.
 
 Complete region review as above. The grading command checks that rubric and
 region labels match and that both approvals are current. Its model config
-requires `vertex_ai.use_vertexai: true` and `models.ocr`, `models.grading`,
-`models.moderation`, and `models.batch_grading`. Authenticate separately with Google Application
+requires `vertex_ai.use_vertexai: true` and Gemini 3.8+ models (`gemini-3.8-flash`,
+`gemini-4-argon`, and `gemini-embedding-2`, generated automatically via `discover-models`). Authenticate separately with Google Application
 Default Credentials. Preview the target and maximum request count:
 
 ```sh

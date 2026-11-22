@@ -33,6 +33,9 @@ models:
   # --- Reporting & Insights ---
   analytics: gemini-4-argon               # AI feedback & misconception analysis (Reasoning tier)
 
+  # --- Semantic Embedding & Clustering ---
+  embedding: gemini-embedding-2           # Semantic clustering of student answers (Gemini-only)
+
 caching:
   enabled: true
   scope: run                              # 'run' (private) or 'shared'
@@ -66,6 +69,32 @@ python -m handwriting_grader.cli discover-models --project <PROJECT_ID> [--locat
    - **Flash Tier** (e.g. `gemini-3.8-flash` @ ~$0.075/1M input): Assigned to high-volume batch tasks (`ocr`, `grading`, `marking_scheme`).
    - **Frontier Reasoning Tier** (e.g. `gemini-4-argon` @ ~$1.250/1M input): Assigned to low-volume spatial precision (`annotation`) and complex cohort synthesis tasks (`moderation`, `analytics`).
 4. **Transparent Cost Table**: Outputs an ASCII cost and throughput breakdown before writing the configuration.
+
+---
+
+## 2.1 Model Eligibility & Boundary Policy (Gemini 3.8+ Only)
+
+The handwriting grading pipeline cannot operate on arbitrary models. Every stage depends on:
+1. **Multimodal image byte inputs** (`types.Part.from_bytes`) for cropped handwritten scripts.
+2. **Native structured JSON schemas** (`response_schema` with Pydantic models).
+3. **Dynamic thinking budget** (`ThinkingConfig(thinking_budget=-1)`) for reasoning and calibration stages.
+
+### Allowed Models
+- **Fast / High-Volume Tier**: `gemini-3.8-flash` (or newer Flash $\ge 3.8$)
+- **Deep Reasoning Tier**: `gemini-4-argon`, `gemini-4-hydrogen` (or newer Reasoning/Pro $\ge 3.8$)
+- **Semantic Embedding Tier**: `gemini-embedding-2`
+
+### Strictly Prohibited & Rejected Models
+- **Any non-Gemini model** (`claude-*`, `gpt-*`, `llama-*`, `gemma-*`, `palm-*`, `text-embedding-*`, etc.)
+- **Any Gemini model older than 3.8** (`gemini-1.x`, `gemini-2.0-*`, `gemini-2.5-*`, `gemini-3.0-*`, `gemini-3.5-*`)
+- **Dedicated media/image/video/audio generation models** (`imagen-*`, `veo-*`, `chirp-*`)
+- **Specialized non-grading variants** (`*-tts`, `*-audio`, `*-live`, `*-robotics`, `*-computer-use`)
+- **Cross-tier assignments** (e.g. assigning `gemini-embedding-2` to grading, OCR, or annotation)
+
+### Runtime Enforcement
+Model eligibility is validated automatically via `validate_model_eligibility()` in [discovery.py](../src/handwriting_grader/discovery.py):
+- **Initial setup (`discover-models`)**: Filters candidate publisher models via `is_eligible_model()` and validates every step entry before writing `config.yaml`.
+- **Every execution stage**: `load_model_settings()` in [suggestions.py](../src/handwriting_grader/suggestions.py) and `get_embedding_client()` in [score_editor.py](../src/handwriting_grader/score_editor.py) reject unsupported or outdated models immediately before making any Vertex AI API call.
 
 ---
 
