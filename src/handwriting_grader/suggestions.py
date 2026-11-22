@@ -75,6 +75,9 @@ def load_model_settings(path, agent="annotation"):
                 break
     if not model:
         raise ValueError(f"Model configuration needs models.{agent}")
+    from .discovery import validate_model_eligibility
+
+    validate_model_eligibility(model, agent=agent)
     return model
 
 

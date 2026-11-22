@@ -44,8 +44,31 @@ Use the project's `config.yaml` for Vertex mode and model selection:
 - `models.embedding`: Semantic clustering of student answers before review (default: `gemini-embedding-2`).
 `vertex_ai.use_vertexai` must be true.
 
+### Model Eligibility & Boundary Policy
+
+The grading pipeline cannot function with arbitrary models. Every step relies on three non-negotiable capabilities:
+1. **Multimodal image bytes input**: The engine sends raw cropped PNG bytes (`types.Part.from_bytes(data=image, mime_type="image/png")`) for handwriting OCR, bounding box annotation, and answer evaluation. Text-only models will immediately crash.
+2. **Pydantic structured output schemas**: Complex response schemas (`QuestionBatchGradeResponse`, `MetadataBatchResponse`, `SuggestedBoxes`, `ExtractedRubric`) require Gemini's native JSON schema engine (`response_schema`, `response_mime_type="application/json"`).
+3. **Dynamic thinking budget**: Reasoning tasks require `ThinkingConfig(thinking_budget=-1)` (supported on Gemini 3.8 and Gemini 4). Legacy Gemini 1.x models reject this configuration.
+
+| Model Tier | Allowed / Supported Models | Assigned Pipeline Steps | Rationale |
+|---|---|---|---|
+| **Fast / High-Volume (Flash)** | `gemini-3.8-flash`<br>`gemini-2.5-flash` | `marking_scheme`<br>`one_pass_metadata_ocr`<br>`ocr`<br>`grading` (item mode) | High throughput, lowest token cost (~$0.075/1M input). SOTA OCR and structured grading against clear rubrics. |
+| **Deep Reasoning** | `gemini-4-argon`<br>`gemini-2.5-pro` | `annotation`<br>`one_pass_grading`<br>`moderation`<br>`analytics` | Frontier spatial precision for template box proposals; deep cross-script reasoning for cohort consistency moderation and misconception diagnosis. |
+| **Semantic Embedding** | `gemini-embedding-2`<br>`text-embedding-004` | `embedding` | Semantic clustering of student answers in the human review browser interface. |
+
+#### Strictly Incompatible & Prohibited Models
+- **Non-Gemini models** (`claude-*`, `gpt-*`, `llama-*`, `gemma-*`, `palm-*`, etc.): Incompatible with Vertex AI GenAI SDK structured JSON schemas and image payload types.
+- **Dedicated media/image generation models** (`imagen-*`, `veo-*`, `chirp-*`): Cannot accept bounding box/rubric instructions or output structured grading JSON.
+- **Text-only models**: Cannot receive cropped student handwriting images.
+- **Legacy Gemini 1.x models** (`gemini-1.0-*`, `gemini-1.5-*`): Deprecated; lack dynamic thinking budget (`-1`) and modern batch structured output schemas.
+- **Specialized variants** (`*-tts`, `*-audio`, `*-live`, `*-robotics`, `*-computer-use`): Unsupported for exam grading.
+- **Cross-tier assignment**: Embedding models (`gemini-embedding-2`) cannot be used for grading/OCR/annotation.
+
+Runtime model loading in `load_model_settings` and `write_model_config` strictly validates model eligibility against these rules and raises an immediate, actionable `ValueError` if an unsupported model is detected.
+
 ### Dynamic online model discovery & cost-tiered configuration policy
-Never hardcode static model versions or recommend non-existent or deprecated models (e.g. Gemini 1.x, 2.x, or dedicated image generators for multimodal text/visual tasks). Google continuously updates and retires models online. Never use expensive frontier reasoning models (Gemini 4) across all stages, as high-volume tasks (OCR, grading, template annotation) become slow and cost-prohibitive.
+Never hardcode static model versions or recommend non-existent or deprecated models. Google continuously updates and retires models online. Never use expensive frontier reasoning models (Gemini 4) across all stages, as high-volume tasks (OCR, grading, template annotation) become slow and cost-prohibitive.
 
 Always dynamically discover, profile, and allocate models online by capability and cost:
 ```bash

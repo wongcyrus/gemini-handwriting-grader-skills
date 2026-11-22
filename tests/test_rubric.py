@@ -83,7 +83,7 @@ class RubricTests(unittest.TestCase):
         self.exam.write_text(yaml.safe_dump(self.config))
         model = self.root / "config.yaml"
         model.write_text(yaml.safe_dump({
-            "vertex_ai": {"use_vertexai": True}, "models": {"marking_scheme": "test-model"},
+            "vertex_ai": {"use_vertexai": True}, "models": {"marking_scheme": "gemini-3.8-flash"},
         }))
         arguments = [
             "extract-rubric", "--exam", str(self.exam), "--model-config", str(model),
@@ -111,7 +111,7 @@ class RubricTests(unittest.TestCase):
         self.exam.write_text(yaml.safe_dump(self.config))
         model = self.root / "config.yaml"
         model.write_text(yaml.safe_dump({
-            "vertex_ai": {"use_vertexai": True}, "models": {"marking_scheme": "test-model"},
+            "vertex_ai": {"use_vertexai": True}, "models": {"marking_scheme": "gemini-3.8-flash"},
             "caching": {"enabled": True, "scope": "shared", "directory": "shared",
                         "agents": {"marking_scheme": True}},
         }))
@@ -161,7 +161,7 @@ class RubricTests(unittest.TestCase):
         self.exam.write_text(yaml.safe_dump(self.config))
         model = self.root / "config.yaml"
         model.write_text(yaml.safe_dump({
-            "vertex_ai": {"use_vertexai": True}, "models": {"marking_scheme": "test-model"},
+            "vertex_ai": {"use_vertexai": True}, "models": {"marking_scheme": "gemini-3.8-flash"},
         }))
         service = ThreadingHTTPServer(("127.0.0.1", 0), FakeVertex)
         thread = threading.Thread(target=service.serve_forever, daemon=True)
@@ -214,7 +214,7 @@ class RubricTests(unittest.TestCase):
         self.assertEqual(main(["import-rubric", "--exam", str(self.exam)]), 0)
         model = self.root / "config.yaml"
         model.write_text(yaml.safe_dump({
-            "vertex_ai": {"use_vertexai": True}, "models": {"marking_scheme": "test-model"},
+            "vertex_ai": {"use_vertexai": True}, "models": {"marking_scheme": "gemini-3.8-flash"},
         }))
         arguments = [
             "verify-rubric", "--exam", str(self.exam), "--model-config", str(model),
@@ -261,7 +261,7 @@ class RubricTests(unittest.TestCase):
         self.assertEqual(main(["import-rubric", "--exam", str(self.exam)]), 0)
         model = self.root / "config.yaml"
         model.write_text(yaml.safe_dump({
-            "vertex_ai": {"use_vertexai": True}, "models": {"marking_scheme": "test-model"},
+            "vertex_ai": {"use_vertexai": True}, "models": {"marking_scheme": "gemini-3.8-flash"},
         }))
         arguments = ["verify-rubric", "--exam", str(self.exam), "--model-config", str(model),
                      "--project", "test-project", "--location", "global", "--confirm-cost"]

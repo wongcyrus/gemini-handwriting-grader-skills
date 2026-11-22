@@ -75,5 +75,62 @@ class TestTieredDiscovery(unittest.TestCase):
         self.assertEqual(result["reasoning"], "gemini-4-argon")
 
 
+class TestModelValidation(unittest.TestCase):
+    def test_valid_models_pass(self):
+        from handwriting_grader.discovery import validate_model_eligibility
+
+        for model in ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-4-argon", "gemini-2.5-pro"]:
+            validate_model_eligibility(model, agent="grading")
+            validate_model_eligibility(model, agent="annotation")
+        validate_model_eligibility("gemini-embedding-2", agent="embedding")
+        validate_model_eligibility("text-embedding-004", agent="embedding")
+
+    def test_non_gemini_models_rejected(self):
+        from handwriting_grader.discovery import validate_model_eligibility
+
+        for bad in ["claude-3-5-sonnet", "gpt-4o", "llama-3.1-70b", "gemma-2-9b"]:
+            with self.assertRaises(ValueError) as ctx:
+                validate_model_eligibility(bad, agent="grading")
+            self.assertIn("requires native Google Gemini multimodal models", str(ctx.exception))
+
+    def test_image_and_media_generation_models_rejected(self):
+        from handwriting_grader.discovery import validate_model_eligibility
+
+        for bad in ["imagen-3.0-generate-002", "gemini-image-gen", "gemini-live", "gemini-tts"]:
+            with self.assertRaises(ValueError) as ctx:
+                validate_model_eligibility(bad, agent="grading")
+            self.assertTrue(
+                "Disallowed model" in str(ctx.exception) or "requires native Google Gemini" in str(ctx.exception)
+            )
+
+    def test_legacy_gemini_1x_models_rejected(self):
+        from handwriting_grader.discovery import validate_model_eligibility
+
+        for bad in ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro"]:
+            with self.assertRaises(ValueError) as ctx:
+                validate_model_eligibility(bad, agent="grading")
+            self.assertIn("Gemini 1.x models are not supported", str(ctx.exception))
+
+    def test_embedding_model_rejected_for_llm_agents(self):
+        from handwriting_grader.discovery import validate_model_eligibility
+
+        with self.assertRaises(ValueError) as ctx:
+            validate_model_eligibility("gemini-embedding-2", agent="grading")
+        self.assertIn("Embedding models cannot generate content", str(ctx.exception))
+
+    def test_load_model_settings_validates_model(self):
+        from handwriting_grader.suggestions import load_model_settings
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfg = Path(tmpdir) / "config.yaml"
+            cfg.write_text(
+                "vertex_ai:\n  use_vertexai: true\nmodels:\n  annotation: claude-3-5-sonnet\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(ValueError) as ctx:
+                load_model_settings(cfg, "annotation")
+            self.assertIn("requires native Google Gemini multimodal models", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

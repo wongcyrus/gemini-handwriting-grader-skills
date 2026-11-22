@@ -11,6 +11,106 @@ from google import genai
 from .telemetry import DEFAULT_RATES
 
 
+DISALLOWED_MODEL_KEYWORDS: Tuple[str, ...] = (
+    "image",
+    "imagen",
+    "tts",
+    "audio",
+    "video",
+    "veo",
+    "live",
+    "robotics",
+    "computer-use",
+    "chirp",
+)
+
+SUPPORTED_FLASH_MODELS: Tuple[str, ...] = (
+    "gemini-3.8-flash",
+    "gemini-2.5-flash",
+)
+
+SUPPORTED_REASONING_MODELS: Tuple[str, ...] = (
+    "gemini-4-argon",
+    "gemini-4-hydrogen",
+    "gemini-2.5-pro",
+)
+
+SUPPORTED_EMBEDDING_MODELS: Tuple[str, ...] = (
+    "gemini-embedding-2",
+    "text-embedding-004",
+)
+
+
+def validate_model_eligibility(model: str, agent: Optional[str] = None) -> None:
+    """Validate that a model satisfies the multimodal, structured schema, and thinking budget requirements.
+
+    The handwriting grading pipeline requires:
+    1. Multimodal image input support (types.Part.from_bytes) for handwritten student scripts.
+    2. Native structured JSON output support (response_schema with Pydantic models).
+    3. Dynamic thinking budget support (-1) for complex reasoning and calibration steps.
+
+    Allowed models by tier:
+    - Flash Tier (OCR, grading, rubric): gemini-3.8-flash, gemini-2.5-flash
+    - Reasoning Tier (annotation, batch grading, moderation, analytics): gemini-4-argon, gemini-2.5-pro
+    - Embedding Tier (clustering): gemini-embedding-2, text-embedding-004
+
+    Explicitly disallowed:
+    - Non-Gemini models (Claude, GPT, Llama, Gemma, PaLM, Mistral).
+    - Legacy Gemini 1.x models (gemini-1.0, gemini-1.5) due to lack of dynamic thinking budget (-1) and modern batch schemas.
+    - Dedicated media generation models (Imagen, Veo, Chirp).
+    - Audio, TTS, Live, and Robotics variants.
+    """
+    if not isinstance(model, str) or not model.strip():
+        raise ValueError(f"Invalid model configuration: model name must be a non-empty string (agent={agent}).")
+    model_name = model.strip().lower()
+
+    if agent == "embedding":
+        if not ("embedding" in model_name or "embed" in model_name):
+            raise ValueError(
+                f"Invalid model '{model}' for agent 'embedding': "
+                f"The semantic embedding step requires a supported embedding model (e.g. 'gemini-embedding-2' or 'text-embedding-004')."
+            )
+        return
+
+    # All LLM perception and reasoning agents require Gemini multimodal models
+    if not model_name.startswith("gemini"):
+        raise ValueError(
+            f"Unsupported model '{model}' for agent '{agent}': "
+            f"The handwriting grading pipeline requires native Google Gemini multimodal models with Pydantic structured JSON schema support. "
+            f"Non-Gemini models (such as Claude, GPT, Llama, Gemma, or PaLM) are not supported."
+        )
+
+    for kw in DISALLOWED_MODEL_KEYWORDS:
+        if kw in model_name:
+            raise ValueError(
+                f"Disallowed model '{model}' for agent '{agent}': "
+                f"Dedicated media generation, audio, video, or experimental live/robotics models cannot perform multimodal exam grading or structured text/coordinate extraction."
+            )
+
+    if "embedding" in model_name or "embed" in model_name:
+        raise ValueError(
+            f"Disallowed model '{model}' for agent '{agent}': "
+            f"Embedding models cannot generate content, extract regions, or grade student scripts."
+        )
+
+    # Legacy models check (e.g. gemini-1.0, gemini-1.5)
+    if re.search(r"gemini-1(?:\.[05])?", model_name):
+        raise ValueError(
+            f"Unsupported legacy model '{model}' for agent '{agent}': "
+            f"Gemini 1.x models are not supported because they lack support for dynamic thinking budget (-1) and modern structured batch output schemas. "
+            f"Please use a supported model tier: Flash tier ('gemini-3.8-flash', 'gemini-2.5-flash') or Reasoning tier ('gemini-4-argon', 'gemini-2.5-pro')."
+        )
+
+
+def is_eligible_model(model: str, tier: Optional[str] = None) -> bool:
+    """Check if model is eligible for a given tier without raising an exception."""
+    try:
+        validate_model_eligibility(model, agent="grading" if tier == "flash" else ("analytics" if tier == "reasoning" else None))
+        return True
+    except ValueError:
+        return False
+
+
 STEP_REQUIREMENTS: Dict[str, Dict[str, str]] = {
     "annotation": {
         "tier": "reasoning",
@@ -121,9 +221,8 @@ def discover_best_tier_models(
             flash_cands = [
                 m
                 for m in models_list
-                if "gemini" in m
-                and "flash" in m
-                and not any(x in m for x in ["image", "tts", "preview", "live", "lite", "audio", "embedding", "computer-use", "robotics"])
+                if "flash" in m
+                and is_eligible_model(m, tier="flash")
             ]
             flash_cands.sort(key=parse_flash_version, reverse=True)
 
@@ -131,7 +230,7 @@ def discover_best_tier_models(
                 m
                 for m in models_list
                 if ("gemini-4" in m or "-pro" in m)
-                and not any(x in m for x in ["image", "tts", "preview", "live", "lite", "audio", "embedding", "computer-use", "robotics"])
+                and is_eligible_model(m, tier="reasoning")
             ]
             reasoning_cands.sort(key=parse_reasoning_rank, reverse=True)
 
@@ -277,6 +376,11 @@ def write_model_config(
             },
         },
     }
+    # Validate all assigned step models
+    for step in STEP_REQUIREMENTS.keys():
+        assigned = config_data["models"][step]
+        validate_model_eligibility(assigned, agent=step)
+
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as file:

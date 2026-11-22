@@ -881,7 +881,7 @@ class GradingTests(unittest.TestCase):
         approve_grading(self.config, self.root, self.exam)
         model = self.root / "analysis-models.yaml"
         model.write_text(yaml.safe_dump({
-            "vertex_ai": {"use_vertexai": True}, "models": {"analytics": "test-model"},
+            "vertex_ai": {"use_vertexai": True}, "models": {"analytics": "gemini-4-argon"},
             "caching": {"enabled": True, "scope": "shared", "directory": "shared",
                         "agents": {"analytics": True}},
         }))

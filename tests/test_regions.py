@@ -232,7 +232,7 @@ class RegionWorkflowTests(unittest.TestCase):
         config_path.write_text(yaml.safe_dump(self.config))
         model_path = self.root / "config.yaml"
         model_path.write_text(yaml.safe_dump({
-            "vertex_ai": {"use_vertexai": True}, "models": {"annotation": "test-model"},
+            "vertex_ai": {"use_vertexai": True}, "models": {"annotation": "gemini-4-argon"},
         }))
         arguments = [
             "suggest-regions", "--exam", str(config_path),
@@ -270,7 +270,7 @@ class RegionWorkflowTests(unittest.TestCase):
         config_path.write_text(yaml.safe_dump(self.config))
         model_path = self.root / "config.yaml"
         model_path.write_text(yaml.safe_dump({
-            "vertex_ai": {"use_vertexai": True}, "models": {"annotation": "test-model"},
+            "vertex_ai": {"use_vertexai": True}, "models": {"annotation": "gemini-4-argon"},
         }))
         original = (self.regions / "draft.json").read_bytes()
         with patch("handwriting_grader.suggestions.genai.Client") as constructor:
@@ -288,7 +288,7 @@ class RegionWorkflowTests(unittest.TestCase):
         config_path.write_text(yaml.safe_dump(self.config))
         model_path = self.root / "config.yaml"
         model_path.write_text(yaml.safe_dump({
-            "vertex_ai": {"use_vertexai": True}, "models": {"annotation": "test-model"},
+            "vertex_ai": {"use_vertexai": True}, "models": {"annotation": "gemini-4-argon"},
             "caching": {"enabled": True, "agents": {"annotation": True}},
         }))
         arguments = ["suggest-regions", "--exam", str(config_path), "--model-config", str(model_path),
@@ -340,7 +340,7 @@ class RegionWorkflowTests(unittest.TestCase):
             config_path.write_text(yaml.safe_dump(self.config))
             model_path = self.root / "config.yaml"
             model_path.write_text(yaml.safe_dump({
-                "vertex_ai": {"use_vertexai": True}, "models": {"annotation": "test-model"},
+                "vertex_ai": {"use_vertexai": True}, "models": {"annotation": "gemini-4-argon"},
             }))
             base_url = f"http://127.0.0.1:{service.server_port}"
             def local_client(**kwargs):
@@ -427,7 +427,7 @@ class RegionWorkflowTests(unittest.TestCase):
         config_path.write_text(yaml.safe_dump(self.config))
         model_path = self.root / "config.yaml"
         model_path.write_text(yaml.safe_dump({
-            "vertex_ai": {"use_vertexai": True}, "models": {"annotation": "test-model"},
+            "vertex_ai": {"use_vertexai": True}, "models": {"annotation": "gemini-4-argon"},
         }))
         with patch("handwriting_grader.suggestions.genai.Client") as constructor:
             constructor.return_value.__enter__.return_value.models.generate_content.return_value = SimpleNamespace(
