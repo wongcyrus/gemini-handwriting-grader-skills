@@ -12,7 +12,7 @@ from .grading import safe_append
 from .regions import atomic_json, file_hash
 from .rubric import read_rubric, verify_rubric_source
 from .suggestions import load_model_settings
-from .telemetry import get_active_tracker
+from .telemetry import get_active_tracker, get_thinking_config
 
 
 def verify_rubric(config, config_dir, config_path, model_config_path, project, location):
@@ -56,10 +56,9 @@ def verify_rubric(config, config_dir, config_path, model_config_path, project, l
                     "temperature": 0, "max_output_tokens": 8192,
                     "tools": [types.Tool(google_search=types.GoogleSearch())],
                 }
-                if "flash" in model.lower():
-                    verif_config["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
-                else:
-                    verif_config["thinking_config"] = types.ThinkingConfig(thinking_budget=-1)
+                think_cfg = get_thinking_config(model, is_reasoning=True)
+                if think_cfg:
+                    verif_config["thinking_config"] = think_cfg
                 response = client.models.generate_content(
                     model=model,
                     contents=(

@@ -18,7 +18,7 @@ from pydantic import BaseModel, StrictStr
 from .regions import atomic_json, config_hash, file_hash, resolve_path
 from .suggestions import load_model_settings
 from .cache import CachedGrader, cache_directory, enabled_agents
-from .telemetry import get_active_tracker
+from .telemetry import get_active_tracker, get_thinking_config
 
 
 class RubricQuestion(BaseModel):
@@ -230,10 +230,9 @@ def extract_rubric(config, config_dir, config_path, model_config_path, project, 
                 "temperature": 0, "max_output_tokens": 16384,
                 "response_mime_type": "application/json", "response_schema": ExtractedRubric,
             }
-            if "flash" in model.lower():
-                rubric_config["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
-            else:
-                rubric_config["thinking_config"] = types.ThinkingConfig(thinking_budget=-1)
+            think_cfg = get_thinking_config(model, is_reasoning=True)
+            if think_cfg:
+                rubric_config["thinking_config"] = think_cfg
             response = client.models.generate_content(
                 model=model,
                 contents=[PROMPT, content],

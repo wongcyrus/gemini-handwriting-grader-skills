@@ -318,6 +318,20 @@ def set_active_tracker(tracker: Optional[TelemetryTracker]) -> None:
     _ACTIVE_TRACKER = tracker
 
 
+def get_thinking_config(model: str, *, is_reasoning: bool = True) -> Optional[Any]:
+    """Return dynamic thinking (-1) for reasoning tasks on thinking-capable models
+    (such as Gemini 3.8 Flash, 2.5 Flash, 4 Argon, Pro), or 0 for pure perception/OCR tasks.
+    Returns None for legacy models (e.g. Gemini 1.5) that do not support thinking_config.
+    """
+    if not model or "1.5" in model.lower():
+        return None
+    try:
+        from google.genai import types
+        return types.ThinkingConfig(thinking_budget=-1 if is_reasoning else 0)
+    except (ImportError, AttributeError):
+        return None
+
+
 def get_active_tracker() -> Optional[TelemetryTracker]:
     return _ACTIVE_TRACKER
 

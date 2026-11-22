@@ -84,7 +84,7 @@ Metadata extraction operates in high-speed, structured batch mode (`ocr_metadata
 ## 3. Multimodal Question Grading Schemas
 
 ### 3.1 Batch Mode Structured Schema (`QuestionBatchGradeResponse`)
-In batch mode (`--mode batch`), all student answers for a single question are evaluated in one multimodal pass with Gemini 4 Argon (`response_schema=QuestionBatchGradeResponse`), configured with **dynamic thinking** (`thinking_budget=-1` for reasoning models; `thinking_budget=0` for Flash) to enable step-by-step handwriting deciphering and cohort-wide mark calibration:
+In batch mode (`--mode batch`), all student answers for a single question are evaluated in one multimodal pass (`response_schema=QuestionBatchGradeResponse`), configured with **dynamic thinking** (`thinking_budget=-1` for thinking-capable models including Gemini 3.8 Flash and Gemini 4 Argon) to enable step-by-step handwriting deciphering and cohort-wide mark calibration:
 
 ```python
 class StudentBatchGradeItem(BaseModel):

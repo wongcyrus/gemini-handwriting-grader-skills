@@ -11,6 +11,7 @@ from handwriting_grader.telemetry import (
     CallTrace,
     TelemetryTracker,
     get_active_tracker,
+    get_thinking_config,
     set_active_tracker,
 )
 
@@ -137,6 +138,34 @@ class TestTelemetryTracker(unittest.TestCase):
         self.assertIs(get_active_tracker(), self.tracker)
         set_active_tracker(None)
         self.assertIsNone(get_active_tracker())
+
+    def test_get_thinking_config_flash_and_reasoning(self):
+        # Gemini 3.8 Flash on reasoning task -> dynamic thinking (-1)
+        cfg_38_reasoning = get_thinking_config("gemini-3.8-flash", is_reasoning=True)
+        self.assertIsNotNone(cfg_38_reasoning)
+        self.assertEqual(cfg_38_reasoning.thinking_budget, -1)
+
+        # Gemini 3.8 Flash on perception/OCR task -> thinking budget 0
+        cfg_38_ocr = get_thinking_config("gemini-3.8-flash", is_reasoning=False)
+        self.assertIsNotNone(cfg_38_ocr)
+        self.assertEqual(cfg_38_ocr.thinking_budget, 0)
+
+        # Gemini 4 Argon on reasoning task -> dynamic thinking (-1)
+        cfg_4_reasoning = get_thinking_config("gemini-4-argon", is_reasoning=True)
+        self.assertIsNotNone(cfg_4_reasoning)
+        self.assertEqual(cfg_4_reasoning.thinking_budget, -1)
+
+        # Gemini 4 Argon on perception/OCR task -> thinking budget 0
+        cfg_4_ocr = get_thinking_config("gemini-4-argon", is_reasoning=False)
+        self.assertIsNotNone(cfg_4_ocr)
+        self.assertEqual(cfg_4_ocr.thinking_budget, 0)
+
+        # Legacy Gemini 1.5 -> None (no thinking_config)
+        cfg_15 = get_thinking_config("gemini-1.5-flash", is_reasoning=True)
+        self.assertIsNone(cfg_15)
+
+        # Empty / None model -> None
+        self.assertIsNone(get_thinking_config("", is_reasoning=True))
 
 
 if __name__ == "__main__":

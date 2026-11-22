@@ -14,7 +14,7 @@ from pydantic import BaseModel, StrictInt, StrictStr
 
 from .regions import file_hash, validate_annotations, verify_run
 from .cache import CachedGrader, cache_directory, enabled_agents
-from .telemetry import get_active_tracker
+from .telemetry import get_active_tracker, get_thinking_config
 
 
 class SuggestedBox(BaseModel):
@@ -171,10 +171,9 @@ def generate_suggestions(config, config_dir, config_path, model_config_path, pro
                     "temperature": 0, "max_output_tokens": 8192,
                     "response_mime_type": "application/json", "response_schema": SuggestedBoxes,
                 }
-                if "flash" in model.lower():
-                    sug_config["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
-                else:
-                    sug_config["thinking_config"] = types.ThinkingConfig(thinking_budget=-1)
+                think_cfg = get_thinking_config(model, is_reasoning=True)
+                if think_cfg:
+                    sug_config["thinking_config"] = think_cfg
                 response = client.models.generate_content(
                     model=model,
                     contents=[prompt_text, types.Part.from_bytes(data=image, mime_type="image/jpeg")],
