@@ -907,6 +907,8 @@ def continue_grading(target, results, questions, boxes, summary, stride, models,
                                 )
     
                 rows = [rows_by_script[i] for i in range(summary["students"])]
+                q_order = {question_key(q["question_number"]): idx for idx, q in enumerate(questions)}
+                results["marks"].sort(key=lambda r: (q_order.get(question_key(r["question"]), 0), r["script_index"]))
                 if key in moderated:
                     continue
                 entries = [{"script_index": row["script_index"], "answer": row["answer"],
