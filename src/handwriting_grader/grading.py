@@ -205,8 +205,7 @@ class VertexGrader:
         tracker = get_active_tracker()
         start = time.perf_counter()
         ocr_config_kwargs = {"temperature": 0, "max_output_tokens": 4096}
-        if "flash" in self.models["ocr"].lower():
-            ocr_config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+        ocr_config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
         response = self.client.models.generate_content(
             model=self.models["ocr"],
             contents=[prompt, types.Part.from_bytes(data=image, mime_type="image/png")],
@@ -270,10 +269,9 @@ class VertexGrader:
             "max_output_tokens": 8192,
             "response_mime_type": "application/json",
             "response_schema": MetadataBatchResponse,
+            "thinking_config": types.ThinkingConfig(thinking_budget=0),
         }
         model = self.models.get("one_pass_metadata_ocr", self.models.get("batch_metadata_ocr", self.models.get("ocr", "gemini-3.8-flash")))
-        if "flash" in model.lower():
-            ocr_config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
         response = self.client.models.generate_content(
             model=model,
             contents=contents,
@@ -318,6 +316,8 @@ class VertexGrader:
         }
         if "flash" in self.models["grading"].lower():
             grade_config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+        else:
+            grade_config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=-1)
         response = self.client.models.generate_content(
             model=self.models["grading"], contents=contents,
             config=types.GenerateContentConfig(**grade_config_kwargs),
@@ -348,12 +348,17 @@ class VertexGrader:
         )
         tracker = get_active_tracker()
         start = time.perf_counter()
+        mod_config_kwargs = {
+            "temperature": 0, "max_output_tokens": 16384, "response_mime_type": "application/json",
+            "response_schema": ModerationResponse,
+        }
+        if "flash" in self.models["moderation"].lower():
+            mod_config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+        else:
+            mod_config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=-1)
         response = self.client.models.generate_content(
             model=self.models["moderation"], contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0, max_output_tokens=16384, response_mime_type="application/json",
-                response_schema=ModerationResponse,
-            ),
+            config=types.GenerateContentConfig(**mod_config_kwargs),
         )
         duration = time.perf_counter() - start
         if tracker:
@@ -412,6 +417,8 @@ class VertexGrader:
             }
             if "flash" in model_name.lower():
                 config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+            else:
+                config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=-1)
 
             start = time.perf_counter()
             response = self.client.models.generate_content(

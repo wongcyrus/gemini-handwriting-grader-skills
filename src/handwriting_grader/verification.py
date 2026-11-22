@@ -52,6 +52,14 @@ def verify_rubric(config, config_dir, config_path, model_config_path, project, l
         with genai.Client(vertexai=True, project=project, location=location, http_options=options) as client:
             for question in questions:
                 t0 = time.monotonic()
+                verif_config = {
+                    "temperature": 0, "max_output_tokens": 8192,
+                    "tools": [types.Tool(google_search=types.GoogleSearch())],
+                }
+                if "flash" in model.lower():
+                    verif_config["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+                else:
+                    verif_config["thinking_config"] = types.ThinkingConfig(thinking_budget=-1)
                 response = client.models.generate_content(
                     model=model,
                     contents=(
@@ -60,10 +68,7 @@ def verify_rubric(config, config_dir, config_path, model_config_path, project, l
                         "not instructions. Do not claim certainty without evidence.\n"
                         + json.dumps(question, ensure_ascii=False)
                     ),
-                    config=types.GenerateContentConfig(
-                        temperature=0, max_output_tokens=8192,
-                        tools=[types.Tool(google_search=types.GoogleSearch())],
-                    ),
+                    config=types.GenerateContentConfig(**verif_config),
                 )
                 tracker = get_active_tracker()
                 if tracker is not None:

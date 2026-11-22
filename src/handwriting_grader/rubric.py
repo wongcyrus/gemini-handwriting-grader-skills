@@ -226,13 +226,18 @@ def extract_rubric(config, config_dir, config_path, model_config_path, project, 
     with genai.Client(vertexai=True, project=project, location=location, http_options=options) as client:
         def compute():
             t0 = time.monotonic()
+            rubric_config = {
+                "temperature": 0, "max_output_tokens": 16384,
+                "response_mime_type": "application/json", "response_schema": ExtractedRubric,
+            }
+            if "flash" in model.lower():
+                rubric_config["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+            else:
+                rubric_config["thinking_config"] = types.ThinkingConfig(thinking_budget=-1)
             response = client.models.generate_content(
                 model=model,
                 contents=[PROMPT, content],
-                config=types.GenerateContentConfig(
-                    temperature=0, max_output_tokens=16384,
-                    response_mime_type="application/json", response_schema=ExtractedRubric,
-                ),
+                config=types.GenerateContentConfig(**rubric_config),
             )
             tracker = get_active_tracker()
             if tracker is not None:

@@ -167,13 +167,18 @@ def generate_suggestions(config, config_dir, config_path, model_config_path, pro
             image = (root / "images" / f"{index}.jpg").read_bytes()
             def compute():
                 t0 = time.monotonic()
+                sug_config = {
+                    "temperature": 0, "max_output_tokens": 8192,
+                    "response_mime_type": "application/json", "response_schema": SuggestedBoxes,
+                }
+                if "flash" in model.lower():
+                    sug_config["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+                else:
+                    sug_config["thinking_config"] = types.ThinkingConfig(thinking_budget=-1)
                 response = client.models.generate_content(
                     model=model,
                     contents=[prompt_text, types.Part.from_bytes(data=image, mime_type="image/jpeg")],
-                    config=types.GenerateContentConfig(
-                        temperature=0, max_output_tokens=8192,
-                        response_mime_type="application/json", response_schema=SuggestedBoxes,
-                    ),
+                    config=types.GenerateContentConfig(**sug_config),
                 )
                 tracker = get_active_tracker()
                 if tracker is not None:
