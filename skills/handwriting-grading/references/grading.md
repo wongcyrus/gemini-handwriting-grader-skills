@@ -28,16 +28,15 @@
    --project PROJECT_ID --location LOCATION [--mode batch|item] [--concurrency 3]` to preview.
    Explain the request count and data sent; repeat with `--confirm-cost` only after approval.
 
-   **Grading Modes**:
-   - `--mode batch` (default): Fast multimodal structured output grading per question.
-     Batches all student answer crops for a question into a single model pass (using `models.batch_grading`,
-     typically `gemini-4-argon`). Blank cells are filtered locally with Pillow and pre-scored as 0 (0 AI cost).
-     Multiple questions run concurrently (`--concurrency 3` by default). Greatly reduces API round-trips
-     (e.g. 45 calls vs 3,375 calls) and improves cross-cohort grading consistency.
-   - `--mode item`: Classical student-by-student grading (`models.grading`, e.g. `gemini-3.8-flash`) followed
-     by whole-question moderation (`models.moderation`, e.g. `gemini-4-argon`).
-   Both modes produce identical downstream schemas (`results.json`, `review.xlsx`, telemetry) and support
-   resuming and retrying.
+   **Choosing `--mode batch` vs `--mode item`**:
+   | Mode | Models Used | Best For | When to Switch |
+   |---|---|---|---|
+   | `--mode batch` **(Default)** | `models.batch_grading` (`gemini-4-argon`) | Almost all exams: short/medium answers, math steps, diagrams; fast turnaround; tight RPM quota (~90% fewer requests); strong cross-cohort consistency. | Default choice unless answers are too large to batch per question. |
+   | `--mode item` **(Fallback)** | `models.grading` (`gemini-3.8-flash`) + `models.moderation` (`gemini-4-argon`) | Long/multi-page essays per question that exceed single-request image/token limits; very large cohorts (300+ verbose scripts) to keep image input tokens on Flash; isolating per-script timeouts. | Use when `--mode batch` hits payload/context limits or when optimizing image input cost on long-form answers. |
+
+   - `--mode batch`: Batches all non-blank student answer crops for a question into a single multimodal structured pass. Blank cells are filtered locally with Pillow and pre-scored as 0 (0 AI cost). Multiple questions run concurrently (`--concurrency 3` by default).
+   - `--mode item`: Grades each non-blank student answer individually with Flash, followed by whole-question text moderation with Reasoning tier.
+   Both modes produce identical downstream schemas (`results.json`, `review.xlsx`, telemetry) and support resuming and retrying. Confirm the mode with the user during cost preview before adding `--confirm-cost`.
 
    During grading, real-time step progress and token usage are monitored
    following ADK observability conventions.

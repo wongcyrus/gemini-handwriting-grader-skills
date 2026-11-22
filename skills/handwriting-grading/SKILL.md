@@ -150,7 +150,10 @@ execute a notebook as a workaround, or claim a human approval occurred.
       `annotations.json` and run `approve-regions --exam /path/to/exam.yaml --confirm-reviewed`.)
 8. For grading, reporting and AI analysis read `references/grading.md`.
    Obtain the specified human confirmations; never infer approval.
-   - **Grading Modes**: `grade` supports `--mode batch` (default, fast multimodal structured output pass per question with `models.batch_grading`) and `--mode item` (sequential student-by-student + cohort moderation). Both modes output identical `results.json` and `review.xlsx` schemas.
+   - **Choosing Grading Mode (`--mode batch` vs `--mode item`)**:
+     - `--mode batch` (**Default — Recommended**): Best for almost all exams (short-to-medium answers, math/STEM steps, diagrams, ~10–150+ scripts) and when RPM quota is tight. Sends all non-blank crops per question together (`models.batch_grading`, `gemini-4-argon`), cutting API calls by ~90% with intrinsic cohort consistency.
+     - `--mode item` (**Sequential Fallback**): Choose only when answers per question are very long/multi-page (risking single-request image payload/token limits), when grading very large cohorts with verbose answers to save cost using Flash (`models.grading`, `gemini-3.8-flash`) + text moderation (`models.moderation`, `gemini-4-argon`), or when isolating individual script timeouts.
+     - Both modes output identical `results.json` and `review.xlsx` schemas. Confirm the chosen mode with the user during cost preview.
    - Blank answer cells are automatically detected and scored 0 locally by Pillow before calling the AI, minimizing quota and cost.
    - Student metadata (`ID`, `CLASS`, `NAME`) OCR automatically injects candidate rosters from `attendance` or `roster` to eliminate character confusion and ensure exact roster matching.
    
