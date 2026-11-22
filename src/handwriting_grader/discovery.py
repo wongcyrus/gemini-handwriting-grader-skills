@@ -362,11 +362,14 @@ def write_model_config(
             "location": location,
         },
         "models": {
-            step: step_models.get(
-                step,
-                step_models.get("ocr" if "ocr" in step else ("grading" if "grading" in step else next(iter(step_models.values()))))
-            )
-            for step in STEP_REQUIREMENTS.keys()
+            **{
+                step: step_models.get(
+                    step,
+                    step_models.get("ocr" if "ocr" in step else ("grading" if "grading" in step else next(iter(step_models.values()))))
+                )
+                for step in STEP_REQUIREMENTS.keys()
+            },
+            "embedding": step_models.get("embedding", "gemini-embedding-2"),
         },
         "caching": {
             "enabled": True,
@@ -382,8 +385,7 @@ def write_model_config(
         },
     }
     # Validate all assigned step models
-    for step in STEP_REQUIREMENTS.keys():
-        assigned = config_data["models"][step]
+    for step, assigned in config_data["models"].items():
         validate_model_eligibility(assigned, agent=step)
 
     path = Path(path)

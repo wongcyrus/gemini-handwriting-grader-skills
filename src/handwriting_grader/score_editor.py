@@ -418,6 +418,8 @@ class ScoreServer(ThreadingHTTPServer):
                     project = vertex.get("project_id", os.environ.get("GOOGLE_CLOUD_PROJECT"))
                     location = vertex.get("location", "global")
                     self._embedding_model = cfg.get("models", {}).get("embedding", "gemini-embedding-2")
+                    from .discovery import validate_model_eligibility
+                    validate_model_eligibility(self._embedding_model, agent="embedding")
                     self._genai_client = genai.Client(vertexai=True, project=project, location=location)
                 else:
                     self._genai_client = None
