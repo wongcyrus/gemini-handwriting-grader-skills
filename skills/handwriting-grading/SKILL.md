@@ -33,7 +33,7 @@ pip install -e /path/to/gemini-handwriting-grader-skills
 ```
 Once installed, `handwriting-grader` is available globally on your `PATH` (or via `.venv/bin/handwriting-grader` on Unix / `.venv\Scripts\handwriting-grader` on Windows).
 
-All `--exam /path/to/exam.yaml` and `--model-config /path/to/config.yaml` paths can be located anywhere on the filesystem; all relative paths declared inside `exam.yaml` resolve relative to `exam.yaml`'s parent folder, not the current working directory.
+All `--exam "/path/to/exam.yaml"` and `--model-config "/path/to/config.yaml"` paths can be located anywhere on the filesystem (always quote paths in shell commands in case directories contain spaces); all relative paths declared inside `exam.yaml` resolve relative to `exam.yaml`'s parent folder, not the current working directory.
 
 ## Scope and availability
 
@@ -84,16 +84,26 @@ execute a notebook as a workaround, or claim a human approval occurred.
 
 1. Establish whether the user is starting or resuming, what stage they need,
    and which local paths they intend to use. Do not copy or overwrite data.
+   When resuming an existing `output_dir`, check artifacts to orient immediately:
+
+   | Latest Artifact Present | Completed Stage | Next Command / Action |
+   |---|---|---|
+   | `rubric/approval.json` | Rubric approved | `prepare-regions` -> `suggest-regions` -> `review-regions` |
+   | `regions/approval.json` | Regions approved | `grade` (preview first, then `--confirm-cost`) |
+   | `grading/manifest.json` (no `approval.json`) | Grading done (or failed items) | `cluster-answers` (optional) -> `review-grading` (or `retry-grading` if failures) |
+   | `grading/approval.json` | Scores approved | `report`, `analytics`, `ai-analysis` (optional) |
+   | `reports/manifest.json` | Reports generated | `preview-email` -> `approve-email` -> `send-email`, or `clean` |
+
 2. Read `references/configuration.md` and examine existing settings. Present
    detected values and ask for missing or ambiguous decisions. Keep actual
    configuration outside version control:
    a. Exam settings (`exam.yaml`): define roster, scans, layout, attendance, and reporting.
-   b. AI model configuration (`config.yaml`): The skill automatically runs online
-      model discovery:
+   b. AI model configuration (`config.yaml`): If a valid `config.yaml` already exists
+      (with `vertex_ai.use_vertexai: true` and eligible Gemini 3.8+ models), inspect and
+      reuse it rather than overwriting it blindly. Otherwise run online model discovery:
       `handwriting-grader discover-models --project <PROJECT> [--location <LOCATION>] [--write-config <PATH>]`
-      to inspect live model properties on Vertex AI, benchmark token pricing and throughput,
-      present the cost allocation table to the user, and automatically generate or update
-      `config.yaml` with the optimal model tier for each pipeline step.
+      to inspect live Vertex AI models and pricing, present the cost allocation table to the user,
+      and generate `config.yaml`.
 3. If the user needs printable answer sheets before scans exist, read
    `references/answer-sheets.md` and run that independent stage first.
 4. Run preflight checks:
@@ -137,17 +147,9 @@ execute a notebook as a workaround, or claim a human approval occurred.
       `annotations.json`, approve with:
       `handwriting-grader approve-regions --exam /path/to/exam.yaml --confirm-reviewed`.
    d. **Automatic Page Alignment & Scanner Shift Recovery**:
-      During `grade`, every scanned page is automatically registered (translation +
-      small rotation) against the approved template pages in `regions/images/` before
-      cropping OCR or question answers.
-      If an existing unaligned run has scanner drift (e.g. clipped `ID` or shifted
-      questions), align the pages offline first and then re-run only affected items:
-      - Align pages offline (0 AI cost): `retry-grading --exam /path/to/exam.yaml --align-images`
-      - Re-run Student ID OCR: `retry-grading --exam /path/to/exam.yaml --align-images --re-ocr-id [--confirm-cost]`
-      - Re-run all metadata: `retry-grading --exam /path/to/exam.yaml --re-ocr-metadata [--confirm-cost]`
-      - Re-run specific question: `retry-grading --exam /path/to/exam.yaml --question <Q_NUM> [--confirm-cost]`
-      (If a bounding box itself is too tight, adjust it in `review-regions` or edit
-      `annotations.json` and run `approve-regions --exam /path/to/exam.yaml --confirm-reviewed`.)
+      During `grade`, every scanned page is automatically aligned against `regions/images/`
+      before cropping. For an existing unaligned run or tight boxes, follow the recovery
+      commands (`retry-grading --align-images ...`) in `references/regions.md`.
 8. For grading, reporting and AI analysis read `references/grading.md`.
    Obtain the specified human confirmations; never infer approval.
    - **Choosing Grading Mode (`--mode batch` vs `--mode item`)**:
@@ -158,26 +160,14 @@ execute a notebook as a workaround, or claim a human approval occurred.
    - Student metadata (`ID`, `CLASS`, `NAME`) OCR automatically injects candidate rosters from `attendance` or `roster` to eliminate character confusion and ensure exact roster matching.
    
    **Failure Diagnostics, Quota Protection, and User-Decision Gating**:
-   - The Python code uses built-in Google GenAI SDK retry primitives (`types.HttpRetryOptions` on `genai.Client`) with exponential backoff, jitter, and status code targeting (`[429, 500, 502, 503, 504]`). Never write ad-hoc Python retry loops or hack scripts.
-   - If grading finishes with any failed marks (`grading_failed=True`) or moderation errors after SDK-level retries:
-     **DO NOT automatically retry in Python**. Retrying in a Python loop is dangerous because GCP quotas (e.g. 429 ResourceExhausted) may be exhausted or backend limits reached; blind loops are futile, risk exhausting quota further, and can incur unapproved billing.
-     **NOTIFY THE USER IMMEDIATELY** with error diagnostics:
-     1. Exact count of failed marks and affected question numbers.
-     2. Specific error categories (e.g. 429 Quota Exhausted, 504 Deadline Exceeded, 5xx Server Error).
-     3. Inform the user that GCP quotas or backend stability may be affected.
-     4. Ask the user to decide how to proceed:
-        - **Option A (Targeted Retry)**: Inspect GCP quota / wait for quota window reset, preview with `handwriting-grader retry-grading --exam /path/to/exam.yaml`, obtain cost confirmation, and rerun with `--confirm-cost`.
-        - **Option B (Manual Review)**: Proceed to `review-grading` and assign manual marks in `review.xlsx` for those failed items without further API calls.
-        - **Option C (Wait / Investigate)**: Wait for GCP quota reset or investigate quota limits in the Google Cloud Console before proceeding.
-   - Never proceed with `retry-grading` without the user's explicit decision and cost confirmation.
+   - The engine uses built-in Google GenAI SDK retry options (`types.HttpRetryOptions`). **Never write ad-hoc Python retry loops.**
+   - If grading finishes with failed marks (`grading_failed=True`) or moderation errors, **notify the user immediately** with the failed count, affected question numbers, and error types (`429`, `504`, `5xx`), and ask them to choose:
+     - **Option A (Targeted Retry)**: Preview `handwriting-grader retry-grading --exam /path/to/exam.yaml`, obtain cost consent, and rerun with `--confirm-cost`.
+     - **Option B (Manual Review)**: Grade failed items manually in `review-grading` / `review.xlsx` with no further API calls.
+     - **Option C (Wait / Investigate)**: Wait for GCP quota reset before proceeding.
 
-   **Semantic Answer Clustering (Optional, After OCR/Grading, Before Review)**:
-   - Pre-computing semantic answer clusters is optional:
-     `handwriting-grader cluster-answers --exam /path/to/exam.yaml [--threshold 0.82]`
-   - Uses Google's frontier `gemini-embedding-2` model to embed unique student answers, compute cosine similarities, and group conceptually equivalent handwritten answers together into `clusters.json` and `.embedding_cache.json`.
-   - **Cross-Question & Cross-Assignment Caching**: Embeddings are keyed per embedding model in a shared cache (`~/.cache/gemini-handwriting-grader/embeddings/<model>.json` or `caching.directory`). Any answer text embedded once is reused across all questions and across all assignments on the machine with zero GCP calls and zero cost.
-   - Enables instantaneous, intelligent answer grouping (📌) in `review-grading`.
-   - **Skipping Clustering**: If the user skips this step or prefers to work offline, `review-grading` automatically falls back to client-side Jaccard word-overlap similarity (`Word Overlap (Local)`) with zero API calls. The teacher can also switch grouping modes at any time using the `Grouping` selector in the review table header.
+   **Semantic Answer Clustering (Optional, Before Review)**:
+   - Optionally run `handwriting-grader cluster-answers --exam /path/to/exam.yaml [--threshold 0.82]` (`gemini-embedding-2`, with cross-assignment disk caching) to enable semantic answer grouping (`📌`) in `review-grading`. If skipped, `review-grading` falls back locally to `Word Overlap (Local)` with zero AI cost (details in `references/grading.md`).
 
    After grading and reporting are complete, always inform the user that results
    and review history have been preserved, and ask if they would like to clean
