@@ -45,6 +45,13 @@ Grading runs in three decoupled phases:
 2. **Per-Script Question Grading**: Flash model grades each student item individually.
 3. **Batch Consistency Moderation**: Argon evaluates all student answers together to detect and flag inconsistencies.
 
+### Mode Trade-offs: Pros & Cons
+
+| Aspect | `--mode batch` (Default) | `--mode item` (Fallback) |
+|---|---|---|
+| **Pros** | - **~90% fewer API calls** (1 call per question chunk vs. $N$ calls per question), avoiding RPM throttling.<br>- **Faster wall-clock runtime** via concurrent per-question passes.<br>- **Intrinsic cross-script consistency** (the model compares student answers side-by-side while grading).<br>- **Single-pass self-moderation** with dynamic thinking. | - **Lower image input token cost** (`gemini-3.8-flash` handles high-volume image tokens; `gemini-4-argon` moderates text).<br>- **Dedicated visual focus** per script crop without competing images.<br>- **No batch payload ceiling** for long/multi-page essays or 300+ script cohorts.<br>- **Per-script fault isolation** on transient timeouts. |
+| **Cons** | - **Higher per-token rate** (all answer images sent to `gemini-4-argon`).<br>- **Payload / context limits** on dense multi-page essays.<br>- **Coarser failure blast radius** (a failed request retries the whole question chunk). | - **High RPM pressure** ($N \times Q$ grading calls + $Q$ moderation calls).<br>- **Slower end-to-end runtime** across sequential + moderation stages.<br>- **Two-stage moderation** inspects transcribed text rather than the original image. |
+
 ---
 
 ## 2. Stage 1: Batch Student Metadata OCR & Roster Triangulation

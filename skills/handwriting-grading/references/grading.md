@@ -35,7 +35,11 @@
    | `--mode item` **(Fallback)** | `models.grading` (`gemini-3.8-flash`) + `models.moderation` (`gemini-4-argon`) | Long/multi-page essays per question that exceed single-request image/token limits; very large cohorts (300+ verbose scripts) to keep image input tokens on Flash; isolating per-script timeouts. | Use when `--mode batch` hits payload/context limits or when optimizing image input cost on long-form answers. |
 
    - `--mode batch`: Batches all non-blank student answer crops for a question into a single multimodal structured pass. Blank cells are filtered locally with Pillow and pre-scored as 0 (0 AI cost). Multiple questions run concurrently (`--concurrency 3` by default).
+     - **Pros**: ~90% fewer API requests (low RPM pressure), much faster wall-clock turnaround, intrinsic cross-script consistency (the model sees all answers side-by-side), and single-pass self-moderation.
+     - **Cons**: Higher per-token cost (`gemini-4-argon` processes all answer images), single-request payload/context ceiling for dense multi-page essays, and a failed request affects that entire question batch rather than one script.
    - `--mode item`: Grades each non-blank student answer individually with Flash, followed by whole-question text moderation with Reasoning tier.
+     - **Pros**: Much lower image input token cost (`gemini-3.8-flash`), dedicated visual focus on one crop at a time, no batch payload ceiling on long essays/large cohorts, and per-script fault isolation.
+     - **Cons**: Very high request count ($N \times Q$ grading calls + $Q$ moderation calls, higher RPM throttling risk), slower runtime, and two-stage consistency (moderation sees transcribed answer text rather than the original image).
    Both modes produce identical downstream schemas (`results.json`, `review.xlsx`, telemetry) and support resuming and retrying. Confirm the mode with the user during cost preview before adding `--confirm-cost`.
 
    During grading, real-time step progress and token usage are monitored
