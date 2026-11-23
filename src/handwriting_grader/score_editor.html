@@ -2125,6 +2125,9 @@ byId("reset-review").onclick = async () => {
 byId("approve").onclick = async () => {
   if (dirty) { message("Save the current item before approval."); return; }
 
+  // Refresh latest state from server so review counts are up to date
+  try { await reload(); } catch (_) {}
+
   // Check whether human review is complete across all identities and marks
   const unreviewedScripts = (state.scripts || []).filter(s => !s.reviewed || !s.reviewed_id);
   let unreviewedMarks = 0;
