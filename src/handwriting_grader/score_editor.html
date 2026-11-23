@@ -1684,6 +1684,14 @@ function initPreferences() {
       byId("table-image-mode").value = savedMode;
     }
   } catch (_) {}
+
+  // 6. Metadata image field persistence
+  try {
+    const savedMetaImg = localStorage.getItem("handwriting_grader_metadata_image");
+    if (savedMetaImg && byId("metadata-image")) {
+      byId("metadata-image").value = savedMetaImg;
+    }
+  } catch (_) {}
 }
 
 byId("img-size").oninput = e => {
@@ -1745,6 +1753,10 @@ document.querySelectorAll("#marksheet th.sortable").forEach(th => {
 function renderComparison() {}
 
 async function render() {
+  try {
+    localStorage.setItem("handwriting_grader_section", section);
+    localStorage.setItem("handwriting_grader_script", String(script));
+  } catch (_) {}
   byId("script").value = String(script); byId("section").value = section;
   const current = state.scripts[script];
   const identity = section === "id";
@@ -1792,7 +1804,20 @@ function updateClusterDropdown() {
 }
 
 async function reload() {
+  const firstLoad = !state;
   state = await (await api("/api/state")).json();
+  if (firstLoad) {
+    try {
+      const savedSec = localStorage.getItem("handwriting_grader_section");
+      if (savedSec === "id" || (savedSec !== null && /^\d+$/.test(savedSec) && Number(savedSec) >= 0 && Number(savedSec) < state.questions.length)) {
+        section = savedSec;
+      }
+      const savedScript = localStorage.getItem("handwriting_grader_script");
+      if (savedScript !== null && /^\d+$/.test(savedScript) && Number(savedScript) >= 0 && Number(savedScript) < state.scripts.length) {
+        script = Number(savedScript);
+      }
+    } catch (_) {}
+  }
   byId("script").replaceChildren(...state.scripts.map(s => option(String(s.script_index), `Script ${s.script_index + 1}`)));
   byId("section").replaceChildren(option("id", "Identity"),
     ...state.questions.map((q, i) => option(String(i), `Question ${q.question_number}`)));
@@ -1810,7 +1835,10 @@ async function change(which, value) {
 
 byId("script").onchange = e => change("script", e.target.value);
 byId("section").onchange = e => change("section", e.target.value);
-byId("metadata-image").onchange = () => renderMarksheetTable();
+byId("metadata-image").onchange = e => {
+  try { localStorage.setItem("handwriting_grader_metadata_image", e.target.value); } catch (_) {}
+  renderMarksheetTable();
+};
 
 byId("approve").onclick = async () => {
   if (dirty) { message("Save the current item before approval."); return; }
