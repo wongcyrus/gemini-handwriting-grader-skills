@@ -193,7 +193,7 @@ def create_analysis(config, config_dir, config_path, model_config_path, project,
                 return question, text
 
             if use_parallel:
-                with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
                     question_results = list(pool.map(_question_task, enumerate(questions)))
             else:
                 question_results = [_question_task(item) for item in enumerate(questions)]
@@ -404,7 +404,8 @@ def _generate_infographic(client, model, prompt, out_path: Path):
                 out_path.parent.mkdir(parents=True, exist_ok=True)
                 out_path.write_bytes(inline.data)
                 return out_path
-    except Exception:
+    except Exception as exc:
+        print(f"[Infographic] Failed {out_path.name}: {type(exc).__name__}: {exc}", flush=True)
         return None
     return None
 
@@ -451,7 +452,22 @@ def create_advanced_report(config, config_dir, config_path, *, run_id=None, info
                 except ValueError:
                     pass
             print(f"Generating Gemini infographics for Class & {len(questions)} questions ({img_model})...", flush=True)
-            with genai.Client(vertexai=True, project=proj, location=loc) as img_client:
+            with genai.Client(
+                vertexai=True,
+                project=proj,
+                location=loc,
+                http_options=types.HttpOptions(
+                    timeout=180_000,
+                    retry_options=types.HttpRetryOptions(
+                        attempts=5,
+                        initial_delay=5.0,
+                        max_delay=60.0,
+                        exp_base=2.0,
+                        jitter=True,
+                        http_status_codes=[429, 500, 502, 503, 504],
+                    ),
+                ),
+            ) as img_client:
                 tasks = [("class", "Class Overview", overview[:900], info_dir / "class.png")]
                 for idx, q in enumerate(questions):
                     qn = q["question_number"]
@@ -471,7 +487,7 @@ def create_advanced_report(config, config_dir, config_path, *, run_id=None, info
                         print(f"[Infographic] Generated {label}", flush=True)
                     return key, res
 
-                with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
                     for key, res in pool.map(_run_info, tasks):
                         if res:
                             infographic_paths[key] = res
