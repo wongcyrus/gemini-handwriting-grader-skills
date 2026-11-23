@@ -314,20 +314,35 @@ def create_advanced_report(config, config_dir, config_path, *, run_id=None):
         document.add_paragraph(students[row["script_index"]])
     document.save(report / "teacher-report.docx")
     presentation = Presentation()
+    presentation.slide_width = Inches(13.333)
+    presentation.slide_height = Inches(7.5)
+
+    def _fit_widescreen(s):
+        if s.shapes.title:
+            s.shapes.title.left = Inches(0.7)
+            s.shapes.title.width = Inches(11.9)
+        if len(s.placeholders) > 1:
+            s.placeholders[1].left = Inches(0.7)
+            s.placeholders[1].width = Inches(11.9)
+            s.placeholders[1].height = Inches(5.3)
+
     slide = presentation.slides.add_slide(presentation.slide_layouts[1])
     slide.shapes.title.text = "Class overview"
     slide.placeholders[1].text = overview
+    _fit_widescreen(slide)
     slide = presentation.slides.add_slide(presentation.slide_layouts[5])
     slide.shapes.title.text = "Mean score by question (%)"
+    _fit_widescreen(slide)
     chart = CategoryChartData()
     chart.categories = [q["question_number"] for q in questions]
     chart.add_series("Mean (%)", [100 * statistics.mean(row["marks"][i] for row in rows) / q["marks"]
                                    for i, q in enumerate(questions)])
-    slide.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(0.7), Inches(1.2), Inches(8.5), Inches(4.5), chart)
+    slide.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(0.7), Inches(1.3), Inches(11.9), Inches(5.5), chart)
     for index, question in enumerate(questions, 1):
         slide = presentation.slides.add_slide(presentation.slide_layouts[1])
         slide.shapes.title.text = question["question_number"]
         slide.placeholders[1].text = questions_text[question_key(question["question_number"])]
+        _fit_widescreen(slide)
     presentation.save(report / "class-presentation.pptx")
     validate_analysis(config, config_dir, config_path, run_id=run_id)
     if (file_hash(root / "review.xlsx") != approval["review_sha256"]
