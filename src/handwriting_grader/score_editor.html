@@ -717,7 +717,7 @@ function renderAllStatusRows() {
   });
 }
 
-function openAllStatusModal() {
+async function openAllStatusModal() {
   const dlg = byId("all-status-modal");
   if (!dlg || !state) return;
   if (dlg.open) {
@@ -728,6 +728,10 @@ function openAllStatusModal() {
   dlg.showModal();
   const firstBtn = dlg.querySelector("#all-status-tbody button") || byId("all-status-close");
   if (firstBtn) firstBtn.focus();
+  try {
+    await reload();
+    if (dlg.open) renderAllStatusRows();
+  } catch (_) {}
 }
 
 if (byId("btn-all-status")) byId("btn-all-status").onclick = openAllStatusModal;
