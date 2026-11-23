@@ -150,15 +150,18 @@ class TestTelemetryTracker(unittest.TestCase):
         self.assertIsNotNone(cfg_38_ocr)
         self.assertEqual(cfg_38_ocr.thinking_budget, 0)
 
-        # Gemini 4 Argon on reasoning task -> dynamic thinking (-1)
+        # Gemini 4 Argon on reasoning task -> thinking_level MEDIUM
+        from google.genai import types
         cfg_4_reasoning = get_thinking_config("gemini-4-argon", is_reasoning=True)
         self.assertIsNotNone(cfg_4_reasoning)
-        self.assertEqual(cfg_4_reasoning.thinking_budget, -1)
+        self.assertEqual(cfg_4_reasoning.thinking_level, types.ThinkingLevel.MEDIUM)
+        self.assertIsNone(cfg_4_reasoning.thinking_budget)
 
-        # Gemini 4 Argon on perception/OCR task -> thinking budget 0
+        # Gemini 4 Argon on perception/OCR task -> thinking_level LOW
         cfg_4_ocr = get_thinking_config("gemini-4-argon", is_reasoning=False)
         self.assertIsNotNone(cfg_4_ocr)
-        self.assertEqual(cfg_4_ocr.thinking_budget, 0)
+        self.assertEqual(cfg_4_ocr.thinking_level, types.ThinkingLevel.LOW)
+        self.assertIsNone(cfg_4_ocr.thinking_budget)
 
         # Legacy Gemini 1.5 -> None (no thinking_config)
         cfg_15 = get_thinking_config("gemini-1.5-flash", is_reasoning=True)

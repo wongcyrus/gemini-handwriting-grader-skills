@@ -319,14 +319,19 @@ def set_active_tracker(tracker: Optional[TelemetryTracker]) -> None:
 
 
 def get_thinking_config(model: str, *, is_reasoning: bool = True) -> Optional[Any]:
-    """Return dynamic thinking (-1) for reasoning tasks on thinking-capable models
-    (such as Gemini 3.8 Flash, 2.5 Flash, 4 Argon, Pro), or 0 for pure perception/OCR tasks.
-    Returns None for legacy models (e.g. Gemini 1.5) that do not support thinking_config.
+    """Return appropriate thinking configuration for thinking-capable models.
+    - Gemini 4+ models (e.g. gemini-4-argon) require thinking_level (MEDIUM/LOW) instead of thinking_budget.
+    - Gemini 2.5 / 3.x models (e.g. gemini-3.8-flash) use thinking_budget (-1 for reasoning, 0 for OCR).
+    - Legacy models (e.g. Gemini 1.5) return None.
     """
     if not model or "1.5" in model.lower():
         return None
     try:
         from google.genai import types
+        m = model.lower()
+        if "gemini-4" in m or "-4-" in m:
+            level = types.ThinkingLevel.MEDIUM if is_reasoning else types.ThinkingLevel.LOW
+            return types.ThinkingConfig(thinking_level=level)
         return types.ThinkingConfig(thinking_budget=-1 if is_reasoning else 0)
     except (ImportError, AttributeError):
         return None
