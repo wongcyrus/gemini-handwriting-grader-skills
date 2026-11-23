@@ -1,6 +1,7 @@
 """Exam preflight and local region review."""
 
 import argparse
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -408,7 +409,7 @@ def main(argv=None):
         if not args.confirm_cost:
             print("No request sent. Obtain user approval and rerun with --confirm-cost.", file=sys.stderr)
             return 1
-        tracker = TelemetryTracker(log_dir=None)
+        tracker = TelemetryTracker(log_dir=None, config_path=args.model_config)
         set_active_tracker(tracker)
         try:
             output = extract_rubric(
@@ -465,7 +466,7 @@ def main(argv=None):
         if not args.confirm_cost:
             print("No request sent. Obtain user approval and rerun with --confirm-cost.", file=sys.stderr)
             return 1
-        tracker = TelemetryTracker(log_dir=None)
+        tracker = TelemetryTracker(log_dir=None, config_path=args.model_config)
         set_active_tracker(tracker)
         try:
             output = verify_rubric(config, path.parent, path, args.model_config, args.project, args.location)
@@ -558,7 +559,8 @@ def main(argv=None):
         if not args.confirm_cost:
             print("No request sent. Obtain user approval and rerun with --confirm-cost.", file=sys.stderr)
             return 1
-        tracker = TelemetryTracker(log_dir=info["target"] / "grading" / "telemetry")
+        tracker = TelemetryTracker(log_dir=info["target"] / "grading" / "telemetry",
+                                   config_path=args.model_config)
         set_active_tracker(tracker)
         try:
             output = regrade(config, path.parent, path, args.run, args.parent, args.question,
@@ -613,7 +615,7 @@ def main(argv=None):
             print("No request sent. Obtain user approval and rerun with --confirm-cost.", file=sys.stderr)
             return 1
         output_dir = resolve_path(path.parent, config["exam"]["output_dir"]) / "grading"
-        tracker = TelemetryTracker(log_dir=output_dir / "telemetry")
+        tracker = TelemetryTracker(log_dir=output_dir / "telemetry", config_path=args.model_config)
         set_active_tracker(tracker)
         try:
             output = grade_exam(
@@ -631,7 +633,6 @@ def main(argv=None):
         print(f"Grading results and review workbook saved to {output}. Human review is required.")
         return 0
     if args.command == "cluster-answers":
-        import json
         from .score_editor import ScoreServer
 
         try:
@@ -747,7 +748,6 @@ def main(argv=None):
         return 0
     if args.command == "retry-grading":
         from .grading import inspect_retry_grading, retry_grading
-        from .regions import resolve_path
 
         fields = None
         if args.re_ocr_metadata:
@@ -800,8 +800,9 @@ def main(argv=None):
             print("No request sent. Obtain user approval and rerun with --confirm-cost.", file=sys.stderr)
             return 1
 
-        target_dir = resolve_path(path.parent, config["exam"]["output_dir"]) / "grading"
-        tracker = TelemetryTracker(log_dir=target_dir / "telemetry")
+        target_dir = info["target"]
+        tracker = TelemetryTracker(log_dir=target_dir / "telemetry",
+                                   config_path=manifest["model_config_path"])
         set_active_tracker(tracker)
         try:
             output = retry_grading(
@@ -864,7 +865,7 @@ def main(argv=None):
             print("No request sent. Obtain user approval and rerun with --confirm-cost.", file=sys.stderr)
             return 1
         analysis_dir = validated[0].parent / "ai-analysis"
-        tracker = TelemetryTracker(log_dir=analysis_dir / "telemetry")
+        tracker = TelemetryTracker(log_dir=analysis_dir / "telemetry", config_path=args.model_config)
         set_active_tracker(tracker)
         try:
             output = create_analysis(config, path.parent, path, args.model_config, args.project, args.location,
@@ -898,9 +899,13 @@ def main(argv=None):
         from .run_context import run_directory
 
         analysis_dir = run_directory(config, path.parent, args.run) / "ai-analysis"
-        tracker = TelemetryTracker(log_dir=analysis_dir / "telemetry")
-        set_active_tracker(tracker)
         try:
+            model_config_path = None
+            if not getattr(args, "no_infographics", False):
+                with (analysis_dir / "manifest.json").open(encoding="utf-8") as file:
+                    model_config_path = json.load(file)["model_config_path"]
+            tracker = TelemetryTracker(log_dir=analysis_dir / "telemetry", config_path=model_config_path)
+            set_active_tracker(tracker)
             output = create_advanced_report(config, path.parent, path, run_id=args.run,
                                             infographics=not getattr(args, "no_infographics", False),
                                             image_model=getattr(args, "image_model", None))
@@ -1147,7 +1152,7 @@ def main(argv=None):
         if not args.confirm_cost:
             print("No request sent. Obtain user approval and rerun with --confirm-cost.", file=sys.stderr)
             return 1
-        tracker = TelemetryTracker(log_dir=regions_root / "telemetry")
+        tracker = TelemetryTracker(log_dir=regions_root / "telemetry", config_path=args.model_config)
         set_active_tracker(tracker)
         try:
             output = generate_suggestions(

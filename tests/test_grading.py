@@ -15,7 +15,8 @@ import urllib.request
 from contextlib import redirect_stdout
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 import yaml
 from openpyxl import Workbook, load_workbook
@@ -180,6 +181,38 @@ class GradingTests(unittest.TestCase):
             response = error
         with response:
             return response.status, response.read()
+
+    def test_saved_clusters_do_not_override_current_threshold_answers_or_model(self):
+        server = object.__new__(ScoreServer)
+        server.lock = threading.Lock()
+        server.embedding_lock = threading.Lock()
+        server.root = self.root
+        server.shared_cache_path = self.root / "shared-embeddings.json"
+        server.embedding_cache = {"first": [1, 0], "second": [0.9, 0.44]}
+        server.precomputed_clusters = {"Q1": {
+            "model": "old-model", "clusters": [{"rep_text": "Stale", "scripts": []}],
+        }}
+        from handwriting_grader.rubric import question_key
+        key = question_key("Q1")
+        marks = {(0, key): {"answer": "First"}, (1, key): {"answer": "Second"}}
+        state = (self.root, "", [], [{"question_number": "Q1"}], {0: {}, 1: {}}, marks)
+        client = Mock()
+        client.models.embed_content.return_value = SimpleNamespace(embeddings=[SimpleNamespace(values=[1, 0])])
+        with patch("handwriting_grader.score_editor.load_state", return_value=state), \
+                patch.object(server, "get_embedding_client", return_value=(client, "current-model")):
+            result = server.cluster_question(0, threshold=0.95)
+            self.assertEqual(len(result["clusters"]), 2)
+            self.assertEqual(result["model"], "current-model")
+            client.models.embed_content.assert_not_called()
+            marks[(0, key)]["answer"] = "Second"
+            self.assertEqual(len(server.cluster_question(0)["clusters"]), 1)
+            marks[(1, key)]["answer"] = ""
+            self.assertTrue(any(c["rep_text"] == "(empty)" for c in server.cluster_question(0)["clusters"]))
+            marks[(0, key)]["answer"] = "First"
+            marks[(1, key)]["answer"] = "Second"
+            server.embedding_cache.clear()
+            self.assertEqual(len(server.cluster_question(0)["clusters"]), 1)
+        self.assertEqual(client.models.embed_content.call_count, 2)
 
     def test_score_editor_security_concurrency_and_review_invalidation(self):
         root = self.run_grading()
@@ -1221,7 +1254,9 @@ class GradingTests(unittest.TestCase):
                 body = json.dumps({"candidates": [{
                     "content": {"role": "model", "parts": [{"text": "Feedback."}]},
                     "finishReason": "STOP",
-                }]}).encode()
+                }], "usageMetadata": {
+                    "promptTokenCount": 12, "candidatesTokenCount": 4, "totalTokenCount": 16,
+                }}).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))
@@ -1233,6 +1268,9 @@ class GradingTests(unittest.TestCase):
         approve_grading(self.config, self.root, self.exam)
         settings = yaml.safe_load(self.models.read_text())
         settings["models"]["analytics"] = "gemini-4-argon"
+        settings["pricing"] = {
+            name: {"input": 2, "output": 8} for name in ("gemini-4-argon", settings["models"]["grading"])
+        }
         model = self.root / "analytics-models.yaml"
         model.write_text(yaml.safe_dump(settings))
         service = ThreadingHTTPServer(("127.0.0.1", 0), FakeVertex)
@@ -1244,10 +1282,18 @@ class GradingTests(unittest.TestCase):
                 return Client(**kwargs, credentials=Credentials(token="local-test-token"))
 
             with patch("handwriting_grader.advanced.genai.Client", side_effect=local_client):
-                output = create_analysis(self.config, self.root, self.exam, model, "test-project", "global")
+                self.assertEqual(main([
+                    "ai-analysis", "--exam", str(self.exam), "--model-config", str(model),
+                    "--project", "test-project", "--location", "global", "--confirm-cost",
+                ]), 0)
+            output = root.parent / "ai-analysis"
             self.assertEqual(len(calls), 4)
             self.assertIn("Example answer", json.dumps(calls[0]))
             self.assertTrue((output / "review.xlsx").is_file())
+            traces = [json.loads(line) for line in (output / "telemetry" / "gemini_usage.jsonl").read_text().splitlines()]
+            self.assertEqual(len(traces), 4)
+            self.assertTrue(all(trace["cost_usd"] == 0.000056 for trace in traces))
+            self.assertEqual(json.loads((output / "cost_summary.json").read_text())["total_cost_usd"], 0.00022)
         finally:
             service.shutdown()
             thread.join(timeout=5)

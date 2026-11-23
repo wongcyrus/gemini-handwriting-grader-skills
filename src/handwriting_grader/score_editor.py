@@ -501,8 +501,7 @@ class ScoreServer(ThreadingHTTPServer):
         if not (0 <= question_idx < len(questions)):
             raise ValueError("Invalid question index")
         q_num = questions[question_idx]["question_number"]
-        if q_num in self.precomputed_clusters:
-            return self.precomputed_clusters[q_num]
+        # Rebuild membership from current answers and vectors, not potentially stale saved groups.
         q_key = question_key(q_num)
 
         script_answers = {}

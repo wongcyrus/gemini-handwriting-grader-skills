@@ -4,7 +4,10 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
+from handwriting_grader.cli import main
 
 from handwriting_grader.telemetry import (
     DEFAULT_RATES,
@@ -37,6 +40,59 @@ class TestTelemetryTracker(unittest.TestCase):
             cached_tokens=0,
         )
         self.assertAlmostEqual(cost, 0.375, places=5)
+
+    def test_retry_cli_uses_manifest_pricing_and_selected_child_telemetry(self):
+        model_config = self.log_dir / "models.yaml"
+        model_config.write_text("pricing:\n  gemini-3.8-flash:\n    input: 2\n    output: 8\n")
+        target = self.log_dir / "output" / "runs" / "child" / "grading"
+        info = {
+            "target": target, "failed_marks": [{}], "unmoderated_questions": [],
+            "regions_updated": False, "target_question": None, "estimated_requests": 1,
+            "manifest": {"project": "test-project", "location": "global",
+                         "models": {"grading": "gemini-3.8-flash"}, "model_config_path": str(model_config)},
+        }
+
+        def retry(*args, **kwargs):
+            get_active_tracker().record_call(
+                "grading", "Q1", "gemini-3.8-flash",
+                SimpleNamespace(prompt_token_count=1000, candidates_token_count=1000), 1,
+            )
+            return target
+
+        with patch("handwriting_grader.cli.load_config", return_value={"exam": {"output_dir": "output"}}), \
+                patch("handwriting_grader.cli.check_exam", return_value=([], {})), \
+                patch("handwriting_grader.grading.inspect_retry_grading", return_value=info), \
+                patch("handwriting_grader.grading.retry_grading", side_effect=retry):
+            self.assertEqual(main([
+                "retry-grading", "--exam", str(self.log_dir / "exam.yaml"), "--run", "child", "--confirm-cost",
+            ]), 0)
+        trace = json.loads((target / "telemetry" / "gemini_usage.jsonl").read_text())
+        self.assertEqual(trace["cost_usd"], 0.01)
+        self.assertEqual(json.loads((target / "cost_summary.json").read_text())["total_cost_usd"], 0.01)
+        self.assertFalse((self.log_dir / "output" / "grading" / "telemetry").exists())
+
+    def test_infographic_cli_uses_pricing_from_analysis_manifest(self):
+        model_config = self.log_dir / "models.yaml"
+        model_config.write_text("pricing:\n  gemini-3-pro-image:\n    input: 2\n    output: 8\n")
+        analysis = self.log_dir / "ai-analysis"
+        analysis.mkdir()
+        (analysis / "manifest.json").write_text(json.dumps({"model_config_path": str(model_config)}))
+
+        def report(*args, **kwargs):
+            get_active_tracker().record_call(
+                "infographics", "Class", "gemini-3-pro-image",
+                SimpleNamespace(prompt_token_count=1000, candidates_token_count=1000), 1,
+            )
+            return analysis / "reports"
+
+        with patch("handwriting_grader.cli.load_config", return_value={"exam": {"output_dir": "output"}}), \
+                patch("handwriting_grader.cli.check_exam", return_value=([], {})), \
+                patch("handwriting_grader.run_context.run_directory", return_value=self.log_dir), \
+                patch("handwriting_grader.advanced.create_advanced_report", side_effect=report):
+            self.assertEqual(main(["advanced-report", "--exam", str(self.log_dir / "exam.yaml")]), 0)
+        trace = json.loads((analysis / "telemetry" / "gemini_usage.jsonl").read_text())
+        self.assertEqual(trace["cost_usd"], 0.01)
+        self.assertEqual(json.loads((analysis / "cost_summary.json").read_text())["total_cost_usd"], 0.01)
 
     def test_calculate_cost_cached_tokens(self):
         # 500,000 cached, 500,000 regular input
