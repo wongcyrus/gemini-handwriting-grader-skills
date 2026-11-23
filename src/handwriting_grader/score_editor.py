@@ -267,33 +267,6 @@ def save_review_batch(server, data):
         book.close()
 
 
-def reset_review(server, data):
-    """Archive current review.xlsx and regenerate a fresh unreviewed workbook from results.json."""
-    from .grading import write_review
-
-    root, revision, *_ = load_state(server)
-    if data.get("revision") != revision:
-        raise RuntimeError("Review changed in another editor; reload before resetting")
-    if data.get("confirmed") is not True:
-        raise ValueError("Explicit confirmation is required")
-    review_hash, result_hash, manifest_hash = revision.split(":")
-    _backup_review(root, review_hash)
-    with (root / "results.json").open(encoding="utf-8") as file:
-        results = json.load(file)
-    temp = None
-    try:
-        with tempfile.NamedTemporaryFile(dir=root, suffix=".xlsx", delete=False) as file:
-            temp = Path(file.name)
-        temp.unlink(missing_ok=True)
-        write_review(temp, results, overwrite=False)
-        os.replace(temp, root / "review.xlsx")
-    finally:
-        if temp is not None:
-            temp.unlink(missing_ok=True)
-    (root / "approval.json").unlink(missing_ok=True)
-    return f"{file_hash(root / 'review.xlsx')}:{result_hash}:{manifest_hash}"
-
-
 def suggestion_parameters(question, threshold, step):
     decimal_format = re.compile(r"(?:[0-9]+(?:\.[0-9]{0,12})?|\.[0-9]{1,12})\Z")
     if (not isinstance(threshold, str) or not isinstance(step, str) or len(threshold) > 40 or len(step) > 40
@@ -793,6 +766,8 @@ class ScoreHandler(BaseHTTPRequestHandler):
                     content_type = "image/png"
 
                 with self.server.image_lock:
+                    if len(self.server.image_cache) >= 1000:
+                        self.server.image_cache.clear()
                     self.server.image_cache[cache_key] = (content_type, data)
                 return self.respond(200, data, content_type, cache_control="private, max-age=86400", etag=etag)
             except Exception:

@@ -231,7 +231,11 @@ def discover_best_tier_models(
     for loc in locs:
         try:
             client = genai.Client(vertexai=True, project=project, location=loc)
-            models_list = [m.name.split("/")[-1] for m in client.models.list()]
+            models_list = [
+                m.name.split("/")[-1]
+                for m in client.models.list()
+                if getattr(m, "name", None)
+            ]
 
             flash_cands = [
                 m

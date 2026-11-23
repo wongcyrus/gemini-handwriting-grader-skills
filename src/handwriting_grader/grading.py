@@ -859,10 +859,10 @@ def continue_grading(target, results, questions, boxes, summary, stride, models,
                 if pending:
                     attendance_guard()
     
-                    def grade_one(script_index, box):
-                        image_index = script_index * stride + page
+                    def grade_one(script_index, box, q=question, p=page):
+                        image_index = script_index * stride + p
                         row = {
-                            "script_index": script_index, "question": question["question_number"],
+                            "script_index": script_index, "question": q["question_number"],
                             "page_image": f"images/{image_index}.jpg", "answer": "", "raw_mark": None,
                             "moderated_mark": None, "similarity_score": None, "reasoning": "", "moderator_flag": True,
                             "moderator_note": "", "grading_failed": True,
@@ -876,7 +876,7 @@ def continue_grading(target, results, questions, boxes, summary, stride, models,
                                     moderator_flag=False, grading_failed=False,
                                 )
                                 return script_index, row
-                            grade = provider.grade(question, image=image)
+                            grade = provider.grade(q, image=image)
                             extracted = grade.get("answer")
                             if not extracted and grade["mark"] > 0 and hasattr(provider, "ocr"):
                                 extracted = provider.ocr(image, "answer")

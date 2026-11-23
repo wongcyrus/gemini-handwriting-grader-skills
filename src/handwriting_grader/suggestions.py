@@ -168,7 +168,7 @@ def generate_suggestions(config, config_dir, config_path, model_config_path, pro
     with genai.Client(vertexai=True, project=project, location=location, http_options=options) as client:
         for index, page in enumerate(manifest["pages"]):
             image = (root / "images" / f"{index}.jpg").read_bytes()
-            def compute():
+            def compute(img=image, pg_idx=index):
                 t0 = time.monotonic()
                 sug_config = {
                     "temperature": 0, "max_output_tokens": 8192,
@@ -179,14 +179,14 @@ def generate_suggestions(config, config_dir, config_path, model_config_path, pro
                     sug_config["thinking_config"] = think_cfg
                 response = client.models.generate_content(
                     model=model,
-                    contents=[prompt_text, types.Part.from_bytes(data=image, mime_type="image/jpeg")],
+                    contents=[prompt_text, types.Part.from_bytes(data=img, mime_type="image/jpeg")],
                     config=types.GenerateContentConfig(**sug_config),
                 )
                 tracker = get_active_tracker()
                 if tracker is not None:
                     tracker.record_call(
                         phase="suggest_regions",
-                        step_label=f"Template page {index + 1}",
+                        step_label=f"Template page {pg_idx + 1}",
                         model=model,
                         usage_metadata=getattr(response, "usage_metadata", None),
                         duration_sec=time.monotonic() - t0,
@@ -194,12 +194,12 @@ def generate_suggestions(config, config_dir, config_path, model_config_path, pro
                 return (SuggestedBoxes.model_validate(response.parsed) if response.parsed is not None
                         else SuggestedBoxes.model_validate_json(response.text)).model_dump()
 
-            def validate(value):
+            def validate(value, pg_idx=index):
                 parsed = SuggestedBoxes.model_validate(value)
                 for box in parsed.boxes:
                     if (box.x < 0 or box.y < 0 or box.width <= 0 or box.height <= 0
                             or box.x + box.width > 1000 or box.y + box.height > 1000):
-                        raise ValueError(f"Vertex returned an invalid normalized box on page {index + 1}")
+                        raise ValueError(f"Vertex returned an invalid normalized box on page {pg_idx + 1}")
                 return parsed.model_dump()
 
             parsed = SuggestedBoxes.model_validate(cache.call(
