@@ -299,6 +299,13 @@ def main(argv=None):
     email_send = commands.add_parser("send-email", help="Send individually approved emails using SMTP STARTTLS")
     email_send.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     email_send.add_argument("--confirm-send", action="store_true", help="Explicitly confirm dispatch")
+    moodle_exp = commands.add_parser("moodle-export",
+                                     help="Export per-student feedback PDFs, Moodle CSV/ZIP, and email recipients")
+    moodle_exp.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    moodle_exp.add_argument("--worksheet", type=Path, default=None,
+                            help="Optional Moodle Assignment grading worksheet CSV")
+    moodle_exp.add_argument("--participants", type=Path, default=None,
+                            help="Optional Moodle course participants CSV (to build recipients.csv)")
     discover_models = commands.add_parser("discover-models", help="Discover and probe available Vertex AI models online")
     discover_models.add_argument("--project", required=True, help="Explicit Google Cloud project")
     discover_models.add_argument("--location", default="global", help="Vertex AI location (default: global)")
@@ -1018,6 +1025,17 @@ def main(argv=None):
                   file=sys.stderr)
             return 1
         print(f"SMTP accepted {count} messages; acceptance does not guarantee delivery.")
+        return 0
+    if args.command == "moodle-export":
+        from .moodle import export_moodle
+
+        try:
+            output = export_moodle(config, path.parent, path, worksheet=args.worksheet,
+                                   participants=args.participants, run_id=getattr(args, "run", None))
+        except (OSError, ValueError, KeyError) as exc:
+            print(f"Moodle export failed: {exc}", file=sys.stderr)
+            return 1
+        print(f"Moodle & student feedback package saved to {output}.")
         return 0
     if args.command == "prepare-regions":
         from .regions import prepare_regions

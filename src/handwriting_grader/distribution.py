@@ -61,13 +61,20 @@ def settings_file(path):
 def recipients_file(path, roster):
     with Path(path).open(encoding="utf-8-sig", newline="") as file:
         reader = csv.DictReader(file)
-        if reader.fieldnames != ["ID", "EMAIL"]:
-            raise ValueError("Recipients CSV must have exactly the headers ID,EMAIL")
+        fields = list(reader.fieldnames or [])
+        is_std = fields == ["ID", "EMAIL"]
+        is_moodle = "ID number" in fields and "Email address" in fields
+        if not (is_std or is_moodle):
+            raise ValueError("Recipients CSV must have headers ID,EMAIL or Moodle columns (ID number, Email address)")
         recipients = {}
         addresses = set()
         for row in reader:
-            student_id = row["ID"].strip() if isinstance(row["ID"], str) else ""
-            email = address(row["EMAIL"])
+            raw_id = row.get("ID") if is_std else row.get("ID number")
+            raw_email = row.get("EMAIL") if is_std else row.get("Email address")
+            student_id = raw_id.strip() if isinstance(raw_id, str) else ""
+            if is_moodle and student_id not in roster:
+                continue
+            email = address(raw_email)
             if student_id not in roster or student_id in recipients or email.casefold() in addresses:
                 raise ValueError("Recipients must be unique and match the present roster")
             recipients[student_id] = email

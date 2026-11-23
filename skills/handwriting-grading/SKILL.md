@@ -100,7 +100,7 @@ execute a notebook as a workaround, or claim a human approval occurred.
    | `grading/checkpoint.json` (no `grading/manifest.json`) | Grading interrupted | `resume-grading` (preview first, then `--confirm-cost`) |
    | `grading/manifest.json` (no `grading/approval.json`) | Grading done (or failed items) | `cluster-answers` (optional) -> `review-grading` (or `retry-grading` if failures) -> approve |
    | `grading/approval.json` | Scores approved | Present Post-Approval Menu: `report`, `analytics`, `ai-analysis` (optional) |
-   | `reports/manifest.json` or `analytics/manifest.json` | Reports / offline stats generated | Offer remaining options: `analytics`/`report` (if missing), `ai-analysis` -> `advanced-report`, `preview-email` -> `send-email`, or `clean` |
+   | `reports/manifest.json` or `analytics/manifest.json` | Reports / offline stats generated | Offer remaining options: `analytics`/`report` (if missing), `ai-analysis` -> `advanced-report`, `moodle-export` (LMS PDFs/ZIP/CSV), `preview-email` -> `send-email`, or `clean` |
    | `ai-analysis/review.xlsx` (no `ai-analysis/approval.json`) | AI analysis generated | Teacher reviews `ai-analysis/review.xlsx` -> `approve-analysis` |
    | `ai-analysis/approval.json` | AI analysis approved | `advanced-report` (Teacher DOCX & Class PPTX), `preview-email` -> `send-email`, or `clean` |
    | `email/` preview artifact (no `email/approval.json`) | Email preview generated | Teacher inspects preview -> `approve-email` -> `send-email` |
@@ -187,7 +187,8 @@ execute a notebook as a workaround, or claim a human approval occurred.
      1. **Standard Reports (`report`)** *(Offline, zero AI cost)*: Individual marked student PDFs, combined PDF, stratified audit samples, and score spreadsheets (`score_report.xlsx`, `details_score_report.xlsx`).
      2. **Offline Statistical Analytics (`analytics`)** *(Offline, zero AI cost)*: Cohort & class statistics (`statistics.xlsx`) and per-question box-plot PNGs.
      3. **Gemini AI Qualitative Analysis (`ai-analysis`) & Advanced Reports (`advanced-report`)** *(Uses Gemini AI — preview cost & obtain explicit consent first)*: Analyzes class misconceptions and generates personalized student feedback (`ai-analysis/review.xlsx` -> `approve-analysis`), unlocking a **Teacher Executive Report (`.docx`)** and **16:9 Class Review Slides (`.pptx`)** with **Gemini infographics for the class and each question (enabled by default; inform the user they can optionally turn them off with `--no-infographics`)**. If any infographics fail (`failed_infographics` in `ai-analysis/reports/manifest.json`), **never auto-retry** — report the failed slides and ask the user whether to retry failed images, keep the text-card fallback, or wait.
-     4. **Email Distribution (`preview-email` -> `approve-email` -> `send-email`)**: Previews and emails marked PDFs and feedback to students.
+     4. **Moodle / LMS Export (`moodle-export`)** *(Offline, zero AI cost)*: Exports combined per-student PDFs (`student_pdfs/<ID>_<Name>.pdf` with AI feedback cover page + marked script), builds `recipients.csv` from a Moodle participants CSV, and (with `--worksheet`) fills a Moodle Assignment grading worksheet CSV + `feedback_files.zip` for bulk Moodle upload.
+     5. **Email Distribution (`preview-email` -> `approve-email` -> `send-email`)**: Previews and emails marked PDFs and feedback to students (accepts `ID,EMAIL` or Moodle participants CSV directly).
 
    After grading and reporting are complete, always inform the user that results
    and review history have been preserved, and ask if they would like to clean

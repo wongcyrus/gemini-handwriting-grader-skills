@@ -16,6 +16,9 @@ Never print or commit credentials, previews, student data or generated PDFs.
 
 1. Run `handwriting-grader preview-email --exam /path/to/exam.yaml
    --settings /private/email.yaml --recipients /private/recipients.csv`.
+   (`--recipients` accepts either `ID,EMAIL` or a Moodle participants CSV with
+   `ID number` and `Email address` columns; it automatically matches present roster
+   students.)
    This creates private `.eml` files and `email/preview.json`; it sends nothing.
 2. Ask the user to review every exact recipient, subject, body and PDF
    attachment. Then run `approve-email --exam /path/to/exam.yaml
@@ -33,3 +36,17 @@ and recipients before manually deciding on any further dispatch. Never delete
 or reset the journal automatically. Existing previews are not overwritten.
 Changing inputs or feedback invalidates approval; preserve stale output and
 discuss how to start again. SMTP has only been tested with a mock, not live.
+
+## Moodle / LMS Bulk Release (`moodle-export`)
+
+For releasing individual scores, personalized AI feedback, and marked PDFs via **Moodle** (or any LMS) without sending emails:
+
+```bash
+handwriting-grader moodle-export --exam /path/to/exam.yaml \
+  [--worksheet /path/to/grading_worksheet.csv] \
+  [--participants /path/to/courseid_participants.csv]
+```
+
+- **Per-Student Combined PDFs** (`output/moodle/student_pdfs/<ID>_<Name>.pdf`): Always generated. Merges an A4 personalized AI feedback & score cover page (if `ai-analysis` is approved) ahead of each student's marked exam script PDF.
+- **Email Recipients Helper** (`output/moodle/recipients.csv`): When `--participants` is passed, extracts matched `ID,EMAIL` pairs for `preview-email`.
+- **Moodle Assignment Bulk Upload** (`output/moodle/grading_worksheet_filled.csv` + `output/moodle/feedback_files.zip`): When `--worksheet` (exported from Moodle Assignment -> *Download grading worksheet*) is passed, fills `Grade` and `Feedback comments` and packages each student's combined PDF under Moodle's `<Full name>_<ParticipantID>_assignsubmission_file_/` naming format for *Upload grading worksheet* and *Upload multiple feedback files in a zip*.
