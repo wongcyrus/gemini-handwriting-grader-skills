@@ -359,7 +359,7 @@ Keep this URL private and close spreadsheet editors while using this interface.<
   <span><code>Alt+M</code> Toggle Row Reviewed</span>
   <span><code>Ctrl+Enter</code> Confirm Question</span>
   <span><code>Alt+N</code> Next Unreviewed</span>
-  <span><code>Alt+←/→</code> Prev/Next Q</span>
+  <span><code>Alt+[</code> / <code>]</code> Prev/Next Q</span>
   <span><code>Alt+A</code> Approve</span>
 </div>
 
@@ -1980,10 +1980,10 @@ document.addEventListener("keydown", e => {
     if (btn) btn.click();
     return;
   }
-  if (e.altKey && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
+  if (e.altKey && (e.key === "ArrowRight" || e.key === "ArrowLeft" || e.key === "]" || e.key === "[" || e.key === "PageDown" || e.key === "PageUp")) {
     e.preventDefault();
     const totalQ = (state.questions || []).length;
-    if (e.key === "ArrowRight") {
+    if (e.key === "ArrowRight" || e.key === "]" || e.key === "PageDown") {
       const next = section === "id" ? (totalQ > 0 ? "0" : "id") : String(Math.min(totalQ - 1, Number(section) + 1));
       change("section", next);
     } else {
