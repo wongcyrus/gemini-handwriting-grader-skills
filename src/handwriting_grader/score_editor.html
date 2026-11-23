@@ -270,10 +270,10 @@ dialog#image-modal img {
     <p class="instructions">Verify every identity and answer against the image. Correct the answer and reasoning where needed.
 Failed or flagged grades and corrected answers require a manual mark. Save each item as reviewed.
 Keep this URL private and close spreadsheet editors while using this interface.</p>
-    <p class="instructions" style="color:#334155; margin-bottom:0;"><strong>Shortcuts:</strong> <code>↑</code>/<code>↓</code> or <code>J</code>/<code>K</code> move between rows · <code>Z</code> zoom/pan image · <code>Enter</code> saves mark &amp; moves down · <code>Ctrl+Enter</code> marks current tab reviewed &amp; advances · <code>[</code>/<code>]</code> or <code>Alt+←/→</code> switches questions · <code>Alt+N</code> next unreviewed · <code>Alt+A</code> approve all</p>
   </div>
-  <div class="bar" style="padding-top:0.2rem;">
-    <button id="approve" class="btn-success" title="Validates and approves all student identities and all questions for the whole assignment">Approve Entire Assignment</button>
+  <div class="bar" style="padding-top:0.2rem; display:flex; gap:0.5rem;">
+    <button type="button" id="btn-all-status" class="btn-primary" title="View review status across Identity and all questions (Alt+S)">All Questions Status [Alt+S]</button>
+    <button id="approve" class="btn-success" title="Validates and approves all student identities and all questions for the whole assignment">Approve Entire Assignment [Alt+A]</button>
   </div>
 </header>
 
@@ -360,6 +360,7 @@ Keep this URL private and close spreadsheet editors while using this interface.<
   <span><code>Ctrl+Enter</code> Confirm Question</span>
   <span><code>Alt+N</code> Next Unreviewed</span>
   <span><code>Alt+[</code> / <code>]</code> Prev/Next Q</span>
+  <span><code>Alt+S</code> All Status</span>
   <span><code>Alt+A</code> Approve</span>
 </div>
 
@@ -412,6 +413,33 @@ Keep this URL private and close spreadsheet editors while using this interface.<
   <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
     <button type="button" id="kb-confirm-cancel">Cancel (Esc)</button>
     <button type="button" id="kb-confirm-ok" class="btn-primary">Confirm (Enter)</button>
+  </div>
+</dialog>
+
+<dialog id="all-status-modal" style="padding: 1rem 1.25rem; border: 1px solid #cbd5e1; border-radius: 10px; width: min(760px, 94vw); max-height: 85vh; box-shadow: 0 16px 36px rgba(15,23,42,0.22);">
+  <div style="display:flex; justify-content:space-between; align-items:center; gap:0.75rem; margin-bottom:0.65rem; flex-wrap:wrap;">
+    <div>
+      <strong style="font-size:1.05rem; color:#0f172a;">All Questions &amp; Identity Status</strong>
+      <div id="all-status-summary" style="font-size:0.82rem; color:#475569; margin-top:0.15rem;"></div>
+    </div>
+    <div style="display:flex; gap:0.45rem; align-items:center;">
+      <button type="button" id="all-status-incomplete-btn" class="btn-filter-toggle">Incomplete Only</button>
+      <button type="button" id="all-status-close">Close (Esc)</button>
+    </div>
+  </div>
+  <div style="max-height:62vh; overflow-y:auto; border:1px solid #e2e8f0; border-radius:6px;">
+    <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+      <thead style="position:sticky; top:0; background:#f8fafc; border-bottom:1px solid #cbd5e1;">
+        <tr>
+          <th style="text-align:left; padding:0.45rem 0.65rem;">Section</th>
+          <th style="text-align:left; padding:0.45rem 0.65rem;">Reviewed</th>
+          <th style="text-align:left; padding:0.45rem 0.65rem;">Needs Mark</th>
+          <th style="text-align:left; padding:0.45rem 0.65rem;">Status</th>
+          <th style="text-align:right; padding:0.45rem 0.65rem;">Action</th>
+        </tr>
+      </thead>
+      <tbody id="all-status-tbody"></tbody>
+    </table>
   </div>
 </dialog>
 
@@ -528,6 +556,160 @@ function textSimilarity(a, b) {
   let inter = 0;
   for (const w of setA) if (setB.has(w)) inter++;
   return inter / (setA.size + setB.size - inter);
+}
+
+let allStatusIncompleteOnly = false;
+
+function renderAllStatusRows() {
+  if (!state) return;
+  const tbody = byId("all-status-tbody");
+  const summaryEl = byId("all-status-summary");
+  const incBtn = byId("all-status-incomplete-btn");
+  if (!tbody) return;
+  if (incBtn) incBtn.classList.toggle("active", allStatusIncompleteOnly);
+  tbody.replaceChildren();
+
+  const totalScripts = state.scripts.length;
+  const idRev = state.scripts.filter(s => s.reviewed).length;
+  const idErrs = state.scripts.filter(s => !s.reviewed && (!s.reviewed_id || (s.errors && s.errors.length > 0))).length;
+  const idDone = totalScripts > 0 && idRev === totalScripts;
+
+  const rows = [
+    {
+      sec: "id",
+      label: "Identity (ID / Name / Class)",
+      reviewed: idRev,
+      needsMark: idErrs,
+      done: idDone,
+    },
+    ...state.questions.map((q, qi) => {
+      let rev = 0, req = 0;
+      for (const s of state.scripts) {
+        const m = state.marks[s.script_index][qi];
+        if (!m) continue;
+        if (m.reviewed) rev++;
+        const hasMan = m.manual_mark != null && String(m.manual_mark).trim() !== "";
+        const flg = Boolean(m.grading_failed || m.moderator_flag);
+        const ansCorr = m.answer_raw != null && m.answer !== m.answer_raw;
+        if ((flg || ansCorr) && !hasMan && !m.reviewed) req++;
+      }
+      const qLabel = String(q.question_number).startsWith("Q") ? q.question_number : `Q${q.question_number}`;
+      return {
+        sec: String(qi),
+        label: `${qLabel}${q.question_text ? " — " + String(q.question_text).slice(0, 55) : ""}`,
+        reviewed: rev,
+        needsMark: req,
+        done: totalScripts > 0 && rev === totalScripts,
+      };
+    }),
+  ];
+
+  const doneQs = rows.slice(1).filter(r => r.done).length;
+  const pendingCount = rows.filter(r => !r.done).length;
+  if (summaryEl) {
+    summaryEl.textContent = `Identity: ${idDone ? "Complete ✓" : `${idRev}/${totalScripts}`} · Questions Complete: ${doneQs} / ${state.questions.length} · Incomplete Sections: ${pendingCount}`;
+  }
+
+  const visibleRows = allStatusIncompleteOnly ? rows.filter(r => !r.done) : rows;
+  if (visibleRows.length === 0) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 5;
+    td.style.cssText = "padding:1rem; text-align:center; color:#15803d; font-weight:600;";
+    td.textContent = "All Identity and Question sections are 100% reviewed ✓";
+    tr.append(td);
+    tbody.append(tr);
+    return;
+  }
+
+  visibleRows.forEach(item => {
+    const tr = document.createElement("tr");
+    const isCurrent = item.sec === section;
+    tr.style.cssText = `border-bottom:1px solid #e2e8f0; cursor:pointer;${isCurrent ? " background:#eff6ff;" : ""}`;
+
+    const tdName = document.createElement("td");
+    tdName.style.cssText = "padding:0.45rem 0.65rem; font-weight:600; color:#0f172a;";
+    tdName.textContent = item.label + (isCurrent ? " (Current)" : "");
+
+    const tdRev = document.createElement("td");
+    tdRev.style.cssText = "padding:0.45rem 0.65rem; font-variant-numeric:tabular-nums;";
+    tdRev.textContent = `${item.reviewed} / ${totalScripts}`;
+
+    const tdReq = document.createElement("td");
+    tdReq.style.cssText = `padding:0.45rem 0.65rem; font-weight:600; color:${item.needsMark > 0 ? "#b45309" : "#64748b"};`;
+    tdReq.textContent = item.needsMark > 0 ? `⚠ ${item.needsMark}` : "0";
+
+    const tdStat = document.createElement("td");
+    tdStat.style.cssText = "padding:0.45rem 0.65rem;";
+    const badge = document.createElement("span");
+    badge.style.cssText = item.done
+      ? "display:inline-block; padding:0.15rem 0.45rem; border-radius:999px; font-size:0.75rem; font-weight:700; background:#dcfce7; color:#166534;"
+      : (item.reviewed > 0
+        ? "display:inline-block; padding:0.15rem 0.45rem; border-radius:999px; font-size:0.75rem; font-weight:700; background:#dbeafe; color:#1e40af;"
+        : "display:inline-block; padding:0.15rem 0.45rem; border-radius:999px; font-size:0.75rem; font-weight:700; background:#fef3c7; color:#92400e;");
+    badge.textContent = item.done ? "Complete ✓" : (item.reviewed > 0 ? "In Progress" : "Not Reviewed");
+    tdStat.append(badge);
+
+    const tdAct = document.createElement("td");
+    tdAct.style.cssText = "padding:0.45rem 0.65rem; text-align:right;";
+    const jumpBtn = document.createElement("button");
+    jumpBtn.type = "button";
+    jumpBtn.className = item.done ? "" : "btn-primary";
+    jumpBtn.textContent = "Go";
+    jumpBtn.onclick = e => {
+      e.stopPropagation();
+      byId("all-status-modal").close();
+      change("section", item.sec);
+    };
+    tdAct.append(jumpBtn);
+
+    tr.onclick = () => {
+      byId("all-status-modal").close();
+      change("section", item.sec);
+    };
+    tr.append(tdName, tdRev, tdReq, tdStat, tdAct);
+    tbody.append(tr);
+  });
+}
+
+function openAllStatusModal() {
+  const dlg = byId("all-status-modal");
+  if (!dlg || !state) return;
+  if (dlg.open) {
+    dlg.close();
+    return;
+  }
+  renderAllStatusRows();
+  dlg.showModal();
+  const firstBtn = dlg.querySelector("#all-status-tbody button") || byId("all-status-close");
+  if (firstBtn) firstBtn.focus();
+}
+
+if (byId("btn-all-status")) byId("btn-all-status").onclick = openAllStatusModal;
+if (byId("all-status-close")) byId("all-status-close").onclick = () => byId("all-status-modal").close();
+if (byId("all-status-incomplete-btn")) {
+  byId("all-status-incomplete-btn").onclick = () => {
+    allStatusIncompleteOnly = !allStatusIncompleteOnly;
+    renderAllStatusRows();
+  };
+}
+if (byId("all-status-modal")) {
+  enableDialogBackdropClose(byId("all-status-modal"));
+  byId("all-status-modal").addEventListener("keydown", e => {
+    const dlg = byId("all-status-modal");
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      const btns = [...dlg.querySelectorAll("#all-status-tbody button")];
+      if (!btns.length) return;
+      e.preventDefault();
+      const idx = btns.indexOf(document.activeElement);
+      const next = idx < 0 ? 0 : Math.max(0, Math.min(btns.length - 1, idx + (e.key === "ArrowDown" ? 1 : -1)));
+      btns[next].focus();
+    } else if (e.key.toLowerCase() === "i") {
+      e.preventDefault();
+      allStatusIncompleteOnly = !allStatusIncompleteOnly;
+      renderAllStatusRows();
+    }
+  });
 }
 
 function updateNeedsMarkButton(qIdx, isId) {
@@ -1967,6 +2149,11 @@ document.addEventListener("keydown", e => {
     const f = section === "id" ? (byId("metadata-image").value || "id") : section;
     const label = section === "id" ? "Identity" : state.questions[Number(section)].question_number;
     openImageModal(null, `Script #${targetScript + 1} - ${label}`, targetScript, f, byId("table-image-mode").value === "full-" ? "full-" : "ctx-");
+    return;
+  }
+  if (e.altKey && e.key.toLowerCase() === "s") {
+    e.preventDefault();
+    openAllStatusModal();
     return;
   }
   if (e.altKey && e.key.toLowerCase() === "a") {
