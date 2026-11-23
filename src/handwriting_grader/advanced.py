@@ -443,7 +443,13 @@ def create_advanced_report(config, config_dir, config_path, *, run_id=None, info
         loc = analysis_manifest.get("location") or "global"
         if proj and proj != "test-project":
             info_dir = root / "infographics"
-            img_model = "gemini-2.5-flash-image"
+            img_model = "gemini-3-pro-image"
+            cfg_path_str = analysis_manifest.get("model_config_path")
+            if cfg_path_str and Path(cfg_path_str).exists():
+                try:
+                    img_model = load_model_settings(Path(cfg_path_str), "analytics_image")
+                except ValueError:
+                    pass
             print(f"Generating Gemini infographics for Class & {len(questions)} questions ({img_model})...", flush=True)
             with genai.Client(vertexai=True, project=proj, location=loc) as img_client:
                 tasks = [("class", "Class Overview", overview[:900], info_dir / "class.png")]

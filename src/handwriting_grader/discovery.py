@@ -77,6 +77,15 @@ def validate_model_eligibility(model: str, agent: Optional[str] = None) -> None:
             )
         return
 
+    if agent == "analytics_image":
+        ver_img = re.match(r"^gemini-(\d+)(?:\.(\d+))?(?:-|$)", model_name)
+        if not ver_img or int(ver_img.group(1)) < 3 or "image" not in model_name:
+            raise ValueError(
+                f"Invalid model '{model}' for agent 'analytics_image': "
+                f"Infographic generation requires a Gemini 3+ image model (e.g. 'gemini-3-pro-image' or 'gemini-3.1-flash-image')."
+            )
+        return
+
     for kw in DISALLOWED_MODEL_KEYWORDS:
         if kw in model_name:
             raise ValueError(
@@ -369,6 +378,7 @@ def write_model_config(
                 )
                 for step in STEP_REQUIREMENTS.keys()
             },
+            "analytics_image": step_models.get("analytics_image", "gemini-3-pro-image"),
             "embedding": step_models.get("embedding", "gemini-embedding-2"),
         },
         "caching": {
