@@ -170,7 +170,7 @@
    `ai-analysis/review.xlsx`, mark reviewed=yes, then explicitly run
    `approve-analysis --exam /path/to/exam.yaml --confirm-reviewed`.
    `advanced-report --exam /path/to/exam.yaml [--no-infographics]` writes a **teacher executive DOCX** and
-   **16:9 class presentation PPTX** with a question-score chart and **Gemini infographics for the class overview and each question (enabled by default; tell the user they can optionally disable infographics with `--no-infographics`)**. Review both before sharing.
+   **16:9 class presentation PPTX** with a question-score chart and **Gemini infographics for the class overview and each question (enabled by default; tell the user they can optionally disable infographics with `--no-infographics`)**. Image generation uses single-attempt calls (no auto-retry) and caches PNGs in `ai-analysis/infographics/`. If `ai-analysis/reports/manifest.json` reports `failed_infographics`, **do not auto-retry** — notify the user with the failed count/slides and error type, and ask whether to retry failed images (re-running `advanced-report` reuses cached PNGs), keep the text-card fallback, or wait for quota reset. Review both before sharing.
 
 For an approved parent needing one-question regrading, read
 `regrading.md`. Child-specific review, reports and later stages use `--run`

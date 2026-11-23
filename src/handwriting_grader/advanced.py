@@ -383,9 +383,9 @@ def _add_markdown_to_frame(text_frame, md_text, max_chars=1450):
 
 
 def _generate_infographic(client, model, prompt, out_path: Path):
-    """Generate and cache a clean 16:9 educational infographic PNG via Gemini image model."""
+    """Generate and cache a clean 16:9 educational infographic PNG via Gemini image model (no auto-retry)."""
     if out_path.exists():
-        return out_path
+        return out_path, None
     try:
         resp = client.models.generate_content(
             model=model,
@@ -403,11 +403,12 @@ def _generate_infographic(client, model, prompt, out_path: Path):
             if inline and getattr(inline, "data", None):
                 out_path.parent.mkdir(parents=True, exist_ok=True)
                 out_path.write_bytes(inline.data)
-                return out_path
+                return out_path, None
+        return None, "No image data returned"
     except Exception as exc:
-        print(f"[Infographic] Failed {out_path.name}: {type(exc).__name__}: {exc}", flush=True)
-        return None
-    return None
+        err = f"{type(exc).__name__}: {exc}"
+        print(f"[Infographic] Failed {out_path.name}: {err}", flush=True)
+        return None, err
 
 
 def create_advanced_report(config, config_dir, config_path, *, run_id=None, infographics=True):
@@ -437,6 +438,7 @@ def create_advanced_report(config, config_dir, config_path, *, run_id=None, info
     document.save(report / "teacher-report.docx")
 
     infographic_paths = {}
+    failed_infographics = []
     if infographics:
         with (root / "manifest.json").open(encoding="utf-8") as file:
             analysis_manifest = json.load(file)
@@ -451,21 +453,14 @@ def create_advanced_report(config, config_dir, config_path, *, run_id=None, info
                     img_model = load_model_settings(Path(cfg_path_str), "analytics_image")
                 except ValueError:
                     pass
-            print(f"Generating Gemini infographics for Class & {len(questions)} questions ({img_model})...", flush=True)
+            print(f"Generating Gemini infographics for Class & {len(questions)} questions ({img_model}, no auto-retry)...", flush=True)
             with genai.Client(
                 vertexai=True,
                 project=proj,
                 location=loc,
                 http_options=types.HttpOptions(
                     timeout=180_000,
-                    retry_options=types.HttpRetryOptions(
-                        attempts=5,
-                        initial_delay=5.0,
-                        max_delay=60.0,
-                        exp_base=2.0,
-                        jitter=True,
-                        http_status_codes=[429, 500, 502, 503, 504],
-                    ),
+                    retry_options=types.HttpRetryOptions(attempts=1),
                 ),
             ) as img_client:
                 tasks = [("class", "Class Overview", overview[:900], info_dir / "class.png")]
@@ -482,15 +477,17 @@ def create_advanced_report(config, config_dir, config_path, *, run_id=None, info
                         f"Visually summarize the key concepts, strengths, and common student misconceptions below "
                         f"using clear icons, minimal readable labels, and structured visual blocks:\n{summary}"
                     )
-                    res = _generate_infographic(img_client, img_model, prompt, dest)
+                    res, err = _generate_infographic(img_client, img_model, prompt, dest)
                     if res:
                         print(f"[Infographic] Generated {label}", flush=True)
-                    return key, res
+                    return key, label, res, err
 
                 with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-                    for key, res in pool.map(_run_info, tasks):
+                    for key, label, res, err in pool.map(_run_info, tasks):
                         if res:
                             infographic_paths[key] = res
+                        elif err:
+                            failed_infographics.append({"key": key, "label": label, "error": err})
 
     presentation = Presentation()
     presentation.slide_width = Inches(13.333)
@@ -548,5 +545,15 @@ def create_advanced_report(config, config_dir, config_path, *, run_id=None, info
         raise ValueError("AI review changed during report generation")
     atomic_json(report / "manifest.json", {"version": 1, "completed": True,
                                             "analysis_approval_sha256": approval_hash,
-                                            "infographics_count": len(infographic_paths)})
+                                            "infographics_count": len(infographic_paths),
+                                            "failed_infographics": failed_infographics})
+    if failed_infographics:
+        labels = ", ".join(item["label"] for item in failed_infographics[:10])
+        more = f" (+{len(failed_infographics) - 10} more)" if len(failed_infographics) > 10 else ""
+        print(
+            f"Warning: {len(failed_infographics)} infographic(s) failed ({labels}{more}); "
+            f"cached images are preserved in {root / 'infographics'}. "
+            f"Ask the user whether to retry failed images or keep the text-card fallback.",
+            flush=True,
+        )
     return report
