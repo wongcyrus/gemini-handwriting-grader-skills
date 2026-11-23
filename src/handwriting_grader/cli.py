@@ -280,6 +280,8 @@ def main(argv=None):
     advanced_report.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     advanced_report.add_argument("--no-infographics", action="store_true",
                                  help="Skip generating Gemini infographic images (enabled by default)")
+    advanced_report.add_argument("--image-model", default=None,
+                                 help="Override Gemini 3+ image model for infographics (e.g. gemini-3.1-flash-image)")
     cost_report = commands.add_parser("cost-report", help="Generate or display token, model and cost breakdown")
     cost_report.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     clean = commands.add_parser("clean", help="Safely archive (.zip) or purge output runs after human confirmation")
@@ -887,7 +889,8 @@ def main(argv=None):
 
         try:
             output = create_advanced_report(config, path.parent, path, run_id=args.run,
-                                            infographics=not getattr(args, "no_infographics", False))
+                                            infographics=not getattr(args, "no_infographics", False),
+                                            image_model=getattr(args, "image_model", None))
         except (OSError, ValueError, KeyError) as exc:
             print(f"Advanced reporting failed: {exc}", file=sys.stderr)
             return 1

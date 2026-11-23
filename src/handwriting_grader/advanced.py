@@ -411,7 +411,7 @@ def _generate_infographic(client, model, prompt, out_path: Path):
         return None, err
 
 
-def create_advanced_report(config, config_dir, config_path, *, run_id=None, infographics=True):
+def create_advanced_report(config, config_dir, config_path, *, run_id=None, infographics=True, image_model=None):
     root, validated, students, questions_text, overview, approval = read_approved_analysis(
         config, config_dir, config_path, run_id=run_id
     )
@@ -447,12 +447,17 @@ def create_advanced_report(config, config_dir, config_path, *, run_id=None, info
         if proj and proj != "test-project":
             info_dir = root / "infographics"
             img_model = "gemini-3-pro-image"
-            cfg_path_str = analysis_manifest.get("model_config_path")
-            if cfg_path_str and Path(cfg_path_str).exists():
-                try:
-                    img_model = load_model_settings(Path(cfg_path_str), "analytics_image")
-                except ValueError:
-                    pass
+            if image_model:
+                from .discovery import validate_model_eligibility
+                validate_model_eligibility(image_model, agent="analytics_image")
+                img_model = image_model
+            else:
+                cfg_path_str = analysis_manifest.get("model_config_path")
+                if cfg_path_str and Path(cfg_path_str).exists():
+                    try:
+                        img_model = load_model_settings(Path(cfg_path_str), "analytics_image")
+                    except ValueError:
+                        pass
             print(f"Generating Gemini infographics for Class & {len(questions)} questions ({img_model}, no auto-retry)...", flush=True)
             with genai.Client(
                 vertexai=True,
