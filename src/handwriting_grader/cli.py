@@ -896,7 +896,6 @@ def main(argv=None):
     if args.command == "advanced-report":
         from .advanced import create_advanced_report
         from .run_context import run_directory
-        from .telemetry import TelemetryTracker, set_active_tracker
 
         analysis_dir = run_directory(config, path.parent, args.run) / "ai-analysis"
         tracker = TelemetryTracker(log_dir=analysis_dir / "telemetry")

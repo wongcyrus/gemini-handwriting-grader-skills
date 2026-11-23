@@ -443,6 +443,7 @@ class GradingTests(unittest.TestCase):
                 page.locator("#inline-rev-1").click()
                 page.get_by_text("Script #2 saved and reviewed.").wait_for()
                 page.locator("#approve").click()
+                page.locator("#kb-confirm-ok").click()
                 page.get_by_text("Approved 2 students and 2 marks.").wait_for()
                 reviewed = read_approved_grading(self.config, self.root, self.exam)
                 self.assertEqual(reviewed[2]["marks"][0]["answer"], "Corrected answer")
