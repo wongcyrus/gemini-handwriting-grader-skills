@@ -2,6 +2,7 @@
 
 import concurrent.futures
 import json
+import re
 import statistics
 from pathlib import Path
 import time
@@ -14,8 +15,10 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font
 from pptx import Presentation
 from pptx.chart.data import CategoryChartData
+from pptx.dml.color import RGBColor
 from pptx.enum.chart import XL_CHART_TYPE
-from pptx.util import Inches
+from pptx.enum.shapes import MSO_SHAPE
+from pptx.util import Inches, Pt
 
 from .grade_review import read_approved_grading, reviewed_rows, confirmed
 from .grading import safe_append
@@ -288,7 +291,119 @@ def read_approved_analysis(config, config_dir, config_path, *, run_id=None):
     return root, validated, students, questions_text, overview, approval
 
 
-def create_advanced_report(config, config_dir, config_path, *, run_id=None):
+def _add_styled_header(slide, title_text):
+    """Apply clean 16:9 off-white background, deep navy header bar, and accent stripe."""
+    bg = slide.background.fill
+    bg.solid()
+    bg.fore_color.rgb = RGBColor(0xF8, 0xFA, 0xFC)
+
+    hdr = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), Inches(13.333), Inches(0.95))
+    hdr.fill.solid()
+    hdr.fill.fore_color.rgb = RGBColor(0x0F, 0x17, 0x2A)
+    hdr.line.fill.background()
+
+    accent = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0.95), Inches(13.333), Inches(0.05))
+    accent.fill.solid()
+    accent.fill.fore_color.rgb = RGBColor(0x25, 0x63, 0xEB)
+    accent.line.fill.background()
+
+    tb = slide.shapes.add_textbox(Inches(0.6), Inches(0.15), Inches(12.1), Inches(0.65))
+    tf = tb.text_frame
+    tf.word_wrap = True
+    p = tf.paragraphs[0]
+    run = p.add_run()
+    run.text = title_text
+    run.font.name = "Calibri"
+    run.font.size = Pt(24)
+    run.font.bold = True
+    run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+
+
+def _add_content_card(slide, left, top, width, height):
+    """Add a clean white card with subtle slate border and return its text_frame."""
+    card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, top, width, height)
+    card.adjustments[0] = 0.02
+    card.fill.solid()
+    card.fill.fore_color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+    card.line.color.rgb = RGBColor(0xCB, 0xD5, 0xE1)
+    card.line.width = Pt(1)
+    tf = card.text_frame
+    tf.word_wrap = True
+    tf.margin_left = Inches(0.22)
+    tf.margin_right = Inches(0.22)
+    tf.margin_top = Inches(0.18)
+    tf.margin_bottom = Inches(0.15)
+    return tf
+
+
+def _add_markdown_to_frame(text_frame, md_text, max_chars=1450):
+    """Render Markdown headings, bullets, and **bold** spans cleanly into a PPTX text_frame."""
+    text = (md_text or "").strip()
+    if len(text) > max_chars:
+        text = text[:max_chars].rsplit(" ", 1)[0] + "..."
+    lines = [ln.rstrip() for ln in text.splitlines()]
+    first = True
+    for raw in lines:
+        stripped = raw.strip()
+        if not stripped or stripped == "---":
+            continue
+        p = text_frame.paragraphs[0] if first else text_frame.add_paragraph()
+        first = False
+        is_heading = bool(re.match(r"^#{1,6}\s+", stripped))
+        is_bullet = bool(re.match(r"^[-*•]\s+", stripped))
+        clean = re.sub(r"^#{1,6}\s+", "", stripped)
+        if is_bullet:
+            clean = "• " + re.sub(r"^[-*•]\s+", "", clean)
+            p.space_before = Pt(3)
+            p.space_after = Pt(2)
+        elif is_heading:
+            p.space_before = Pt(6)
+            p.space_after = Pt(3)
+        else:
+            p.space_before = Pt(2)
+            p.space_after = Pt(3)
+
+        parts = re.split(r"(\*\*[^*]+\*\*)", clean)
+        for part in parts:
+            if not part:
+                continue
+            bold_part = part.startswith("**") and part.endswith("**") and len(part) > 4
+            content = part[2:-2] if bold_part else part.replace("`", "")
+            run = p.add_run()
+            run.text = content
+            run.font.name = "Calibri"
+            if is_heading:
+                run.font.size = Pt(13)
+                run.font.bold = True
+                run.font.color.rgb = RGBColor(0x1E, 0x3A, 0x8A)
+            else:
+                run.font.size = Pt(10.5)
+                run.font.bold = bold_part
+                run.font.color.rgb = RGBColor(0x1E, 0x29, 0x3B)
+
+
+def _generate_infographic(client, model, prompt, out_path: Path):
+    """Generate and cache a clean educational infographic PNG via Gemini image model."""
+    if out_path.exists():
+        return out_path
+    try:
+        resp = client.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=types.GenerateContentConfig(response_modalities=["IMAGE"]),
+        )
+        for part in resp.candidates[0].content.parts:
+            inline = getattr(part, "inline_data", None)
+            if inline and getattr(inline, "data", None):
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                out_path.write_bytes(inline.data)
+                return out_path
+    except Exception:
+        return None
+    return None
+
+
+def create_advanced_report(config, config_dir, config_path, *, run_id=None, infographics=True):
     root, validated, students, questions_text, overview, approval = read_approved_analysis(
         config, config_dir, config_path, run_id=run_id
     )
@@ -313,36 +428,77 @@ def create_advanced_report(config, config_dir, config_path, *, run_id=None):
         document.add_heading(row["id"], level=2)
         document.add_paragraph(students[row["script_index"]])
     document.save(report / "teacher-report.docx")
+
+    infographic_paths = {}
+    if infographics:
+        with (root / "manifest.json").open(encoding="utf-8") as file:
+            analysis_manifest = json.load(file)
+        proj = analysis_manifest.get("project")
+        loc = analysis_manifest.get("location") or "global"
+        if proj and proj != "test-project":
+            info_dir = root / "infographics"
+            img_model = "gemini-2.5-flash-image"
+            print(f"Generating Gemini infographics for Class & {len(questions)} questions ({img_model})...", flush=True)
+            with genai.Client(vertexai=True, project=proj, location=loc) as img_client:
+                tasks = [("class", "Class Overview", overview[:900], info_dir / "class.png")]
+                for idx, q in enumerate(questions):
+                    qn = q["question_number"]
+                    q_summary = questions_text[question_key(qn)][:900]
+                    tasks.append((f"q_{idx}", f"Question {qn}", q_summary, info_dir / f"q_{idx:03d}.png"))
+
+                def _run_info(item):
+                    key, label, summary, dest = item
+                    prompt = (
+                        f"Create a clean, modern, flat-design educational infographic diagram for '{label}' "
+                        f"on a crisp white background with navy blue and teal accents. "
+                        f"Visually summarize the key concepts, strengths, and common student misconceptions below "
+                        f"using clear icons, minimal readable labels, and structured visual blocks:\n{summary}"
+                    )
+                    res = _generate_infographic(img_client, img_model, prompt, dest)
+                    if res:
+                        print(f"[Infographic] Generated {label}", flush=True)
+                    return key, res
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+                    for key, res in pool.map(_run_info, tasks):
+                        if res:
+                            infographic_paths[key] = res
+
     presentation = Presentation()
     presentation.slide_width = Inches(13.333)
     presentation.slide_height = Inches(7.5)
+    blank_layout = presentation.slide_layouts[6]
 
-    def _fit_widescreen(s):
-        if s.shapes.title:
-            s.shapes.title.left = Inches(0.7)
-            s.shapes.title.width = Inches(11.9)
-        if len(s.placeholders) > 1:
-            s.placeholders[1].left = Inches(0.7)
-            s.placeholders[1].width = Inches(11.9)
-            s.placeholders[1].height = Inches(5.3)
+    def _add_analysis_slide(title_text, md_body, info_key):
+        slide = presentation.slides.add_slide(blank_layout)
+        _add_styled_header(slide, title_text)
+        img_path = infographic_paths.get(info_key)
+        if img_path and img_path.exists():
+            tf = _add_content_card(slide, Inches(0.55), Inches(1.2), Inches(6.6), Inches(5.9))
+            _add_markdown_to_frame(tf, md_body, max_chars=1250)
+            _add_content_card(slide, Inches(7.35), Inches(1.2), Inches(5.4), Inches(5.9))
+            slide.shapes.add_picture(str(img_path), Inches(7.5), Inches(1.35), width=Inches(5.1))
+        else:
+            tf = _add_content_card(slide, Inches(0.55), Inches(1.2), Inches(12.23), Inches(5.9))
+            _add_markdown_to_frame(tf, md_body, max_chars=1800)
 
-    slide = presentation.slides.add_slide(presentation.slide_layouts[1])
-    slide.shapes.title.text = "Class overview"
-    slide.placeholders[1].text = overview
-    _fit_widescreen(slide)
-    slide = presentation.slides.add_slide(presentation.slide_layouts[5])
-    slide.shapes.title.text = "Mean score by question (%)"
-    _fit_widescreen(slide)
+    _add_analysis_slide("Class Overview", overview, "class")
+
+    chart_slide = presentation.slides.add_slide(blank_layout)
+    _add_styled_header(chart_slide, "Mean Score by Question (%)")
+    _add_content_card(chart_slide, Inches(0.55), Inches(1.2), Inches(12.23), Inches(5.9))
     chart = CategoryChartData()
     chart.categories = [q["question_number"] for q in questions]
     chart.add_series("Mean (%)", [100 * statistics.mean(row["marks"][i] for row in rows) / q["marks"]
                                    for i, q in enumerate(questions)])
-    slide.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(0.7), Inches(1.3), Inches(11.9), Inches(5.5), chart)
-    for index, question in enumerate(questions, 1):
-        slide = presentation.slides.add_slide(presentation.slide_layouts[1])
-        slide.shapes.title.text = question["question_number"]
-        slide.placeholders[1].text = questions_text[question_key(question["question_number"])]
-        _fit_widescreen(slide)
+    chart_slide.shapes.add_chart(
+        XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(0.75), Inches(1.35), Inches(11.83), Inches(5.6), chart
+    )
+
+    for idx, question in enumerate(questions):
+        qn = question["question_number"]
+        _add_analysis_slide(f"Question {qn}", questions_text[question_key(qn)], f"q_{idx}")
+
     presentation.save(report / "class-presentation.pptx")
     validate_analysis(config, config_dir, config_path, run_id=run_id)
     if (file_hash(root / "review.xlsx") != approval["review_sha256"]
@@ -350,5 +506,6 @@ def create_advanced_report(config, config_dir, config_path, *, run_id=None):
             or file_hash(root / "approval.json") != approval_hash):
         raise ValueError("AI review changed during report generation")
     atomic_json(report / "manifest.json", {"version": 1, "completed": True,
-                                            "analysis_approval_sha256": approval_hash})
+                                            "analysis_approval_sha256": approval_hash,
+                                            "infographics_count": len(infographic_paths)})
     return report

@@ -278,6 +278,8 @@ def main(argv=None):
     analysis_approve.add_argument("--confirm-reviewed", action="store_true", help="Confirm all feedback reviewed")
     advanced_report = commands.add_parser("advanced-report", help="Generate reviewed Word and PowerPoint reports")
     advanced_report.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
+    advanced_report.add_argument("--no-infographics", action="store_true",
+                                 help="Skip generating Gemini infographic images (enabled by default)")
     cost_report = commands.add_parser("cost-report", help="Generate or display token, model and cost breakdown")
     cost_report.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     clean = commands.add_parser("clean", help="Safely archive (.zip) or purge output runs after human confirmation")
@@ -884,7 +886,8 @@ def main(argv=None):
         from .advanced import create_advanced_report
 
         try:
-            output = create_advanced_report(config, path.parent, path, run_id=args.run)
+            output = create_advanced_report(config, path.parent, path, run_id=args.run,
+                                            infographics=not getattr(args, "no_infographics", False))
         except (OSError, ValueError, KeyError) as exc:
             print(f"Advanced reporting failed: {exc}", file=sys.stderr)
             return 1

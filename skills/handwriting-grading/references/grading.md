@@ -169,8 +169,8 @@
    consent add `--confirm-cost`. Review and correct every row in
    `ai-analysis/review.xlsx`, mark reviewed=yes, then explicitly run
    `approve-analysis --exam /path/to/exam.yaml --confirm-reviewed`.
-   `advanced-report --exam /path/to/exam.yaml` writes a **teacher executive DOCX** and
-   **class presentation PPTX** with a question-score chart. Review both before sharing.
+   `advanced-report --exam /path/to/exam.yaml [--no-infographics]` writes a **teacher executive DOCX** and
+   **16:9 class presentation PPTX** with a question-score chart and **Gemini infographics for the class overview and each question (enabled by default; tell the user they can optionally disable infographics with `--no-infographics`)**. Review both before sharing.
 
 For an approved parent needing one-question regrading, read
 `regrading.md`. Child-specific review, reports and later stages use `--run`
