@@ -140,65 +140,96 @@ def commit_review(server, root, book, revision):
             temp.unlink(missing_ok=True)
 
 
-def save_review(server, data):
-    root, revision, roster, questions, scripts, marks = load_state(server)
-    if data.get("revision") != revision:
-        raise RuntimeError("Review changed in another editor; reload before saving")
+def _apply_review_item(book, roster, questions, scripts, marks, data, *, seen_ids=None):
     index = data.get("script_index")
     if type(index) is not int or index not in scripts or type(data.get("reviewed")) is not bool:
         raise ValueError("Invalid script or review state")
     reviewed = data["reviewed"]
     kind = data.get("kind")
+    if kind == "script":
+        student_id = data.get("reviewed_id")
+        if not isinstance(student_id, str):
+            raise ValueError("Reviewed ID must be text")
+        student_id = student_id.strip()
+        if student_id and student_id not in roster:
+            raise ValueError("Reviewed ID must exist in the roster")
+        if reviewed and not student_id:
+            raise ValueError("Choose a roster ID before marking this script reviewed")
+        if student_id and any(str(other["reviewed_id"] or "").strip() == student_id
+                              for i, other in scripts.items() if i != index):
+            raise ValueError("A different script already uses this roster ID")
+        if seen_ids is not None and student_id:
+            if seen_ids.get(student_id, index) != index:
+                raise ValueError("A different script already uses this roster ID")
+            seen_ids[student_id] = index
+        sheet = book["Scripts"]
+        row, pos = locate_row(sheet, index)
+        sheet.cell(row, pos["reviewed_id"], student_id).data_type = "s"
+    elif kind == "mark":
+        question_index = data.get("question_index")
+        if type(question_index) is not int or not 0 <= question_index < len(questions):
+            raise ValueError("Invalid question")
+        question = questions[question_index]
+        key = question_key(question["question_number"])
+        original = marks[(index, key)]
+        answer, reasoning, manual = (data.get(key) for key in ("answer", "reasoning", "manual_mark"))
+        if any(not isinstance(value, str) or len(value) > 32767 for value in (answer, reasoning)):
+            raise ValueError("Answer and reasoning must be text of at most 32,767 characters")
+        if not isinstance(manual, str):
+            raise ValueError("Manual mark must be text")
+        if manual.strip():
+            try:
+                manual = float(manual)
+            except ValueError:
+                raise ValueError("Manual mark must be numeric") from None
+            if not math.isfinite(manual) or not 0 <= manual <= question["marks"]:
+                raise ValueError("Manual mark is outside the question's range")
+        else:
+            manual = None
+        if reviewed and manual is None and (original["grading_failed"] or original["moderator_flag"]
+                                            or answer != original["original_answer"]):
+            raise ValueError("A failed, flagged or corrected answer requires a manual mark")
+        sheet = book["Marks"]
+        row, pos = locate_row(sheet, index, key)
+        for name, value in (("answer", answer), ("reasoning", reasoning)):
+            cell = sheet.cell(row, pos[name], value)
+            cell.data_type = "s"
+        sheet.cell(row, pos["manual_mark"]).value = manual
+    else:
+        raise ValueError("Invalid review kind")
+    sheet.cell(row, pos["reviewed"], "yes" if reviewed else "")
+
+
+def save_review(server, data):
+    root, revision, roster, questions, scripts, marks = load_state(server)
+    if data.get("revision") != revision:
+        raise RuntimeError("Review changed in another editor; reload before saving")
     book = load_workbook(root / "review.xlsx", data_only=False)
     try:
-        if kind == "script":
-            student_id = data.get("reviewed_id")
-            if not isinstance(student_id, str):
-                raise ValueError("Reviewed ID must be text")
-            student_id = student_id.strip()
-            if student_id and student_id not in roster:
-                raise ValueError("Reviewed ID must exist in the roster")
-            if reviewed and not student_id:
-                raise ValueError("Choose a roster ID before marking this script reviewed")
-            if student_id and any(str(other["reviewed_id"] or "").strip() == student_id
-                                  for i, other in scripts.items() if i != index):
-                raise ValueError("A different script already uses this roster ID")
-            sheet = book["Scripts"]
-            row, pos = locate_row(sheet, index)
-            sheet.cell(row, pos["reviewed_id"], student_id).data_type = "s"
-        elif kind == "mark":
-            question_index = data.get("question_index")
-            if type(question_index) is not int or not 0 <= question_index < len(questions):
-                raise ValueError("Invalid question")
-            question = questions[question_index]
-            key = question_key(question["question_number"])
-            original = marks[(index, key)]
-            answer, reasoning, manual = (data.get(key) for key in ("answer", "reasoning", "manual_mark"))
-            if any(not isinstance(value, str) or len(value) > 32767 for value in (answer, reasoning)):
-                raise ValueError("Answer and reasoning must be text of at most 32,767 characters")
-            if not isinstance(manual, str):
-                raise ValueError("Manual mark must be text")
-            if manual.strip():
-                try:
-                    manual = float(manual)
-                except ValueError:
-                    raise ValueError("Manual mark must be numeric") from None
-                if not math.isfinite(manual) or not 0 <= manual <= question["marks"]:
-                    raise ValueError("Manual mark is outside the question's range")
-            else:
-                manual = None
-            if reviewed and manual is None and (original["grading_failed"] or original["moderator_flag"]
-                                                or answer != original["original_answer"]):
-                raise ValueError("A failed, flagged or corrected answer requires a manual mark")
-            sheet = book["Marks"]
-            row, pos = locate_row(sheet, index, key)
-            for name, value in (("answer", answer), ("reasoning", reasoning)):
-                cell = sheet.cell(row, pos[name], value)
-                cell.data_type = "s"
-            sheet.cell(row, pos["manual_mark"]).value = manual
-        else:
-            raise ValueError("Invalid review kind")
-        sheet.cell(row, pos["reviewed"], "yes" if reviewed else "")
+        _apply_review_item(book, roster, questions, scripts, marks, data)
+        return commit_review(server, root, book, revision)
+    finally:
+        book.close()
+
+
+def save_review_batch(server, data):
+    root, revision, roster, questions, scripts, marks = load_state(server)
+    if data.get("revision") != revision:
+        raise RuntimeError("Review changed in another editor; reload before saving")
+    items = data.get("items")
+    if not isinstance(items, list) or not items:
+        raise ValueError("Batch save requires a non-empty list of items")
+    book = load_workbook(root / "review.xlsx", data_only=False)
+    try:
+        seen_ids = {
+            str(s["reviewed_id"] or "").strip(): idx
+            for idx, s in scripts.items()
+            if str(s["reviewed_id"] or "").strip()
+        }
+        for item in items:
+            if not isinstance(item, dict):
+                raise ValueError("Invalid batch save item")
+            _apply_review_item(book, roster, questions, scripts, marks, item, seen_ids=seen_ids)
         return commit_review(server, root, book, revision)
     finally:
         book.close()
@@ -781,10 +812,12 @@ class ScoreHandler(BaseHTTPRequestHandler):
                     self.server.bulk_preview = {"token": token, **{
                         key: data.get(key) for key in ("revision", "question_index", "threshold", "step")}}
                     return self.json_response(200, {"preview_token": token, "suggestions": suggestions})
-                if self.path in {"/api/save", "/api/approve", "/api/bulk-apply"}:
+                if self.path in {"/api/save", "/api/save-batch", "/api/approve", "/api/bulk-apply"}:
                     with writer_lock(self.server):
                         if self.path == "/api/save":
                             return self.json_response(200, {"revision": save_review(self.server, data)})
+                        if self.path == "/api/save-batch":
+                            return self.json_response(200, {"revision": save_review_batch(self.server, data)})
                         if self.path == "/api/bulk-apply":
                             count = apply_bulk_suggestions(self.server, data)
                             self.server.bulk_preview = None
