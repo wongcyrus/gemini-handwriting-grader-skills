@@ -530,6 +530,30 @@ function textSimilarity(a, b) {
   return inter / (setA.size + setB.size - inter);
 }
 
+function updateNeedsMarkButton(qIdx, isId) {
+  const btnReq = byId("btn-filter-required");
+  if (!btnReq || !state) return;
+  btnReq.hidden = isId;
+  if (isId) return;
+  const allQMarks = state.scripts.map(s => state.marks[s.script_index][qIdx]);
+  const totalReq = allQMarks.filter(m => {
+    if (!m) return false;
+    const hasMan = m.manual_mark != null && String(m.manual_mark).trim() !== "";
+    const flg = Boolean(m.grading_failed || m.moderator_flag);
+    const ansCorr = m.answer_raw != null && m.answer !== m.answer_raw;
+    return (flg || ansCorr) && !hasMan && !m.reviewed;
+  }).length;
+  const filterMode = byId("marksheet-filter") ? byId("marksheet-filter").value : "all";
+  const isFilteringReq = filterMode === "required";
+  btnReq.classList.toggle("active", isFilteringReq);
+  btnReq.textContent = isFilteringReq
+    ? `Showing Needs Mark (${totalReq}) ⚠ [Alt+R]`
+    : (totalReq > 0 ? `Needs Mark (${totalReq}) ⚠ [Alt+R]` : `Needs Mark (0) [Alt+R]`);
+  btnReq.title = isFilteringReq
+    ? "Click to show all students"
+    : (totalReq > 0 ? `Click to filter: ${totalReq} student(s) require a manual mark` : "No students in this question require a manual mark");
+}
+
 function renderTabs() {
   const nav = byId("question-tabs");
   const drawer = byId("questions-drawer");
@@ -819,29 +843,7 @@ async function renderMarksheetTable() {
   });
 
   // Update "Needs Mark" button badge count and active state
-  const btnReq = byId("btn-filter-required");
-  if (btnReq) {
-    btnReq.hidden = isId;
-    if (!isId) {
-      const allQMarks = state.scripts.map(s => state.marks[s.script_index][qIdx]);
-      const totalReq = allQMarks.filter(m => {
-        if (!m) return false;
-        const hasMan = m.manual_mark != null && String(m.manual_mark).trim() !== "";
-        const flg = Boolean(m.grading_failed || m.moderator_flag);
-        const ansCorr = m.answer_raw != null && m.answer !== m.answer_raw;
-        return (flg || ansCorr) && !hasMan;
-      }).length;
-
-      const isFilteringReq = filterMode === "required";
-      btnReq.classList.toggle("active", isFilteringReq);
-      btnReq.textContent = isFilteringReq
-        ? `Showing Needs Mark (${totalReq}) ⚠ [Alt+R]`
-        : (totalReq > 0 ? `Needs Mark (${totalReq}) ⚠ [Alt+R]` : `Needs Mark (0) [Alt+R]`);
-      btnReq.title = isFilteringReq
-        ? "Click to show all students"
-        : (totalReq > 0 ? `Click to filter: ${totalReq} student(s) require a manual mark` : "No students in this question require a manual mark");
-    }
-  }
+  updateNeedsMarkButton(qIdx, isId);
 
   if (filterMode === "unreviewed") {
     entries = entries.filter(e => !e.reviewed);
@@ -1317,6 +1319,7 @@ async function saveInlineMark(sIdx, qIdx, markValue, markReviewed) {
     }
     renderTabs();
     renderComparison();
+    updateNeedsMarkButton(qIdx, false);
     const revCount = state.scripts.filter(s => state.marks[s.script_index][qIdx]?.reviewed).length;
     byId("q-banner-stats").textContent = `Reviewed: ${revCount} / ${state.scripts.length} | Max Marks: ${state.questions[qIdx].marks}`;
     const qLabel = String(state.questions[qIdx].question_number).startsWith("Q")
