@@ -84,17 +84,27 @@ execute a notebook as a workaround, or claim a human approval occurred.
 
 1. Establish whether the user is starting or resuming, what stage they need,
    and which local paths they intend to use. Do not copy or overwrite data.
-   When resuming an existing `output_dir`, check artifacts to orient immediately:
+   When resuming an existing workspace or `output_dir`, inspect existing files
+   and artifacts to orient immediately (do not rely on prior conversation history):
 
    | Latest Artifact Present | Completed Stage | Next Command / Action |
    |---|---|---|
-   | `rubric/approval.json` | Rubric approved | `prepare-regions` -> `suggest-regions` -> `review-regions` |
-   | `regions/approval.json` | Regions approved | `grade` (preview first, then `--confirm-cost`) |
-   | `grading/manifest.json` (no `approval.json`) | Grading done (or failed items) | `cluster-answers` (optional) -> `review-grading` (or `retry-grading` if failures) |
+   | No `exam.yaml` / `config.yaml` | Not configured | `discover-models` (for `config.yaml`) -> configure `exam.yaml` -> `preflight` -> `check-scans` |
+   | `exam.yaml` exists (no `rubric/` or `attendance/`) | Configured | `preflight` -> `check-scans` -> `attendance` (if configured) or `extract-rubric`/`import-rubric` |
+   | `attendance/review.xlsx` (no `attendance/approval.json`) | Attendance extracted | Teacher reviews `attendance/review.xlsx` -> `approve-attendance` |
+   | `rubric/rubric.xlsx` (no `rubric/approval.json`) | Rubric extracted/imported | Teacher reviews `rubric/rubric.xlsx` -> `approve-rubric` |
+   | `rubric/approval.json` (no `regions/images/`) | Rubric approved | `prepare-regions` -> `suggest-regions` -> `review-regions` |
+   | `regions/images/` (no `regions/ai_suggestions.json`, no `regions/approval.json`) | Region pages rendered | `suggest-regions` (preview first, then `--confirm-cost`) -> `review-regions` |
+   | `regions/ai_suggestions.json` or `regions/draft.json` (no `regions/approval.json`) | Regions suggested/drafted | `review-regions` (adjust boxes & approve) or `approve-regions` |
+   | `regions/approval.json` (no `grading/`) | Regions approved | `grade` (preview first, then `--confirm-cost`) |
+   | `grading/checkpoint.json` (no `grading/manifest.json`) | Grading interrupted | `resume-grading` (preview first, then `--confirm-cost`) |
+   | `grading/manifest.json` (no `grading/approval.json`) | Grading done (or failed items) | `cluster-answers` (optional) -> `review-grading` (or `retry-grading` if failures) -> approve |
    | `grading/approval.json` | Scores approved | Present Post-Approval Menu: `report`, `analytics`, `ai-analysis` (optional) |
-   | `reports/manifest.json` or `analytics/manifest.json` | Reports / offline stats generated | Offer remaining options: `analytics`/`report` (if not yet run), `ai-analysis` -> `advanced-report`, `preview-email` -> `send-email`, or `clean` |
+   | `reports/manifest.json` or `analytics/manifest.json` | Reports / offline stats generated | Offer remaining options: `analytics`/`report` (if missing), `ai-analysis` -> `advanced-report`, `preview-email` -> `send-email`, or `clean` |
    | `ai-analysis/review.xlsx` (no `ai-analysis/approval.json`) | AI analysis generated | Teacher reviews `ai-analysis/review.xlsx` -> `approve-analysis` |
    | `ai-analysis/approval.json` | AI analysis approved | `advanced-report` (Teacher DOCX & Class PPTX), `preview-email` -> `send-email`, or `clean` |
+   | `email/` preview artifact (no `email/approval.json`) | Email preview generated | Teacher inspects preview -> `approve-email` -> `send-email` |
+   | `runs/<child>/` directory | Targeted single-question regrade | Inspect artifacts inside `runs/<child>/` and pass `--run <child>` to commands |
 
 2. Read `references/configuration.md` and examine existing settings. Present
    detected values and ask for missing or ambiguous decisions. Keep actual
