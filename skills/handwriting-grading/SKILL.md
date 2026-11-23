@@ -79,6 +79,10 @@ execute a notebook as a workaround, or claim a human approval occurred.
   grading, rubric extraction) and reserving frontier reasoning models
   (e.g. `gemini-4-argon`) for low-volume, high-precision spatial annotation (`annotation`),
   batch moderation, and deep cohort analytics.
+- **Mandatory Cost Estimation & Actual Cost Reporting (For All AI-Billed Steps)**:
+  Whenever a step invokes Vertex AI (`extract-rubric`, `suggest-regions`, `grade`, `retry-grading`, `resume-grading`, `cluster-answers`, `ai-analysis`, or `advanced-report` with infographics):
+  1. **Before execution**: Present the preview's estimated request count, target model(s), and estimated USD cost, and obtain explicit user consent (`--confirm-cost`).
+  2. **Immediately after completion**: Run `handwriting-grader cost-report --exam /path/to/exam.yaml` (or inspect `telemetry/gemini_usage.jsonl` / `cost_summary.json`) and report the **actual API calls, tokens/images, and actual USD cost** (including retries and cumulative assignment cost) to the user.
 
 ## Prepare an exam
 

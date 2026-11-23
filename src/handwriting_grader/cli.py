@@ -895,14 +895,23 @@ def main(argv=None):
         return 0
     if args.command == "advanced-report":
         from .advanced import create_advanced_report
+        from .run_context import run_directory
+        from .telemetry import TelemetryTracker, set_active_tracker
 
+        analysis_dir = run_directory(config, path.parent, args.run) / "ai-analysis"
+        tracker = TelemetryTracker(log_dir=analysis_dir / "telemetry")
+        set_active_tracker(tracker)
         try:
             output = create_advanced_report(config, path.parent, path, run_id=args.run,
                                             infographics=not getattr(args, "no_infographics", False),
                                             image_model=getattr(args, "image_model", None))
+            if tracker.traces:
+                tracker.write_cost_report(analysis_dir)
         except (OSError, ValueError, KeyError) as exc:
             print(f"Advanced reporting failed: {exc}", file=sys.stderr)
             return 1
+        finally:
+            set_active_tracker(None)
         print(f"Advanced reports saved to {output}. Review them before sharing.")
         return 0
     if args.command == "cost-report":

@@ -382,10 +382,12 @@ def _add_markdown_to_frame(text_frame, md_text, max_chars=1450):
                 run.font.color.rgb = RGBColor(0x1E, 0x29, 0x3B)
 
 
-def _generate_infographic(client, model, prompt, out_path: Path):
+def _generate_infographic(client, model, prompt, out_path: Path, label: str = ""):
     """Generate and cache a clean 16:9 educational infographic PNG via Gemini image model (no auto-retry)."""
     if out_path.exists():
         return out_path, None
+    tracker = get_active_tracker()
+    start = time.perf_counter()
     try:
         resp = client.models.generate_content(
             model=model,
@@ -398,6 +400,7 @@ def _generate_infographic(client, model, prompt, out_path: Path):
                 ),
             ),
         )
+        duration = time.perf_counter() - start
         candidates = getattr(resp, "candidates", None) or []
         parts = getattr(getattr(candidates[0], "content", None), "parts", None) if candidates else None
         for part in (parts or []):
@@ -405,6 +408,15 @@ def _generate_infographic(client, model, prompt, out_path: Path):
             if inline and getattr(inline, "data", None):
                 out_path.parent.mkdir(parents=True, exist_ok=True)
                 out_path.write_bytes(inline.data)
+                if tracker:
+                    tracker.record_call(
+                        phase="infographics",
+                        step_label=f"Infographic: {label or out_path.stem}",
+                        model=model,
+                        usage_metadata=getattr(resp, "usage_metadata", None),
+                        duration_sec=duration,
+                        images_count=1,
+                    )
                 return out_path, None
         return None, "No image data returned"
     except Exception as exc:
@@ -485,7 +497,7 @@ def create_advanced_report(config, config_dir, config_path, *, run_id=None, info
                         f"Visually summarize the key concepts, strengths, and common student misconceptions below "
                         f"using clear icons, minimal readable labels, and structured visual blocks:\n{summary}"
                     )
-                    res, err = _generate_infographic(img_client, img_model, prompt, dest)
+                    res, err = _generate_infographic(img_client, img_model, prompt, dest, label=label)
                     if res:
                         print(f"[Infographic] Generated {label}", flush=True)
                     if not was_cached:

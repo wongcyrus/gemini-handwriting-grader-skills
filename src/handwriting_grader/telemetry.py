@@ -14,6 +14,9 @@ from typing import Any, Dict, List, Optional
 DEFAULT_RATES: Dict[str, Dict[str, float]] = {
     "gemini-3.8-flash": {"input": 0.075, "output": 0.30, "cached": 0.01875, "image": 0.0},
     "gemini-4-argon": {"input": 1.25, "output": 5.00, "cached": 0.3125, "image": 0.0},
+    "gemini-3-pro-image": {"input": 1.25, "output": 5.00, "cached": 0.3125, "image": 0.06},
+    "gemini-3.1-flash-image": {"input": 0.075, "output": 0.30, "cached": 0.01875, "image": 0.039},
+    "gemini-3.1-flash-lite-image": {"input": 0.075, "output": 0.30, "cached": 0.01875, "image": 0.02},
 }
 
 
