@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import yaml
 from google import genai
 
-from .telemetry import DEFAULT_RATES
+from .telemetry import load_pricing_rates
 
 
 DISALLOWED_MODEL_KEYWORDS: Tuple[str, ...] = (
@@ -195,10 +195,11 @@ def parse_reasoning_rank(name: str) -> Tuple[int, int]:
 
 
 def get_model_rates(model_name: str) -> Dict[str, float]:
-    rates = DEFAULT_RATES.get(model_name)
+    table = load_pricing_rates()
+    rates = table.get(model_name)
     if rates:
         return rates
-    for k, v in DEFAULT_RATES.items():
+    for k, v in table.items():
         if model_name.startswith(k) or k in model_name:
             return v
     return {"input": 0.10, "output": 0.40, "cached": 0.025, "image": 0.0}

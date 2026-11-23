@@ -10,7 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-# Standard Vertex AI Gemini on-demand pricing (USD per 1,000,000 tokens / per image)
+# Fallback Vertex AI Gemini on-demand pricing (USD per 1,000,000 tokens / per image).
+# Prefer live rates cached at ~/.cache/gemini-handwriting-grader/pricing.json or `pricing:` in config.yaml.
 DEFAULT_RATES: Dict[str, Dict[str, float]] = {
     "gemini-3.8-flash": {"input": 0.075, "output": 0.30, "cached": 0.01875, "image": 0.0},
     "gemini-4-argon": {"input": 1.25, "output": 5.00, "cached": 0.3125, "image": 0.0},
@@ -18,6 +19,33 @@ DEFAULT_RATES: Dict[str, Dict[str, float]] = {
     "gemini-3.1-flash-image": {"input": 0.075, "output": 0.30, "cached": 0.01875, "image": 0.039},
     "gemini-3.1-flash-lite-image": {"input": 0.075, "output": 0.30, "cached": 0.01875, "image": 0.02},
 }
+
+
+def load_pricing_rates(config_path: Optional[Path] = None) -> Dict[str, Dict[str, float]]:
+    """Load model rates from fallback defaults, ~/.cache/gemini-handwriting-grader/pricing.json, and config.yaml."""
+    rates: Dict[str, Dict[str, float]] = {k: dict(v) for k, v in DEFAULT_RATES.items()}
+    cache_file = Path.home() / ".cache" / "gemini-handwriting-grader" / "pricing.json"
+    if cache_file.exists():
+        try:
+            cached = json.loads(cache_file.read_text(encoding="utf-8"))
+            if isinstance(cached, dict):
+                for m, vals in cached.items():
+                    if isinstance(vals, dict):
+                        rates[m] = {k: float(v) for k, v in vals.items()}
+        except (OSError, ValueError, TypeError):
+            pass
+    if config_path and Path(config_path).exists():
+        try:
+            import yaml
+            cfg = yaml.safe_load(Path(config_path).read_text(encoding="utf-8")) or {}
+            custom = cfg.get("pricing") if isinstance(cfg, dict) else None
+            if isinstance(custom, dict):
+                for m, vals in custom.items():
+                    if isinstance(vals, dict):
+                        rates[m] = {k: float(v) for k, v in vals.items()}
+        except (OSError, ValueError, TypeError):
+            pass
+    return rates
 
 
 @dataclass
@@ -38,8 +66,9 @@ class CallTrace:
 
 
 class TelemetryTracker:
-    def __init__(self, log_dir: Optional[Path] = None):
+    def __init__(self, log_dir: Optional[Path] = None, config_path: Optional[Path] = None):
         self.log_dir = Path(log_dir) if log_dir else None
+        self.rates_table = load_pricing_rates(config_path)
         self.traces: List[CallTrace] = []
         self._lock = threading.Lock()
 
@@ -51,10 +80,10 @@ class TelemetryTracker:
         cached_tokens: int,
         images_count: int = 0,
     ) -> float:
-        # Match model family prefixes
-        rates = DEFAULT_RATES.get(model)
+        # Match model family prefixes against live/cached/configured rates
+        rates = self.rates_table.get(model)
         if not rates:
-            for k, v in DEFAULT_RATES.items():
+            for k, v in self.rates_table.items():
                 if model.startswith(k) or k in model:
                     rates = v
                     break

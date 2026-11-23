@@ -81,8 +81,9 @@ execute a notebook as a workaround, or claim a human approval occurred.
   batch moderation, and deep cohort analytics.
 - **Mandatory Cost Estimation & Actual Cost Reporting (For All AI-Billed Steps)**:
   Whenever a step invokes Vertex AI (`extract-rubric`, `suggest-regions`, `grade`, `retry-grading`, `resume-grading`, `cluster-answers`, `ai-analysis`, or `advanced-report` with infographics):
-  1. **Before execution**: Present the preview's estimated request count, target model(s), and estimated USD cost, and obtain explicit user consent (`--confirm-cost`).
-  2. **Immediately after completion**: Run `handwriting-grader cost-report --exam /path/to/exam.yaml` (or inspect `telemetry/gemini_usage.jsonl` / `cost_summary.json`) and report the **actual API calls, tokens/images, and actual USD cost** (including retries and cumulative assignment cost) to the user.
+  1. **Check Live Pricing First (Never Trust Static Hardcoded Rates Alone)**: Google updates Vertex AI pricing over time and the GenAI `models.list()` API does not return prices. Before estimating, check `~/.cache/gemini-handwriting-grader/pricing.json` or search/verify live Vertex AI Gemini pricing online (and optionally update `pricing.json` or `pricing:` in `config.yaml`).
+  2. **Before execution**: Present the preview's estimated request count, target model(s), and estimated USD cost using current rates, and obtain explicit user consent (`--confirm-cost`).
+  3. **Immediately after completion**: Run `handwriting-grader cost-report --exam /path/to/exam.yaml` (or inspect `telemetry/gemini_usage.jsonl` / `cost_summary.json`) and report the **actual API calls, tokens/images, and actual USD cost** (including retries and cumulative assignment cost) to the user.
 
 ## Prepare an exam
 
