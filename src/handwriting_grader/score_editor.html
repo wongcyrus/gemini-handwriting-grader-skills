@@ -694,8 +694,12 @@ if (byId("all-status-incomplete-btn")) {
   };
 }
 if (byId("all-status-modal")) {
-  enableDialogBackdropClose(byId("all-status-modal"));
-  byId("all-status-modal").addEventListener("keydown", e => {
+  const dlg = byId("all-status-modal");
+  dlg.addEventListener("pointerdown", e => {
+    const r = dlg.getBoundingClientRect();
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) dlg.close();
+  });
+  dlg.addEventListener("keydown", e => {
     const dlg = byId("all-status-modal");
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       const btns = [...dlg.querySelectorAll("#all-status-tbody button")];
