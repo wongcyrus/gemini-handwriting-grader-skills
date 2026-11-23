@@ -478,6 +478,7 @@ def create_advanced_report(config, config_dir, config_path, *, run_id=None, info
 
                 def _run_info(item):
                     key, label, summary, dest = item
+                    was_cached = dest.exists()
                     prompt = (
                         f"Create a clean, modern, flat-design educational infographic diagram for '{label}' "
                         f"on a crisp white background with navy blue and teal accents. "
@@ -487,6 +488,8 @@ def create_advanced_report(config, config_dir, config_path, *, run_id=None, info
                     res, err = _generate_infographic(img_client, img_model, prompt, dest)
                     if res:
                         print(f"[Infographic] Generated {label}", flush=True)
+                    if not was_cached:
+                        time.sleep(3.0)
                     return key, label, res, err
 
                 with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
