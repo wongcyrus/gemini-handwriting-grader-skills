@@ -351,7 +351,7 @@ Keep this URL private and close spreadsheet editors while using this interface.<
 </div>
 <div id="kbd-help-bar" style="font-size: 0.76rem; color: #475569; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 0.3rem 0.65rem; margin-bottom: 0.5rem; display: flex; flex-wrap: wrap; gap: 0.6rem;">
   <strong>Keyboard:</strong>
-  <span><code>Alt+F</code> Focus 1st Row</span>
+  <span><code>Alt+G</code> Focus 1st Row</span>
   <span><code>Alt+R</code> Needs Mark</span>
   <span><code>Enter</code> / <code>↑↓</code> Next/Prev Row</span>
   <span><code>Alt+Z</code> Zoom Row (<code>Esc</code> Close)</span>
@@ -1930,7 +1930,7 @@ document.addEventListener("keydown", e => {
     if (btn && !btn.hidden) btn.click();
     return;
   }
-  if (e.altKey && e.key.toLowerCase() === "f") {
+  if (e.altKey && e.key.toLowerCase() === "g") {
     e.preventDefault();
     focusMarkRow(1);
     return;
