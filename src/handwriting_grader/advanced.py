@@ -11,6 +11,7 @@ from docx import Document
 from google import genai
 from google.genai import types
 from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Alignment, Font
 from pptx import Presentation
 from pptx.chart.data import CategoryChartData
 from pptx.enum.chart import XL_CHART_TYPE
@@ -76,6 +77,26 @@ class VertexAnalyst:
         if not response.text or not response.text.strip():
             raise ValueError("AI analysis returned no text")
         return response.text.strip()
+
+
+def _format_analysis_workbook(workbook):
+    """Apply readable column widths, text wrapping, and bold headers to ai-analysis/review.xlsx."""
+    widths = {
+        "Students": {"A": 14, "B": 16, "C": 110, "D": 12},
+        "Questions": {"A": 14, "B": 110, "C": 12},
+        "Class": {"A": 110, "B": 12},
+    }
+    for name, col_map in widths.items():
+        if name not in workbook.sheetnames:
+            continue
+        ws = workbook[name]
+        for col_letter, width in col_map.items():
+            ws.column_dimensions[col_letter].width = width
+        for row in ws.iter_rows():
+            for cell in row:
+                cell.alignment = Alignment(wrap_text=True, vertical="top")
+                if cell.row == 1:
+                    cell.font = Font(bold=True)
 
 
 def create_analysis(config, config_dir, config_path, model_config_path, project, location,
@@ -188,6 +209,7 @@ def create_analysis(config, config_dir, config_path, model_config_path, project,
                 or file_hash(grading_root / "approval.json") != approval_digest
                 or file_hash(model_config_path) != model_digest):
             raise ValueError("Inputs changed during AI analysis")
+        _format_analysis_workbook(workbook)
         workbook.save(root / "review.xlsx")
         atomic_json(root / "manifest.json", {
             "version": 1, "completed": True, "grading_review_sha256": review_digest,
