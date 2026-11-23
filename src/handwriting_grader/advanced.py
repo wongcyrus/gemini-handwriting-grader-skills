@@ -383,14 +383,20 @@ def _add_markdown_to_frame(text_frame, md_text, max_chars=1450):
 
 
 def _generate_infographic(client, model, prompt, out_path: Path):
-    """Generate and cache a clean educational infographic PNG via Gemini image model."""
+    """Generate and cache a clean 16:9 educational infographic PNG via Gemini image model."""
     if out_path.exists():
         return out_path
     try:
         resp = client.models.generate_content(
             model=model,
             contents=prompt,
-            config=types.GenerateContentConfig(response_modalities=["IMAGE"]),
+            config=types.GenerateContentConfig(
+                response_modalities=["IMAGE"],
+                image_config=types.ImageConfig(
+                    output_mime_type="image/png",
+                    aspect_ratio="16:9",
+                ),
+            ),
         )
         for part in resp.candidates[0].content.parts:
             inline = getattr(part, "inline_data", None)
@@ -474,10 +480,23 @@ def create_advanced_report(config, config_dir, config_path, *, run_id=None, info
         _add_styled_header(slide, title_text)
         img_path = infographic_paths.get(info_key)
         if img_path and img_path.exists():
-            tf = _add_content_card(slide, Inches(0.55), Inches(1.2), Inches(6.6), Inches(5.9))
-            _add_markdown_to_frame(tf, md_body, max_chars=1250)
-            _add_content_card(slide, Inches(7.35), Inches(1.2), Inches(5.4), Inches(5.9))
-            slide.shapes.add_picture(str(img_path), Inches(7.5), Inches(1.35), width=Inches(5.1))
+            from PIL import Image as _PILImage
+            try:
+                with _PILImage.open(img_path) as im:
+                    aspect = im.width / im.height
+            except Exception:
+                aspect = 16.0 / 9.0
+            avail_w = Inches(12.2)
+            avail_h = Inches(6.05)
+            target_w = avail_w
+            target_h = int(avail_w / aspect)
+            if target_h > avail_h:
+                target_h = avail_h
+                target_w = int(avail_h * aspect)
+            left_pos = int((presentation.slide_width - target_w) / 2)
+            top_pos = int(Inches(1.15) + (avail_h - target_h) / 2)
+            slide.shapes.add_picture(str(img_path), left_pos, top_pos, width=target_w, height=target_h)
+            slide.notes_slide.notes_text_frame.text = md_body or ""
         else:
             tf = _add_content_card(slide, Inches(0.55), Inches(1.2), Inches(12.23), Inches(5.9))
             _add_markdown_to_frame(tf, md_body, max_chars=1800)
