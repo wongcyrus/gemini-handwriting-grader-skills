@@ -193,7 +193,7 @@ def create_analysis(config, config_dir, config_path, model_config_path, project,
                 return question, text
 
             if use_parallel:
-                with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                     question_results = list(pool.map(_question_task, enumerate(questions)))
             else:
                 question_results = [_question_task(item) for item in enumerate(questions)]
@@ -398,7 +398,9 @@ def _generate_infographic(client, model, prompt, out_path: Path):
                 ),
             ),
         )
-        for part in resp.candidates[0].content.parts:
+        candidates = getattr(resp, "candidates", None) or []
+        parts = getattr(getattr(candidates[0], "content", None), "parts", None) if candidates else None
+        for part in (parts or []):
             inline = getattr(part, "inline_data", None)
             if inline and getattr(inline, "data", None):
                 out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -487,7 +489,7 @@ def create_advanced_report(config, config_dir, config_path, *, run_id=None, info
                         print(f"[Infographic] Generated {label}", flush=True)
                     return key, label, res, err
 
-                with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                     for key, label, res, err in pool.map(_run_info, tasks):
                         if res:
                             infographic_paths[key] = res
