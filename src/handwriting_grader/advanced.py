@@ -1,9 +1,11 @@
 """Generate and review AI analyses of approved grading."""
 
+import concurrent.futures
 import json
 import statistics
 from pathlib import Path
 import time
+import yaml
 
 from docx import Document
 from google import genai
@@ -83,6 +85,13 @@ def create_analysis(config, config_dir, config_path, model_config_path, project,
     rows, baselines = report_rows(validated)
     model_digest = file_hash(model_config_path)
     model = load_model_settings(model_config_path, "analytics")
+    try:
+        feedback_model = load_model_settings(model_config_path, "student_feedback")
+    except ValueError:
+        with Path(model_config_path).open(encoding="utf-8") as file:
+            raw_models = (yaml.safe_load(file) or {}).get("models", {})
+        fb = raw_models.get("grading") if isinstance(raw_models, dict) else None
+        feedback_model = fb.strip() if isinstance(fb, str) and fb.strip() else model
     if file_hash(model_config_path) != model_digest:
         raise ValueError("Model configuration changed while loading")
     review_digest = file_hash(grading_root / "review.xlsx")
@@ -97,8 +106,10 @@ def create_analysis(config, config_dir, config_path, model_config_path, project,
     except FileExistsError as exc:
         raise ValueError("AI analysis already exists; preserve the existing run") from exc
     agents = [name for name in enabled_agents(model_config_path) if name == "analytics"]
+    if "analytics" in agents:
+        agents.append("student_feedback")
     cache = CachedGrader(None, cache_directory(model_config_path, root) if agents else root / "cache", agents,
-                         {"analytics": model}, project, location, source_files=["advanced.py"])
+                         {"analytics": model, "student_feedback": feedback_model}, project, location, source_files=["advanced.py"])
     workbook = Workbook()
     students = workbook.active
     students.title = "Students"
@@ -108,43 +119,69 @@ def create_analysis(config, config_dir, config_path, model_config_path, project,
     class_sheet = workbook.create_sheet("Class")
     class_sheet.append(["analysis", "reviewed"])
     try:
-        with provider_factory(model, project, location) as provider:
-            def analyze(task, data):
-                def validate(value):
-                    if not isinstance(value, str) or not value.strip() or len(value) > 32767:
-                        raise ValueError("AI analysis must be nonempty text of at most 32,767 characters")
-                    return value
-                return cache.call("analytics", {"task": task, "data": data},
-                                  lambda: provider.analyze(task, data), validate)
+        def _validate(value):
+            if not isinstance(value, str) or not value.strip() or len(value) > 32767:
+                raise ValueError("AI analysis must be nonempty text of at most 32,767 characters")
+            return value
 
-            feedback = []
-            for row in rows:
+        use_parallel = provider_factory is VertexAnalyst
+        with provider_factory(model, project, location) as provider, \
+                provider_factory(feedback_model, project, location) as fb_provider:
+
+            def _student_task(idx_row):
+                idx, row = idx_row
                 details = []
                 for question, mark in zip(questions, row["marks"]):
                     baseline = baselines[(row["script_index"], question_key(question["question_number"]))]
                     details.append({"question": question, "reviewed_mark": mark, "answer": baseline["answer"],
                                     "reviewed_reasoning": baseline["reasoning"]})
-                text = analyze(
-                    "Draft concise student feedback: strengths, weaknesses, one action per question and next steps.",
-                    {"total": row["total"], "questions": details},
-                )
+                task = "Draft concise student feedback: strengths, weaknesses, one action per question and next steps."
+                data = {"total": row["total"], "questions": details}
+                text = cache.call("student_feedback", {"task": task, "data": data},
+                                  lambda: fb_provider.analyze(task, data), _validate)
+                if use_parallel:
+                    print(f"[AI Analysis] Student feedback {idx + 1}/{len(rows)} ({feedback_model})", flush=True)
+                return row, text
+
+            if use_parallel:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+                    student_results = list(pool.map(_student_task, enumerate(rows)))
+            else:
+                student_results = [_student_task(item) for item in enumerate(rows)]
+
+            feedback = []
+            for row, text in student_results:
                 feedback.append(text)
                 safe_append(students, [row["script_index"], row["id"], text, ""])
-            for question in questions:
+
+            def _question_task(idx_q):
+                idx, question = idx_q
                 key = question_key(question["question_number"])
                 samples = [{"answer": baselines[(row["script_index"], key)]["answer"],
-                            "mark": row["marks"][questions.index(question)]} for row in rows]
+                            "mark": row["marks"][idx]} for row in rows]
                 samples.sort(key=lambda item: item["mark"])
-                text = analyze(
-                    "Analyze this question's performance, misconceptions, strengths and teaching actions.",
-                    {"question": question, "low_scoring": samples[:3], "high_scoring": samples[-3:]},
-                )
+                task = "Analyze this question's performance, misconceptions, strengths and teaching actions."
+                data = {"question": question, "low_scoring": samples[:3], "high_scoring": samples[-3:]}
+                text = cache.call("analytics", {"task": task, "data": data},
+                                  lambda: provider.analyze(task, data), _validate)
+                if use_parallel:
+                    print(f"[AI Analysis] Question diagnosis {idx + 1}/{len(questions)} ({model})", flush=True)
+                return question, text
+
+            if use_parallel:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+                    question_results = list(pool.map(_question_task, enumerate(questions)))
+            else:
+                question_results = [_question_task(item) for item in enumerate(questions)]
+
+            for question, text in question_results:
                 safe_append(question_sheet, [question["question_number"], text, ""])
-            overview = analyze(
-                "Summarize overall strengths, weaknesses, teaching actions and topics to revisit.",
-                {"students": len(rows), "mean": statistics.mean(row["total"] for row in rows),
-                 "feedback_samples": feedback[:30]},
-            )
+
+            overview_task = "Summarize overall strengths, weaknesses, teaching actions and topics to revisit."
+            overview_data = {"students": len(rows), "mean": statistics.mean(row["total"] for row in rows),
+                             "feedback_samples": feedback[:30]}
+            overview = cache.call("analytics", {"task": overview_task, "data": overview_data},
+                                  lambda: provider.analyze(overview_task, overview_data), _validate)
             safe_append(class_sheet, [overview, ""])
         read_approved_grading(config, config_dir, config_path, run_id=run_id)
         if (file_hash(grading_root / "review.xlsx") != review_digest
@@ -155,7 +192,8 @@ def create_analysis(config, config_dir, config_path, model_config_path, project,
         atomic_json(root / "manifest.json", {
             "version": 1, "completed": True, "grading_review_sha256": review_digest,
             "grading_approval_sha256": approval_digest, "model_config_path": str(model_config_path.resolve()),
-            "model_config_sha256": model_digest, "model": model, "project": project, "location": location,
+            "model_config_sha256": model_digest, "model": model, "student_feedback_model": feedback_model,
+            "project": project, "location": location,
         })
     finally:
         workbook.close()
