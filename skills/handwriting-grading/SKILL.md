@@ -91,8 +91,10 @@ execute a notebook as a workaround, or claim a human approval occurred.
    | `rubric/approval.json` | Rubric approved | `prepare-regions` -> `suggest-regions` -> `review-regions` |
    | `regions/approval.json` | Regions approved | `grade` (preview first, then `--confirm-cost`) |
    | `grading/manifest.json` (no `approval.json`) | Grading done (or failed items) | `cluster-answers` (optional) -> `review-grading` (or `retry-grading` if failures) |
-   | `grading/approval.json` | Scores approved | `report`, `analytics`, `ai-analysis` (optional) |
-   | `reports/manifest.json` | Reports generated | `preview-email` -> `approve-email` -> `send-email`, or `clean` |
+   | `grading/approval.json` | Scores approved | Present Post-Approval Menu: `report`, `analytics`, `ai-analysis` (optional) |
+   | `reports/manifest.json` or `analytics/manifest.json` | Reports / offline stats generated | Offer remaining options: `analytics`/`report` (if not yet run), `ai-analysis` -> `advanced-report`, `preview-email` -> `send-email`, or `clean` |
+   | `ai-analysis/review.xlsx` (no `ai-analysis/approval.json`) | AI analysis generated | Teacher reviews `ai-analysis/review.xlsx` -> `approve-analysis` |
+   | `ai-analysis/approval.json` | AI analysis approved | `advanced-report` (Teacher DOCX & Class PPTX), `preview-email` -> `send-email`, or `clean` |
 
 2. Read `references/configuration.md` and examine existing settings. Present
    detected values and ask for missing or ambiguous decisions. Keep actual
