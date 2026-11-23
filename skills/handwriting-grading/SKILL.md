@@ -194,8 +194,10 @@ execute a notebook as a workaround, or claim a human approval occurred.
    and review history have been preserved, and ask if they would like to clean
    or archive intermediate output using:
    `handwriting-grader clean --exam /path/to/exam.yaml`
-   (which creates a cross-platform `.zip` archive backup by default, preserves `reports/`,
-   `analytics/`, `ai-analysis/`, and `moodle/`, and requires explicit `--confirm-delete`).
+   (creates a slim `.zip` backup by default, preserves HIL reviews, AI outputs, and final
+   deliverables `reports/`, `analytics/`, `ai-analysis/`, `moodle/` while removing only
+   bulky raw JPEGs and temp folders; pass `--full-archive` to include raw JPEGs in the `.zip`,
+   and requires explicit `--confirm-delete`).
 9. For distribution read `references/email.md`; never send without reviewing
    the exact preview and separate dispatch approval.
    For targeted regrading read `references/regrading.md`; require a current

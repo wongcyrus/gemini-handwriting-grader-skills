@@ -15,6 +15,8 @@ class TestCleanup(unittest.TestCase):
         self.output.mkdir(parents=True, exist_ok=True)
         (self.output / "grading").mkdir()
         (self.output / "grading" / "results.json").write_text("{}", encoding="utf-8")
+        (self.output / "grading" / "images").mkdir()
+        (self.output / "grading" / "images" / "page0.jpg").write_bytes(b"img")
         (self.output / "reports").mkdir()
         (self.output / "reports" / "summary.xlsx").write_text("fake", encoding="utf-8")
         (self.output / "ai-analysis").mkdir()
@@ -37,12 +39,13 @@ class TestCleanup(unittest.TestCase):
         self.assertEqual(result["status"], "cleaned")
         self.assertTrue(result["preserved_reports"])
         self.assertTrue(Path(result["archive_path"]).exists())
-        self.assertTrue(result["archive_path"].endswith(".zip"))
-        # reports and ai-analysis should still exist
+        self.assertIn("slim", Path(result["archive_path"]).name)
+        # reports, ai-analysis, and HIL/AI metadata should still exist
         self.assertTrue((self.output / "reports").exists())
         self.assertTrue((self.output / "ai-analysis").exists())
-        # grading should be deleted
-        self.assertFalse((self.output / "grading").exists())
+        self.assertTrue((self.output / "grading" / "results.json").exists())
+        # bulky grading/images should be deleted
+        self.assertFalse((self.output / "grading" / "images").exists())
 
     def test_archive_and_clean_purging_all(self):
         result = archive_and_clean(self.config, self.root, archive=False, preserve_reports=False)

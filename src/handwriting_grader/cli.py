@@ -287,6 +287,8 @@ def main(argv=None):
     clean = commands.add_parser("clean", help="Safely archive (.zip) or purge output runs after human confirmation")
     clean.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     clean.add_argument("--no-archive", action="store_true", help="Skip creating backup .zip archive before cleaning")
+    clean.add_argument("--full-archive", action="store_true",
+                       help="Include bulky raw scanned JPEGs (grading/images/, regions/images/) in the backup .zip")
     clean.add_argument("--purge-reports", action="store_true", help="Also delete final reports and analytics (default: preserved)")
     clean.add_argument("--confirm-delete", action="store_true", help="Explicit human confirmation to delete files")
     email_preview = commands.add_parser("preview-email", help="Create a private recipient and attachment preview")
@@ -974,12 +976,13 @@ def main(argv=None):
                 config, path.parent, run_id=args.run,
                 archive=not args.no_archive,
                 preserve_reports=not args.purge_reports,
+                full_archive=getattr(args, "full_archive", False),
             )
             if result.get("archive_path"):
                 print(f"Backup archive created: {result['archive_path']}")
-            print(f"Cleaned items: {', '.join(result['deleted_items'])}")
+            print(f"Cleaned items: {', '.join(result['deleted_items']) or '(none)'}")
             if result.get("preserved_reports"):
-                print("Final reports/, analytics/, ai-analysis/, and moodle/ directories were preserved.")
+                print("HIL reviews, AI outputs, and final deliverables (reports/, analytics/, ai-analysis/, moodle/) were preserved.")
         except Exception as exc:
             print(f"Cleanup failed: {exc}", file=sys.stderr)
             return 1

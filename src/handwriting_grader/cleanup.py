@@ -37,12 +37,26 @@ def inspect_cleanup_targets(config: dict, config_dir: Path, run_id: Optional[str
     }
 
 
+def _is_regenerable_bulk(path: Path, target_dir: Path) -> bool:
+    """Return True for bulky raw images or temp folders that can be regenerated from source PDFs."""
+    rel = path.relative_to(target_dir).parts
+    if not rel:
+        return False
+    top = rel[0]
+    if top.startswith(".grading-") or top == "model-cache":
+        return True
+    if top in {"grading", "regions"} and len(rel) >= 2 and rel[1] == "images":
+        return True
+    return False
+
+
 def archive_and_clean(
     config: dict,
     config_dir: Path,
     run_id: Optional[str] = None,
     archive: bool = True,
     preserve_reports: bool = True,
+    full_archive: bool = False,
 ) -> Dict[str, Any]:
     output_root = resolve_path(config_dir, config["exam"]["output_dir"])
     target_dir = run_directory(config, config_dir, run_id) if run_id else output_root
@@ -50,14 +64,18 @@ def archive_and_clean(
     if not target_dir.exists():
         return {"status": "nothing_to_clean", "deleted_items": [], "archive_path": None}
 
+    include_bulk_in_zip = full_archive or (not preserve_reports)
     archive_path = None
     if archive:
         ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        archive_name = f"grading_archive_{run_id or 'all'}_{ts}.zip"
+        mode_tag = run_id or ("all" if include_bulk_in_zip else "slim")
+        archive_name = f"grading_archive_{mode_tag}_{ts}.zip"
         archive_path = output_root.parent / archive_name
         with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as zipf:
             for file_path in target_dir.rglob("*"):
                 if file_path.is_file():
+                    if not include_bulk_in_zip and _is_regenerable_bulk(file_path, target_dir):
+                        continue
                     arcname = file_path.relative_to(target_dir.parent)
                     zipf.write(file_path, arcname=arcname)
 
@@ -66,16 +84,24 @@ def archive_and_clean(
     if run_id:
         deleted_items.append(str(target_dir))
         shutil.rmtree(target_dir)
-    else:
-        # Top-level run: optionally preserve final deliverable directories
+    elif not preserve_reports:
         for sub in sorted(target_dir.iterdir()):
-            if preserve_reports and sub.name in {"reports", "analytics", "ai-analysis", "moodle"}:
-                continue
             deleted_items.append(sub.name)
             if sub.is_dir():
                 shutil.rmtree(sub)
             else:
                 sub.unlink()
+    else:
+        # Smart clean: preserve deliverables + HIL/AI metadata; delete only bulky raw JPEGs & temp dirs
+        for sub in sorted(target_dir.iterdir()):
+            if sub.name.startswith(".grading-") or sub.name == "model-cache":
+                deleted_items.append(sub.name)
+                shutil.rmtree(sub) if sub.is_dir() else sub.unlink()
+            elif sub.name in {"grading", "regions"} and sub.is_dir():
+                img_dir = sub / "images"
+                if img_dir.exists() and img_dir.is_dir():
+                    deleted_items.append(f"{sub.name}/images")
+                    shutil.rmtree(img_dir)
 
     return {
         "status": "cleaned",
