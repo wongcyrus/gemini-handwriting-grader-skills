@@ -168,6 +168,7 @@ execute a notebook as a workaround, or claim a human approval occurred.
 
    **Semantic Answer Clustering (Optional, Before Review)**:
    - Optionally run `handwriting-grader cluster-answers --exam /path/to/exam.yaml [--threshold 0.82]` (`gemini-embedding-2`, with cross-assignment disk caching) to enable semantic answer grouping (`📌`) in `review-grading`. If skipped, `review-grading` falls back locally to `Word Overlap (Local)` with zero AI cost (details in `references/grading.md`).
+   - In `review-grading`: use `Alt+S` for the All Questions Status dashboard, `📌 Grouped` to toggle answer grouping, `Ctrl+Enter` to confirm questions in batch, and `Alt+A` to approve only after 100% human review is complete (or use "Reset Review" to rollback if needed).
 
    After grading and reporting are complete, always inform the user that results
    and review history have been preserved, and ask if they would like to clean

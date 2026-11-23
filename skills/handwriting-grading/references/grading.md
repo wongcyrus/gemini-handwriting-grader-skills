@@ -85,13 +85,32 @@
 4. Ask the teacher to run `review-grading --exam /path/to/exam.yaml` and open
    the full printed local URL. The score editor presents a one-page blind
    marksheet per question (hiding student IDs during question review), groups
-   similar answers together, lets the teacher sort by clicking table headers
-   (`Answer`, `Script`, `Mark`, `Similarity`, `Status`), filter to only rows
-   requiring a mark/review, expand bounding boxes (`Expand Box`), resize or
-   zoom/pan handwriting crops (`+Context` / `Full Page`), toggle columns, and
-   edit marks, answers, and reasoning inline (display, grouping, filter, and
-   sort preferences persist across questions). Review
-   identities and each answer against the crop or expanded/full page, edit text
+   similar answers together under similarity banners with a dedicated `📌 Grouped`
+   toggle button, lets the teacher sort by clicking table headers (`Answer`, `Script`,
+   `Mark`, `Similarity`, `Status`), filter to only rows requiring a mark/review
+   (`Needs Mark ⚠`), expand bounding boxes (`Expand Box`), resize or zoom/pan
+   handwriting crops (`+Context` / `Full Page`), toggle columns, and edit marks,
+   answers, and reasoning inline (display, grouping, filter, and sort preferences
+   persist across questions).
+   - **All Questions Status Modal (`Alt+S`)**: A live overview dialog showing
+     review completion for all questions and identity matching, filtering by
+     "Incomplete Questions Only", and allowing instant keyboard (`Enter`) or mouse
+     jump to any question.
+   - **Batch Review Confirmation (`Ctrl+Enter`)**: "Confirm Question Reviewed"
+     and "Match OCR IDs" save all items in a single instant batch request (`/api/save-batch`)
+     without blocking keyboard shortcuts.
+   - **Review Reset / Rollback (`/api/reset`)**: The "Reset Review" button allows
+     safely rolling back all edits and review flags to the fresh AI grading output,
+     automatically creating a timestamped backup in `grading/review-history/`.
+   - **Strict Human Approval Gate (`Alt+A`)**: "Approve Entire Assignment"
+     strictly requires 100% human review of student identities and all questions
+     before approval can be granted, and writes approval in a single instant batch
+     without slow sequential workbook writes.
+   - **Keyboard Shortcuts**: `Alt+S` (Questions Status), `Alt+A` (Approve Assignment),
+     `Ctrl+Enter` (Confirm Question Reviewed), `Alt+G` (Focus 1st Row), `Alt+R` (Needs Mark),
+     `Enter` / `↑↓` (Row navigation), `Alt+M` (Toggle Row Reviewed), `Alt+Z` (Zoom Row),
+     `Alt+V` (View Mode: Crop/+Context/Full Page).
+   Review identities and each answer against the crop or expanded/full page, edit text
    and marks, then explicitly mark every item reviewed. The approval button asks
    for confirmation and uses the same validator as `approve-grading`. Once review
    and approval are complete, stop the local `review-grading` server. Do not leave spreadsheet editors open:
