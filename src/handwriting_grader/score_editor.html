@@ -90,6 +90,18 @@ button.btn-warn:hover:not(:disabled) { background: #b45309; }
   box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.3);
 }
 
+.btn-cluster-toggle {
+  background: #f8fafc; color: #475569; border: 1.5px solid #cbd5e1;
+  padding: 0.22rem 0.6rem; border-radius: 4px; font-size: 0.8rem; font-weight: 700;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 0.3rem; transition: all 0.15s ease;
+  user-select: none;
+}
+.btn-cluster-toggle:hover { background: #e2e8f0; color: #1e293b; border-color: #94a3b8; }
+.btn-cluster-toggle.active {
+  background: #16a34a; color: #ffffff; border-color: #15803d;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.25);
+}
+
 .toggle-vis {
   padding: 0.2rem 0.5rem; font-size: 0.78rem; border-radius: 4px;
   border: 1px solid #cbd5e1; background: #ffffff; color: #64748b;
@@ -334,13 +346,14 @@ Keep this URL private and close spreadsheet editors while using this interface.<
       </select>
     </label>
     <button type="button" id="btn-filter-required" class="btn-filter-toggle" title="Filter to show only students who require a manual mark">Needs Mark (0)</button>
-    <label id="cluster-mode-container" style="display: inline-flex; align-items: center; gap: 0.25rem; font-weight: 600; font-size: 0.8rem; color: #475569; margin-left: 0.5rem;">
-      Grouping:
+    <div id="cluster-mode-container" style="display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 600; font-size: 0.8rem; color: #475569; margin-left: 0.5rem;">
+      <label for="marksheet-cluster-mode" style="font-weight: 600;">Grouping:</label>
       <select id="marksheet-cluster-mode" title="Choose grouping method">
         <option value="words">Word Overlap (Local)</option>
         <option value="embedding" disabled>AI Embedding (Not generated)</option>
       </select>
-    </label>
+      <button type="button" id="btn-group-toggle" class="btn-cluster-toggle active" title="Toggle grouping similar answers together">📌 Grouped</button>
+    </div>
     <span style="font-weight: 600; font-size: 0.8rem; color: #475569;">Show/Hide:</span>
     <button type="button" class="toggle-vis active" data-col="img">Image</button>
     <button type="button" class="toggle-vis active" data-col="ans">Answer</button>
@@ -1010,6 +1023,16 @@ async function renderMarksheetTable() {
 
   const sortMode = marksheetSort.mode;
   const filterMode = byId("marksheet-filter").value;
+
+  const btnGroup = byId("btn-group-toggle");
+  if (btnGroup) {
+    const isGrouped = sortMode === "group" && !isId;
+    btnGroup.classList.toggle("active", isGrouped);
+    btnGroup.textContent = isGrouped ? "📌 Grouped" : "📌 Group Answers";
+    btnGroup.title = isGrouped
+      ? "Grouping is ON (similar answers grouped under banners). Click to sort by Script ID."
+      : "Grouping is OFF. Click to group similar answers together.";
+  }
 
   document.querySelectorAll("#marksheet th.sortable").forEach(th => {
     const col = th.dataset.col;
@@ -1945,6 +1968,27 @@ if (byId("marksheet-cluster-mode")) {
     if (state && state.has_clusters) {
       localStorage.setItem("handwriting_grader_cluster_mode", e.target.value);
     }
+    // Selecting a grouping method activates grouping mode
+    marksheetSort = {col: "answer", mode: "group"};
+    try {
+      localStorage.setItem("handwriting_grader_sort_col", marksheetSort.col);
+      localStorage.setItem("handwriting_grader_sort_mode", marksheetSort.mode);
+    } catch (_) {}
+    renderMarksheetTable();
+  };
+}
+
+if (byId("btn-group-toggle")) {
+  byId("btn-group-toggle").onclick = () => {
+    if (marksheetSort.mode === "group") {
+      marksheetSort = {col: "script", mode: "script-asc"};
+    } else {
+      marksheetSort = {col: "answer", mode: "group"};
+    }
+    try {
+      localStorage.setItem("handwriting_grader_sort_col", marksheetSort.col);
+      localStorage.setItem("handwriting_grader_sort_mode", marksheetSort.mode);
+    } catch (_) {}
     renderMarksheetTable();
   };
 }
