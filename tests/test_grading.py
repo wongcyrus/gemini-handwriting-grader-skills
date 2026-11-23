@@ -248,6 +248,44 @@ class GradingTests(unittest.TestCase):
         })[0], 200)
         self.assertEqual(read_approved_grading(self.config, self.root, self.exam)[2]["marks"][0]["answer"], "=1+1")
 
+    def test_score_editor_save_batch_applies_multiple_items_atomically(self):
+        self.run_grading()
+        self.start_score_editor()
+        state = json.loads(self.score_request("/api/state")[1])
+        batch_items = [
+            {"script_index": 0, "kind": "script", "reviewed_id": "001", "reviewed": True},
+            {"script_index": 1, "kind": "script", "reviewed_id": "002", "reviewed": True},
+            {"script_index": 0, "kind": "mark", "question_index": 0, "answer": "A1", "reasoning": "R1", "manual_mark": "2", "reviewed": True},
+            {"script_index": 1, "kind": "mark", "question_index": 0, "answer": "A2", "reasoning": "R2", "manual_mark": "1", "reviewed": True},
+        ]
+        status, body = self.score_request("/api/save-batch", {"revision": state["revision"], "items": batch_items})
+        self.assertEqual(status, 200)
+        self.assertIn("revision", json.loads(body))
+        updated = json.loads(self.score_request("/api/state")[1])
+        self.assertTrue(updated["scripts"][0]["reviewed"])
+        self.assertTrue(updated["scripts"][1]["reviewed"])
+        self.assertEqual(updated["scripts"][0]["reviewed_id"], "001")
+        self.assertEqual(updated["marks"][0][0]["manual_mark"], 2)
+        self.assertTrue(updated["marks"][0][0]["reviewed"])
+
+    def test_score_editor_reset_review_backs_up_and_restores_fresh_state(self):
+        root = self.run_grading()
+        self.fill_review(root / "review.xlsx")
+        approve_grading(self.config, self.root, self.exam)
+        self.assertTrue((root / "approval.json").is_file())
+        self.start_score_editor()
+        state = json.loads(self.score_request("/api/state")[1])
+        self.assertTrue(all(s["reviewed"] for s in state["scripts"]))
+        self.assertEqual(self.score_request("/api/reset", {"revision": state["revision"], "confirmed": False})[0], 400)
+        status, body = self.score_request("/api/reset", {"revision": state["revision"], "confirmed": True})
+        self.assertEqual(status, 200)
+        self.assertIn("revision", json.loads(body))
+        self.assertFalse((root / "approval.json").exists())
+        self.assertTrue(any((root / "review-history").glob("*.xlsx")))
+        fresh = json.loads(self.score_request("/api/state")[1])
+        self.assertTrue(all(not s["reviewed"] for s in fresh["scripts"]))
+        self.assertTrue(all(not fresh["marks"][s["script_index"]][0]["reviewed"] for s in fresh["scripts"]))
+
     def test_score_editor_cli_starts_and_serves_review(self):
         self.run_grading()
         command = [sys.executable, "-c", "from handwriting_grader.cli import main; raise SystemExit(main())",

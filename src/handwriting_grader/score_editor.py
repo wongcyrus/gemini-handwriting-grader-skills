@@ -111,8 +111,7 @@ def locate_row(sheet, index, question=None):
     return matches[0], positions
 
 
-def commit_review(server, root, book, revision):
-    review_hash, result_hash, manifest_hash = revision.split(":")
+def _backup_review(root, review_hash):
     history = root / "review-history"
     history.mkdir(mode=0o700, exist_ok=True)
     backup = history / f"{review_hash}.xlsx"
@@ -124,6 +123,12 @@ def commit_review(server, root, book, revision):
         pass
     if file_hash(backup) != review_hash or file_hash(root / "review.xlsx") != review_hash:
         raise RuntimeError("Review changed during save; reload before editing")
+    return backup
+
+
+def commit_review(server, root, book, revision):
+    review_hash, result_hash, manifest_hash = revision.split(":")
+    _backup_review(root, review_hash)
     temp = None
     try:
         with tempfile.NamedTemporaryFile(dir=root, suffix=".xlsx", delete=False) as file:
@@ -212,6 +217,33 @@ def save_review(server, data):
         book.close()
 
 
+def reset_review(server, data):
+    """Archive current review.xlsx and regenerate a fresh unreviewed workbook from results.json."""
+    from .grading import write_review
+
+    root, revision, *_ = load_state(server)
+    if data.get("revision") != revision:
+        raise RuntimeError("Review changed in another editor; reload before resetting")
+    if data.get("confirmed") is not True:
+        raise ValueError("Explicit confirmation is required")
+    review_hash, result_hash, manifest_hash = revision.split(":")
+    _backup_review(root, review_hash)
+    with (root / "results.json").open(encoding="utf-8") as file:
+        results = json.load(file)
+    temp = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=root, suffix=".xlsx", delete=False) as file:
+            temp = Path(file.name)
+        temp.unlink(missing_ok=True)
+        write_review(temp, results, overwrite=False)
+        os.replace(temp, root / "review.xlsx")
+    finally:
+        if temp is not None:
+            temp.unlink(missing_ok=True)
+    (root / "approval.json").unlink(missing_ok=True)
+    return f"{file_hash(root / 'review.xlsx')}:{result_hash}:{manifest_hash}"
+
+
 def save_review_batch(server, data):
     root, revision, roster, questions, scripts, marks = load_state(server)
     if data.get("revision") != revision:
@@ -233,6 +265,33 @@ def save_review_batch(server, data):
         return commit_review(server, root, book, revision)
     finally:
         book.close()
+
+
+def reset_review(server, data):
+    """Archive current review.xlsx and regenerate a fresh unreviewed workbook from results.json."""
+    from .grading import write_review
+
+    root, revision, *_ = load_state(server)
+    if data.get("revision") != revision:
+        raise RuntimeError("Review changed in another editor; reload before resetting")
+    if data.get("confirmed") is not True:
+        raise ValueError("Explicit confirmation is required")
+    review_hash, result_hash, manifest_hash = revision.split(":")
+    _backup_review(root, review_hash)
+    with (root / "results.json").open(encoding="utf-8") as file:
+        results = json.load(file)
+    temp = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=root, suffix=".xlsx", delete=False) as file:
+            temp = Path(file.name)
+        temp.unlink(missing_ok=True)
+        write_review(temp, results, overwrite=False)
+        os.replace(temp, root / "review.xlsx")
+    finally:
+        if temp is not None:
+            temp.unlink(missing_ok=True)
+    (root / "approval.json").unlink(missing_ok=True)
+    return f"{file_hash(root / 'review.xlsx')}:{result_hash}:{manifest_hash}"
 
 
 def suggestion_parameters(question, threshold, step):
@@ -812,12 +871,14 @@ class ScoreHandler(BaseHTTPRequestHandler):
                     self.server.bulk_preview = {"token": token, **{
                         key: data.get(key) for key in ("revision", "question_index", "threshold", "step")}}
                     return self.json_response(200, {"preview_token": token, "suggestions": suggestions})
-                if self.path in {"/api/save", "/api/save-batch", "/api/approve", "/api/bulk-apply"}:
+                if self.path in {"/api/save", "/api/save-batch", "/api/reset", "/api/approve", "/api/bulk-apply"}:
                     with writer_lock(self.server):
                         if self.path == "/api/save":
                             return self.json_response(200, {"revision": save_review(self.server, data)})
                         if self.path == "/api/save-batch":
                             return self.json_response(200, {"revision": save_review_batch(self.server, data)})
+                        if self.path == "/api/reset":
+                            return self.json_response(200, {"revision": reset_review(self.server, data)})
                         if self.path == "/api/bulk-apply":
                             count = apply_bulk_suggestions(self.server, data)
                             self.server.bulk_preview = None

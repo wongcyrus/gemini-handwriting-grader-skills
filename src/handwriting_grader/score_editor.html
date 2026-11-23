@@ -273,6 +273,7 @@ Keep this URL private and close spreadsheet editors while using this interface.<
   </div>
   <div class="bar" style="padding-top:0.2rem; display:flex; gap:0.5rem;">
     <button type="button" id="btn-all-status" class="btn-primary" title="View review status across Identity and all questions (Alt+S)">All Questions Status [Alt+S]</button>
+    <button type="button" id="reset-review" title="Back up current review.xlsx and reset all reviewed flags and manual marks to original AI results" style="color:#b91c1c; border-color:#fca5a5;">Reset Review</button>
     <button id="approve" class="btn-success" title="Validates and approves all student identities and all questions for the whole assignment">Approve Entire Assignment [Alt+A]</button>
   </div>
 </header>
@@ -479,6 +480,7 @@ function kbConfirm(text) {
     const okBtn = byId("kb-confirm-ok");
     const cancelBtn = byId("kb-confirm-cancel");
     msg.textContent = text;
+    cancelBtn.style.display = "";
     let settled = false;
     function finish(val) {
       if (settled) return;
@@ -504,6 +506,36 @@ function kbConfirm(text) {
     okBtn.focus();
   });
 }
+function kbAlert(text) {
+  return new Promise(resolve => {
+    const dlg = byId("kb-confirm-modal");
+    const msg = byId("kb-confirm-text");
+    const okBtn = byId("kb-confirm-ok");
+    const cancelBtn = byId("kb-confirm-cancel");
+    msg.textContent = text;
+    cancelBtn.style.display = "none";
+    let settled = false;
+    function finish() {
+      if (settled) return;
+      settled = true;
+      cancelBtn.style.display = "";
+      dlg.removeEventListener("cancel", onCancel);
+      dlg.removeEventListener("keydown", onKey);
+      okBtn.removeEventListener("click", finish);
+      if (dlg.open) dlg.close();
+      resolve();
+    }
+    function onCancel(e) { if (e) e.preventDefault(); finish(); }
+    function onKey(e) {
+      if (e.key === "Enter" || e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish(); }
+    }
+    okBtn.addEventListener("click", finish);
+    dlg.addEventListener("cancel", onCancel);
+    dlg.addEventListener("keydown", onKey);
+    dlg.showModal();
+    okBtn.focus();
+  });
+}
 function updateRevision(rev) {
   if (!rev) return;
   if (rev.includes(":") || !state || !state.revision || !state.revision.includes(":")) {
@@ -514,7 +546,7 @@ function updateRevision(rev) {
 }
 function setBusy(value) {
   busy = value;
-  for (const id of ["script", "section", "metadata-image", "approve",
+  for (const id of ["script", "section", "metadata-image", "approve", "reset-review",
                     "marksheet-filter",
                     "img-size", "mark-question-reviewed", "mark-ids-reviewed"]) {
     const el = byId(id);
@@ -2029,57 +2061,72 @@ byId("metadata-image").onchange = e => {
   renderMarksheetTable();
 };
 
+byId("reset-review").onclick = async () => {
+  if (!(await kbConfirm("Reset all reviewed marks, answers, reasoning, and identities back to the original AI results? (A backup is saved in review-history/.)"))) return;
+  setBusy(true); message("Backing up and resetting review to original AI results...");
+  try {
+    await (await api("/api/reset", {revision: state.revision, confirmed: true})).json();
+    dirty = false;
+    await reload();
+    message("Review reset to original AI results ✓ (backup saved in review-history/).");
+  } catch (e) {
+    await reload().catch(() => {});
+    message(e.message);
+  } finally {
+    setBusy(false);
+    if (document.activeElement?.tagName === "BUTTON") document.activeElement.blur();
+  }
+};
+
 byId("approve").onclick = async () => {
   if (dirty) { message("Save the current item before approval."); return; }
-  if (!(await kbConfirm("Approve all reviewed identities and scores?"))) return;
-  setBusy(true); message("Finalizing unflagged items and approving...");
-  try {
-    const roster = state.roster || {};
-    const usedIds = new Set(state.scripts.map(x => x.reviewed_id).filter(Boolean).map(String));
-    for (const s of state.scripts) {
-      if (s.reviewed) continue;
-      let targetId = s.reviewed_id ? String(s.reviewed_id) : "";
-      if (!targetId && s.id_ocr && Object.prototype.hasOwnProperty.call(roster, String(s.id_ocr)) && !usedIds.has(String(s.id_ocr))) {
-        targetId = String(s.id_ocr);
-        usedIds.add(targetId);
-      }
-      if (targetId) {
-        const res = await (await api("/api/save", {
-          revision: state.revision,
-          script_index: s.script_index,
-          reviewed: true,
-          kind: "script",
-          reviewed_id: targetId,
-        })).json();
-        updateRevision(res.revision);
-      }
-    }
+
+  // Check whether human review is complete across all identities and marks
+  const unreviewedScripts = (state.scripts || []).filter(s => !s.reviewed || !s.reviewed_id);
+  let unreviewedMarks = 0;
+  let needsManualMarks = 0;
+  if (state.marks && state.questions) {
     for (let qIdx = 0; qIdx < state.questions.length; qIdx++) {
-      for (const s of state.scripts) {
-        const m = state.marks[s.script_index][qIdx];
+      for (const s of (state.scripts || [])) {
+        const m = state.marks[s.script_index]?.[qIdx];
+        if (!m || !m.reviewed) unreviewedMarks++;
         const hasManual = m && m.manual_mark != null && String(m.manual_mark).trim() !== "";
-        if (m && !m.reviewed && ((!m.grading_failed && !m.moderator_flag) || hasManual)) {
-          const res = await (await api("/api/save", {
-            revision: state.revision,
-            script_index: s.script_index,
-            reviewed: true,
-            kind: "mark",
-            question_index: qIdx,
-            answer: m.answer,
-            reasoning: m.reasoning,
-            manual_mark: hasManual ? String(m.manual_mark) : "",
-          })).json();
-          updateRevision(res.revision);
+        if (m && (m.grading_failed || m.moderator_flag) && !hasManual) {
+          needsManualMarks++;
         }
       }
     }
+  }
+
+  if (unreviewedScripts.length > 0 || unreviewedMarks > 0) {
+    let msg = "Cannot approve assignment yet: Human review is incomplete.\n\n";
+    if (unreviewedScripts.length > 0) {
+      msg += `• ${unreviewedScripts.length} script student ID(s) not yet reviewed.\n`;
+    }
+    if (unreviewedMarks > 0) {
+      msg += `• ${unreviewedMarks} mark(s) across questions not yet reviewed.\n`;
+    }
+    if (needsManualMarks > 0) {
+      msg += `• ${needsManualMarks} flagged or failed mark(s) require teacher manual scores.\n`;
+    }
+    msg += "\nIn accordance with human-in-the-loop review, every question must be reviewed before final approval.\n\nTip: Press Alt+S (or click All Questions Status) to view progress across all questions.";
+    await kbAlert(msg);
+    return;
+  }
+
+  if (!(await kbConfirm("Approve all reviewed identities and scores? This will finalize grading and create the cryptographically-signed approval.json record."))) return;
+  setBusy(true); message("Approving assignment grading...");
+  try {
     const result = await (await api("/api/approve", {revision: state.revision, confirmed: true})).json();
     await reload();
     message(`Approved ${result.students} students and ${result.marks} marks.`);
   } catch (e) {
     await reload().catch(() => {});
     message(e.message);
-  } finally { setBusy(false); }
+  } finally {
+    setBusy(false);
+    if (document.activeElement?.tagName === "BUTTON") document.activeElement.blur();
+  }
 };
 
 window.addEventListener("beforeunload", e => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
