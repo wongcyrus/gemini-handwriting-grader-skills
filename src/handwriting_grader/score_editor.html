@@ -346,8 +346,21 @@ Keep this URL private and close spreadsheet editors while using this interface.<
     <button type="button" class="toggle-vis active" data-col="mark">Mark</button>
     <button type="button" class="toggle-vis active" data-col="sim">Similarity</button>
     <button type="button" class="toggle-vis active" data-col="reason">Reasoning</button>
-    <button type="button" id="mark-question-reviewed" class="btn-primary" style="margin-left: 0.35rem;">Confirm Question Reviewed</button>
+    <button type="button" id="mark-question-reviewed" class="btn-primary" style="margin-left: 0.35rem;">Confirm Question Reviewed [Ctrl+Enter]</button>
   </div>
+</div>
+<div id="kbd-help-bar" style="font-size: 0.76rem; color: #475569; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 0.3rem 0.65rem; margin-bottom: 0.5rem; display: flex; flex-wrap: wrap; gap: 0.6rem;">
+  <strong>Keyboard:</strong>
+  <span><code>Alt+F</code> Focus 1st Row</span>
+  <span><code>Alt+R</code> Needs Mark</span>
+  <span><code>Enter</code> / <code>↑↓</code> Next/Prev Row</span>
+  <span><code>Alt+Z</code> Zoom Row (<code>Esc</code> Close)</span>
+  <span><code>Alt+V</code> View Mode</span>
+  <span><code>Alt+M</code> Toggle Row Reviewed</span>
+  <span><code>Ctrl+Enter</code> Confirm Question</span>
+  <span><code>Alt+N</code> Next Unreviewed</span>
+  <span><code>Alt+←/→</code> Prev/Next Q</span>
+  <span><code>Alt+A</code> Approve</span>
 </div>
 
 <!-- One-Page Marksheet Table (Blind Grading: No Student IDs) -->
@@ -736,7 +749,7 @@ async function renderMarksheetTable() {
       idBtn.textContent = "All IDs Reviewed ✓";
     } else {
       idBtn.className = "btn-primary";
-      idBtn.textContent = `Match OCR IDs & Mark Reviewed (${idRev}/${state.scripts.length})`;
+      idBtn.textContent = `Match OCR IDs & Mark Reviewed (${idRev}/${state.scripts.length}) [Ctrl+Enter]`;
     }
   } else {
     const qLabel = String(qData.question_number).startsWith("Q") ? qData.question_number : `Q${qData.question_number}`;
@@ -749,7 +762,7 @@ async function renderMarksheetTable() {
       qBtn.textContent = `${qLabel} All Reviewed ✓`;
     } else {
       qBtn.className = "btn-primary";
-      qBtn.textContent = `Confirm ${qLabel} Reviewed (${totalRev}/${state.scripts.length})`;
+      qBtn.textContent = `Confirm ${qLabel} Reviewed (${totalRev}/${state.scripts.length}) [Ctrl+Enter]`;
     }
   }
 
@@ -822,8 +835,8 @@ async function renderMarksheetTable() {
       const isFilteringReq = filterMode === "required";
       btnReq.classList.toggle("active", isFilteringReq);
       btnReq.textContent = isFilteringReq
-        ? `Showing Needs Mark (${totalReq}) ⚠`
-        : (totalReq > 0 ? `Needs Mark (${totalReq}) ⚠` : `Needs Mark (0)`);
+        ? `Showing Needs Mark (${totalReq}) ⚠ [Alt+R]`
+        : (totalReq > 0 ? `Needs Mark (${totalReq}) ⚠ [Alt+R]` : `Needs Mark (0) [Alt+R]`);
       btnReq.title = isFilteringReq
         ? "Click to show all students"
         : (totalReq > 0 ? `Click to filter: ${totalReq} student(s) require a manual mark` : "No students in this question require a manual mark");
@@ -1150,14 +1163,14 @@ function createTableRow(item, isId, qIdx) {
       markInput.classList.add("locked");
     };
     markInput.onkeydown = e => {
-      if (e.key === "Enter") {
+      if (e.key === "Enter" && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
         markInput.blur();
         focusMarkRow(1, markInput);
-      } else if (e.key === "ArrowDown") {
+      } else if (e.key === "ArrowDown" && !e.altKey) {
         e.preventDefault();
         focusMarkRow(1, markInput);
-      } else if (e.key === "ArrowUp") {
+      } else if (e.key === "ArrowUp" && !e.altKey) {
         e.preventDefault();
         focusMarkRow(-1, markInput);
       } else if (e.key === "Escape") {
@@ -1316,7 +1329,7 @@ async function saveInlineMark(sIdx, qIdx, markValue, markReviewed) {
         qBtn.textContent = `${qLabel} All Reviewed ✓`;
       } else {
         qBtn.className = "btn-primary";
-        qBtn.textContent = `Confirm ${qLabel} Reviewed (${revCount}/${state.scripts.length})`;
+        qBtn.textContent = `Confirm ${qLabel} Reviewed (${revCount}/${state.scripts.length}) [Ctrl+Enter]`;
       }
     }
     message(markReviewed ? `Script #${sIdx + 1} saved and reviewed.` : `Script #${sIdx + 1} mark saved.`);
@@ -1880,6 +1893,51 @@ document.addEventListener("keydown", e => {
     return;
   }
 
+  if (e.altKey && e.key.toLowerCase() === "r") {
+    e.preventDefault();
+    const btn = byId("btn-filter-required");
+    if (btn && !btn.hidden) btn.click();
+    return;
+  }
+  if (e.altKey && e.key.toLowerCase() === "f") {
+    e.preventDefault();
+    focusMarkRow(1);
+    return;
+  }
+  if (e.altKey && e.key.toLowerCase() === "v") {
+    e.preventDefault();
+    const sel = byId("table-image-mode");
+    if (sel && !sel.hidden) {
+      const vals = ["", "ctx-", "full-"];
+      const next = vals[(vals.indexOf(sel.value) + 1) % vals.length];
+      sel.value = next;
+      sel.dispatchEvent(new Event("change"));
+      message(`Image view: ${sel.options[sel.selectedIndex].text}`);
+    }
+    return;
+  }
+  if (e.altKey && e.key.toLowerCase() === "m") {
+    e.preventDefault();
+    const row = document.activeElement?.closest?.("tr");
+    const revBtn = row?.querySelector("button[id^='inline-rev-']");
+    if (revBtn) revBtn.click();
+    return;
+  }
+  if (e.altKey && e.key.toLowerCase() === "z") {
+    e.preventDefault();
+    if (byId("image-modal").open) {
+      byId("image-modal").close();
+      return;
+    }
+    const active = document.activeElement;
+    const row = active?.closest?.("tr") || document.querySelector("#marksheet-tbody tr[data-script-idx]");
+    const sIdxAttr = active?.dataset?.script ?? row?.querySelector("input.mark-input")?.dataset?.script;
+    const targetScript = sIdxAttr != null ? Number(sIdxAttr) : script;
+    const f = section === "id" ? (byId("metadata-image").value || "id") : section;
+    const label = section === "id" ? "Identity" : state.questions[Number(section)].question_number;
+    openImageModal(null, `Script #${targetScript + 1} - ${label}`, targetScript, f, byId("table-image-mode").value === "full-" ? "full-" : "ctx-");
+    return;
+  }
   if (e.altKey && e.key.toLowerCase() === "a") {
     e.preventDefault();
     byId("approve").click();
