@@ -17,6 +17,8 @@ class TestCleanup(unittest.TestCase):
         (self.output / "grading" / "results.json").write_text("{}", encoding="utf-8")
         (self.output / "reports").mkdir()
         (self.output / "reports" / "summary.xlsx").write_text("fake", encoding="utf-8")
+        (self.output / "ai-analysis").mkdir()
+        (self.output / "ai-analysis" / "teacher-report.docx").write_text("fake", encoding="utf-8")
         self.config = {"exam": {"output_dir": "output"}}
 
     def tearDown(self):
@@ -24,10 +26,11 @@ class TestCleanup(unittest.TestCase):
 
     def test_inspect_cleanup_targets(self):
         info = inspect_cleanup_targets(self.config, self.root)
-        self.assertEqual(len(info["items"]), 2)
+        self.assertEqual(len(info["items"]), 3)
         names = {item["name"] for item in info["items"]}
         self.assertIn("grading", names)
         self.assertIn("reports", names)
+        self.assertIn("ai-analysis", names)
 
     def test_archive_and_clean_preserving_reports(self):
         result = archive_and_clean(self.config, self.root, archive=True, preserve_reports=True)
@@ -35,8 +38,9 @@ class TestCleanup(unittest.TestCase):
         self.assertTrue(result["preserved_reports"])
         self.assertTrue(Path(result["archive_path"]).exists())
         self.assertTrue(result["archive_path"].endswith(".zip"))
-        # reports should still exist
+        # reports and ai-analysis should still exist
         self.assertTrue((self.output / "reports").exists())
+        self.assertTrue((self.output / "ai-analysis").exists())
         # grading should be deleted
         self.assertFalse((self.output / "grading").exists())
 

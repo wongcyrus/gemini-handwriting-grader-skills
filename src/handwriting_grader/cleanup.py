@@ -67,9 +67,9 @@ def archive_and_clean(
         deleted_items.append(str(target_dir))
         shutil.rmtree(target_dir)
     else:
-        # Top-level run: optionally preserve final reports/
+        # Top-level run: optionally preserve final deliverable directories
         for sub in sorted(target_dir.iterdir()):
-            if preserve_reports and sub.name in {"reports", "analytics"}:
+            if preserve_reports and sub.name in {"reports", "analytics", "ai-analysis", "moodle"}:
                 continue
             deleted_items.append(sub.name)
             if sub.is_dir():

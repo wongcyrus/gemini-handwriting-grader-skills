@@ -979,7 +979,7 @@ def main(argv=None):
                 print(f"Backup archive created: {result['archive_path']}")
             print(f"Cleaned items: {', '.join(result['deleted_items'])}")
             if result.get("preserved_reports"):
-                print("Final reports/ and analytics/ directories were preserved.")
+                print("Final reports/, analytics/, ai-analysis/, and moodle/ directories were preserved.")
         except Exception as exc:
             print(f"Cleanup failed: {exc}", file=sys.stderr)
             return 1
