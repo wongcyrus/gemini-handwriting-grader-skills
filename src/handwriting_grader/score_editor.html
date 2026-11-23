@@ -394,6 +394,14 @@ Keep this URL private and close spreadsheet editors while using this interface.<
   </div>
 </dialog>
 
+<dialog id="kb-confirm-modal" style="padding: 1.1rem 1.25rem; border: 1px solid #cbd5e1; border-radius: 8px; max-width: 440px; box-shadow: 0 12px 28px rgba(15,23,42,0.2);">
+  <div id="kb-confirm-text" style="font-size: 0.95rem; color: #0f172a; margin-bottom: 1rem; line-height: 1.45;"></div>
+  <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+    <button type="button" id="kb-confirm-cancel">Cancel (Esc)</button>
+    <button type="button" id="kb-confirm-ok" class="btn-primary">Confirm (Enter)</button>
+  </div>
+</dialog>
+
 <script>
 "use strict";
 
@@ -423,6 +431,38 @@ const qClusterCache = new Map();
 const qClusterLoading = new Set();
 
 function message(text) { byId("status").textContent = text; }
+function kbConfirm(text) {
+  return new Promise(resolve => {
+    const dlg = byId("kb-confirm-modal");
+    const msg = byId("kb-confirm-text");
+    const okBtn = byId("kb-confirm-ok");
+    const cancelBtn = byId("kb-confirm-cancel");
+    msg.textContent = text;
+    let settled = false;
+    function finish(val) {
+      if (settled) return;
+      settled = true;
+      dlg.removeEventListener("cancel", onCancel);
+      dlg.removeEventListener("keydown", onKey);
+      okBtn.removeEventListener("click", onOk);
+      cancelBtn.removeEventListener("click", onCancel);
+      if (dlg.open) dlg.close();
+      resolve(val);
+    }
+    function onOk() { finish(true); }
+    function onCancel(e) { if (e) e.preventDefault(); finish(false); }
+    function onKey(e) {
+      if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); finish(true); }
+      else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish(false); }
+    }
+    okBtn.addEventListener("click", onOk);
+    cancelBtn.addEventListener("click", onCancel);
+    dlg.addEventListener("cancel", onCancel);
+    dlg.addEventListener("keydown", onKey);
+    dlg.showModal();
+    okBtn.focus();
+  });
+}
 function updateRevision(rev) {
   if (!rev) return;
   if (rev.includes(":") || !state || !state.revision || !state.revision.includes(":")) {
@@ -1348,19 +1388,11 @@ byId("mark-question-reviewed").onclick = async () => {
     const hasManual = m.manual_mark != null && String(m.manual_mark).trim() !== "";
     return m.grading_failed && !hasManual;
   });
-  const modFlagged = unreviewed.filter(s => {
-    const m = state.marks[s.script_index][qIdx];
-    const hasManual = m.manual_mark != null && String(m.manual_mark).trim() !== "";
-    return !m.grading_failed && m.moderator_flag && !hasManual;
-  });
-  if (modFlagged.length > 0) {
-    if (!confirm(`This question has ${modFlagged.length} moderator-flagged item(s). Accept their displayed marks and mark the whole question reviewed?`)) return;
-  }
   const targets = unreviewed.filter(s => !failedNoMark.includes(s));
   if (targets.length === 0) {
-    byId("marksheet-filter").value = "flagged";
+    byId("marksheet-filter").value = "required";
     renderMarksheetTable();
-    message(`${failedNoMark.length} failed item(s) require a manual mark before they can be reviewed.`);
+    message(`${failedNoMark.length} failed item(s) have no AI score and require a manual mark.`);
     return;
   }
   setBusy(true); message(`Marking ${targets.length} item(s) reviewed...`);
@@ -1755,8 +1787,8 @@ async function reload() {
   await render();
 }
 
-function change(which, value) {
-  if (dirty && !confirm("Discard unsaved edits?")) {
+async function change(which, value) {
+  if (dirty && !(await kbConfirm("Discard unsaved edits?"))) {
     byId(which).value = which === "script" ? String(script) : section; return;
   }
   if (which === "script") script = Number(value); else section = value;
@@ -1769,7 +1801,7 @@ byId("metadata-image").onchange = () => renderMarksheetTable();
 
 byId("approve").onclick = async () => {
   if (dirty) { message("Save the current item before approval."); return; }
-  if (!confirm("Approve all reviewed identities and scores?")) return;
+  if (!(await kbConfirm("Approve all reviewed identities and scores?"))) return;
   setBusy(true); message("Finalizing unflagged items and approving...");
   try {
     const roster = state.roster || {};
