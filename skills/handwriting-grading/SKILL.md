@@ -170,6 +170,13 @@ execute a notebook as a workaround, or claim a human approval occurred.
    - Optionally run `handwriting-grader cluster-answers --exam /path/to/exam.yaml [--threshold 0.82]` (`gemini-embedding-2`, with cross-assignment disk caching) to enable semantic answer grouping (`📌`) in `review-grading`. If skipped, `review-grading` falls back locally to `Word Overlap (Local)` with zero AI cost (details in `references/grading.md`).
    - In `review-grading`: use `Alt+S` for the All Questions Status dashboard, `📌 Grouped` to toggle answer grouping, `Ctrl+Enter` to confirm questions in batch, and `Alt+A` to approve only after 100% human review is complete (or use "Reset Review" to rollback if needed).
 
+   **Post-Approval Reporting & Analytics Menu (Proactively Present to User)**:
+   - Immediately after `grading/approval.json` is recorded (or whenever the user finishes reviewing), **always proactively present all post-approval options** so a general user knows what is available:
+     1. **Standard Reports (`report`)** *(Offline, zero AI cost)*: Individual marked student PDFs, combined PDF, stratified audit samples, and score spreadsheets (`score_report.xlsx`, `details_score_report.xlsx`).
+     2. **Offline Statistical Analytics (`analytics`)** *(Offline, zero AI cost)*: Cohort & class statistics (`statistics.xlsx`) and per-question box-plot PNGs.
+     3. **Gemini AI Qualitative Analysis (`ai-analysis`) & Advanced Reports (`advanced-report`)** *(Uses Gemini AI — preview cost & obtain explicit consent first)*: Analyzes class misconceptions and generates personalized student feedback (`ai-analysis/review.xlsx` -> `approve-analysis`), unlocking a **Teacher Executive Report (`.docx`)** and **Class Review Slides (`.pptx`)**.
+     4. **Email Distribution (`preview-email` -> `approve-email` -> `send-email`)**: Previews and emails marked PDFs and feedback to students.
+
    After grading and reporting are complete, always inform the user that results
    and review history have been preserved, and ask if they would like to clean
    or archive intermediate output using:
