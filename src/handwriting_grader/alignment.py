@@ -92,6 +92,11 @@ def estimate_rigid_transform(
     denom = float(np.sum(weights * (px ** 2 + py ** 2)))
     theta = float(np.sum(weights * ((dy - ty) * px - (dx - tx) * py)) / denom) if denom > 0.0 else 0.0
 
+    # Different answers can yield unrelated peaks; require a shared rigid motion.
+    residuals = np.hypot(dx - (tx - theta * py), dy - (ty + theta * px))
+    if np.count_nonzero((weights > 0.0) & (residuals <= 15.0)) < 3:
+        return 0.0, 0.0, 0.0
+
     if abs(tx) > max_shift_px or abs(ty) > max_shift_px or abs(math.degrees(theta)) > max_angle_deg:
         return 0.0, 0.0, 0.0
     return tx, ty, theta

@@ -111,6 +111,28 @@ class TestPageAlignment(unittest.TestCase):
         self.assertAlmostEqual(tx, -6.0, delta=2.5)
         self.assertAlmostEqual(ty, -14.0, delta=2.5)
 
+    def test_conflicting_answer_panels_do_not_move_a_correct_id_crop(self):
+        ref = _make_form_image()
+        target = ref.copy()
+        target.paste("white", (0, 500, 800, 1000))
+        target.paste(ref.crop((0, 500, 400, 1000)), (100, 420))
+        target.paste(ref.crop((400, 500, 800, 1000)), (400, 620))
+        id_box = (480, 40, 740, 90)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "original.jpg"
+            output = Path(tmp) / "aligned.jpg"
+            target.save(source, format="JPEG", quality=95)
+            modified, transform = align_page_file(
+                source, _prepare_ink_map(ref), ref.size, output_path=output,
+            )
+            self.assertFalse(modified)
+            self.assertEqual(transform, (0.0, 0.0, 0.0))
+            with Image.open(source) as original, Image.open(output) as aligned:
+                np.testing.assert_array_equal(
+                    np.asarray(original.crop(id_box)), np.asarray(aligned.crop(id_box)),
+                )
+
     def test_check_scan_orientation_and_sequence_flags_upside_down_swapped_and_rotated(self):
         p0 = _make_form_image()
         p1 = Image.new("RGB", (800, 1000), (255, 255, 255))
