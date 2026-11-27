@@ -1,54 +1,54 @@
 # Workflow and human gates
 
-Answer sheets, preflight, rubric extraction and optional search-grounded
-review, region review, grading, reports, AI analysis and gated distribution
-are implemented. Formatting and cache coverage differ from the notebooks.
+Inspect existing state first. Reuse VERIFIED settings and clear stage choices;
+ask only unresolved questions needed now. Configuration reuse is not paid consent.
+The engine uses `google-genai`; Google ADK is optional external integration only.
 
-1. **Answer sheets:** optionally generate from a roster and DOCX before scans;
-   ask the teacher to verify identities and pagination before printing.
-2. **Preflight and attendance:** verify inputs and configuration, then obtain
-   confirmation of scan order, page layout, output location and intended
-   Vertex target. When attendance is configured, review and approve the
-   complete list separately; see `attendance.md`.
-3. **Rubric:** extract the scheme and have a teacher approve questions,
-   answers and maximum marks.
-4. **Regions:** optionally request Vertex suggestions after explicit cost
-   approval. Draw, move, resize, delete and label boxes in a local browser.
-   Save original-image pixel coordinates in `annotations.json` and approve all
-   layouts.
-5. **Grading:** request approval for paid calls before OCR, grading and
-   moderation. Select between `--mode batch` (recommended default: evaluates
-   all student responses for each question simultaneously using multimodal
-   structured output with Argon and local Pillow blank filtering) and
-   `--mode item` (legacy sequential per-student per-question evaluation with Flash).
-   Built-in SDK retry options handle transient connection errors.
-   If any items still fail or moderation encounters errors, notify the user
-   with diagnostics to decide whether to retry via `retry-grading` (after
-   preview and cost consent) or proceed to manual review.
-6. **Semantic Clustering (Optional, After OCR/Grading, Before Review):** optionally
-   pre-compute semantic answer clusters using Google's frontier `gemini-embedding-2` model:
-   `handwriting-grader cluster-answers --exam /path/to/exam.yaml`. Deduplicates
-   identical answers across all questions and across all assignments on the machine
-   via a shared embedding cache (`~/.cache/gemini-handwriting-grader/embeddings/<model>.json`),
-   ensuring any unique answer text is embedded at most once.
-   Groups conceptually equivalent student answers for fast, consistent blind moderation.
-   If skipped or disabled, `review-grading` seamlessly falls back to local word-overlap
-   clustering with zero API calls.
-7. **Score Review:** A teacher reviews IDs, OCR, exceptions, moderation flags and
-   mark overrides in `review-grading`.
-8. **Reports:** reconcile the complete present roster and marks, validate ranges and
-   have the teacher approve final scores and feedback. After reporting, prompt
-   the user if they want to archive or clean intermediate grading runs with `clean`.
-9. **Distribution:** preview exact recipients, messages and attachments;
-   require separate approval immediately before sending.
+1. **Answer sheets:** optional offline generation before scans. Confirm identities
+   and pagination before printing; reuse the chosen roster/template/output.
+2. **Preflight/scans/attendance:** offline checks before regions; never silently
+   reorder or rotate scans. No mandatory paid scan-marker stage. Review and
+   approve attendance's current version separately; see [attendance](attendance.md).
+3. **Rubric:** import offline or preview/consent to extraction. Teacher approval
+   of every question, marking criterion and maximum is separate from generation.
+4. **Regions:** recommend Gemini proposals after explicit cost consent, with an
+   explicit offline manual choice/fallback. Review every page and box before
+   approval. See [regions](regions.md).
+5. **Grading:** retain the selected mode, or explain batch/item choices. Preview
+   target, data, current price estimates and request bounds excluding SDK retries.
+   Obtain a new `--confirm-cost` for this paid stage. Google SDK bounded retries
+   handle transient failures; never add automatic retry loops. Report failures
+   and offer manual review, quota investigation or separately consented recovery.
+   Incomplete checkpoints and completed failed runs use different branches;
+   see [grading recovery](grading.md#failure-recovery).
+6. **Optional grouping:** `cluster-answers` defaults offline/cached/local lexical.
+   Paid embeddings: `--preview-embedding [--model-config PATH]`, then consented
+   `--confirm-cost --revision REVISION`. The printed review/configuration revision
+   binds review/grading state and selected model-config SHA-256; changes require
+   a new preview and consent. Native calls require explicit `vertex_ai.project_id`
+   and `vertex_ai.location`; offline grouping does not.
+   Do not overwrite existing clusters or
+   include identities. Caches are private, not proof of freshness or approval.
+7. **Score review:** `review-grading` defaults offline; optional paid grouping
+   requires explicit model settings/consent. Review all identities/marks and
+   exceptions; edits and calculated suggestions do not approve anything.
+8. **Post-approval menu:** proactively offer offline `report`, `analytics`,
+   optional paid `ai-analysis` followed by separate review/`approve-analysis`,
+   advanced reports, Moodle/LMS export, and email. Advanced DOCX/PPTX default
+   offline; ask about images if unclear, honor an existing clear choice.
+   Infographics need `--infographics --confirm-cost`, optional separate image
+   configuration and a fresh report folder without modifying approved analysis.
+   Preserve editable slides and full speaker notes; see [grading](grading.md).
+9. **Distribution:** exact preview -> separate `approve-email` -> immediately
+   authorized `send-email`. SMTP acceptance is not delivery.
+10. **Navigation/cleanup:** refresh the assistant-maintained private offline
+    [HTML index](output-index.md) on resume and after every output change/failure,
+    archive or cleanup. Separately confirm cleanup and verify backups; preserve
+    sources, approval-bound region/grading images, reviews/history and outputs.
 
-Keep human approval records separate from saved edits. Bind each decision to
-the relevant artifact hashes; changed inputs invalidate dependent approvals.
-Require verified backups before separately approved cleanup. Do not treat
-skill instructions as a security boundary: executable stages must enforce
-their own gates.
-
-Migration must account for shared page layouts, duplicate annotation labels,
-ID formatting, output path differences, stale caches and the original
-reporting cleanup order. Do not send email or make live calls without
-explicit authorization.
+Approval records bind to relevant hashes; changed inputs make downstream approvals
+stale. Never infer approval from file presence. Do not share partial/stale reports.
+Recorded usage and priced estimates are not invoices, and request bounds do not
+include SDK retries. Unknown embedding usage is `cost_usd: null` with **UNPRICED**
+audit rows/subtotals, not zero cost. Skill instructions are not an executable
+security boundary.

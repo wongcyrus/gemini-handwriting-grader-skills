@@ -7,8 +7,11 @@ are available in a released version. Use `grading.md`, `regions.md`,
 
 ## Decisions and prerequisites
 
-Before creating or modifying an exam run, ask the teacher to supply and
-confirm:
+Before creating or modifying a run, inspect existing settings, stage choices
+and approval bindings. Reuse VERIFIED values, including the intended Google
+project/location/models; ask only unresolved decisions needed for the selected
+stage. Do not repeat setup or defer all work until optional settings are supplied.
+The following are a stage-needed checklist, not a questionnaire to repeat:
 
 1. Exam name, roster XLSX and sheet, and private output directory. Confirm
    each ID, including any leading zeroes, and that ID, NAME and CLASS are
@@ -26,6 +29,11 @@ confirm:
    Cloud project, location and authentication; or email recipients, sender
    and SMTP settings. Never put passwords in configuration files.
 
+Model discovery lists metadata by default, not quota/pricing verification.
+Paid capability pings require separately previewed `--probe --confirm-cost`.
+Every new paid stage still requires explicit cost/data consent; retaining
+settings or a prior approval does not authorize inference.
+
 Use the repository's Python environment (`handwriting-grader`). PDF rendering uses
 pure-Python `pypdfium2` (no Poppler needed); LibreOffice is only required for
 optional answer-sheet DOCX-to-PDF conversion. Resolve paths relative to the exam
@@ -41,16 +49,19 @@ The relevant references specify required arguments and error handling.
 |---|---|---|
 | Optional answer sheets | Roster and DOCX template; `answer-sheets --exam EXAM` | Numbered PDFs, roster mapping, `combined.pdf` and completion manifest in `answer-sheets/`. Personalized DOCX files are temporary. Check identity, order and pagination before printing. |
 | Preflight | Exam YAML, roster, scan and rubric; `preflight --exam EXAM` | Read-only check of paths, roster columns, page count and shared layout. The teacher must still confirm scan order and layout. |
-| Optional attendance | Complete `ID,STATUS` CSV; `prepare-attendance`, then `approve-attendance --confirm-reviewed` | Private versioned review and approval. The teacher checks every status; absences are never inferred. Only present students proceed to grading. |
+| Optional attendance | Complete `ID,STATUS` CSV; `prepare-attendance`, then `approve-attendance --confirm-reviewed` | Resolve `attendance/current.json` -> `attendance/versions/<review_id>/attendance_review.xlsx`; validate that version's approval and inputs. Absences are never inferred. |
 | Rubric | Structured XLSX via `import-rubric`, or DOCX via `extract-rubric` with model config, project and location | `rubric/rubric.xlsx` and manifest. DOCX extraction requires a preview and separate `--confirm-cost`. Compare every question, marking criterion and maximum to the source. |
 | Optional rubric fact check | Imported/extracted rubric; `verify-rubric` with model target | Search-grounded `rubric/verification/verification.xlsx` and `verification.docx` with sources. Separate cost/data consent is required; check actual sources. It does not approve or change the rubric. |
 | Rubric approval | Reviewed rubric; `approve-rubric --exam EXAM --confirm-reviewed` | Separate hash-bound approval. Reapprove after relevant changes. |
 | Region preparation | Preflight-confirmed scan; `prepare-regions --exam EXAM` | First script's pages and a draft in `regions/`. No model call. |
-| Region suggestions | Prepared pages + extracted rubric (`rubric.xlsx`); `suggest-regions` with Gemini 4 (`models.annotation`) | Separate AI proposals using the rubric's exact question IDs, not approved annotations. Preview first; paid call requires `--confirm-cost`. |
+| Region suggestions or manual choice | Prepared pages + approved rubric; recommended `suggest-regions` with configured Gemini annotation model, or explicit offline manual `review-regions` | Proposals use exact question IDs but do not approve boxes. Paid proposals require preview/consent; manual fallback remains available. |
 | Region review | `review-regions --exam EXAM` | Local browser draws/edits labels and boxes. Verify every page and save it reviewed; approve only after review. ID must be on the first page. Grading additionally checks labels against the approved rubric. |
-| OCR, grading and moderation | Current rubric and region approvals; `grade` with model target | `grading/images/`, `results.json`, manifest and `review.xlsx`. Supports `--mode batch` (default: parallel question batches with Gemini 4 Argon structured output, local blank pre-filtering, and cohort consistency) and `--mode item` (per-student Flash evaluation). Preview maximum requests and get explicit consent before `--confirm-cost`. AI can fail or be wrong; failure is not a zero mark. |
+| OCR, grading and moderation | Current rubric and region approvals; `grade` with model target | `grading/images/`, `results.json`, manifest and completed-run `review.xlsx`. Batch is default; item mode remains available. Application image cap is 105, preserving 35 metadata scripts × three fields; it is not a provider limit. Preview bounds excluding SDK retries and obtain cost consent. Failure is not a zero mark or guaranteed consistency. |
 | Targeted failure retry | Completed grading run with failed marks or moderation errors; `retry-grading` | Isolates failed crops, re-evaluates local blank filter, re-grades failed items using SDK HttpRetryOptions, re-moderates affected questions, and refreshes review.xlsx preserving existing manual marks. Preview and cost consent required before `--confirm-cost`. |
-| Resume interrupted grading | Supported partial checkpoint; `resume-grading --exam EXAM` | Preview target, then obtain fresh cost consent for `--confirm-cost`. Already checkpointed work is retained; an in-flight call may be repeated and billed. Existing review workbooks cannot be resumed. |
+| Resume interrupted grading | `grading/manifest.json` + `grading/results.json` with `completed: false`; `resume-grading --exam EXAM` | Supported incomplete runs only, without review workbook/approval. Preview, then new `--confirm-cost`; checkpointed work is retained but an in-flight call can repeat and be billed. |
+| Incomplete failed-batch recovery | `retry-failed-batches`, or offline `export-failed-review --output FRESH_DIR` | Retry requires preview hash `--checkpoint-sha256` and new cost consent; retains successful rows and incomplete state. Export makes no calls/imports/approval. |
+| Completed safety-block recovery | Completed original batch run; `bisect-failed-batch --question ID --max-requests N` | Actual Gemini safety-block classification only; revision-bound new consent. No policy bypass; blocked singletons remain unscored/manual. |
+| Optional grouping | Offline `cluster-answers`; paid `--preview-embedding [--model-config PATH]` | Cached/local lexical default. Native embeddings require explicit `vertex_ai.project_id`/`vertex_ai.location`. Paid `--confirm-cost --revision REVISION` binds review/grading state and selected model-config SHA-256; changes require new preview/consent. Existing clusters are not overwritten. |
 | Targeted regrading | Approved parent; optional separately approved replacement rubric; `regrade` | One question is rerun for every present student in an isolated child. Preview and obtain cost consent; all identities and scores need fresh review. Use `--run CHILD` for child review and subsequent stages. |
 | Identity and mark review | Completed run; `review-grading --exam EXAM`, or edit `grading/review.xlsx` | Compare every identity and answer with its crop or full page. Select distinct roster IDs and explicitly review each identity and mark. Correct answers and reasoning; failed, flagged or corrected answers require a manual mark. No saved edit is an approval. |
 | Optional discrepancy check | Completed run and review workbook; `check-grading-review --exam EXAM` | Read-only private diagnostics for identity and mark discrepancies. Use `--run CHILD` for a child. Exit 0 is not human approval; exit 1 indicates discrepancies or an input error. |
@@ -59,7 +70,7 @@ The relevant references specify required arguments and error handling.
 | Offline analytics | Current grading approval; `analytics --exam EXAM` | `analytics/statistics.xlsx` with overall, class and question statistics and charts, plus question box-plot PNGs. Pass results remain blank without an explicit policy. |
 | Optional AI analysis | Current grading approval; `ai-analysis` with model target | `ai-analysis/review.xlsx` for student feedback, questions and class overview. Preview and obtain separate cost/data consent before `--confirm-cost`; review and correct every item. |
 | Analysis approval | Reviewed feedback; `approve-analysis --exam EXAM --confirm-reviewed` | Separate approval required before advanced reports or feedback in email. |
-| Advanced reports | Current analysis approval; `advanced-report --exam EXAM` | Teacher DOCX and class PPTX. Review the outputs before sharing. |
+| Advanced reports | Current analysis approval; `advanced-report --exam EXAM` | Offline teacher DOCX/PPTX by default; compatible `--no-infographics`. Ask about optional images if unclear, honor a clear choice. Images require `--infographics --confirm-cost`, optional separate image settings, and fresh `--report-name`. Preserve approved analysis, editable slides and full notes. |
 | Optional email | Current grading approval and scored PDFs, explicit CSV for present recipients and separate settings YAML; `preview-email` | Private individual `.eml` files and preview manifest; nothing is sent. Check every recipient, body and attachment. `{feedback}` also requires current analysis approval. |
 | Email approval and send | Reviewed preview; `approve-email --confirm-reviewed`, then separate `send-email --confirm-send` | Requires a second explicit authorization immediately before dispatch. SMTP STARTTLS acceptance is not delivery. Inspect the delivery journal after errors; ambiguous attempts are not retried automatically. |
 
@@ -80,6 +91,9 @@ saved similarity show it as unavailable.
   choose a new output directory with the user's agreement. Only supported
   incomplete grading checkpoints resume; there is no general resume for
   other stages.
+- A completed grading run (`results.json.completed: true`) is not resumable
+  merely because marks failed. Use its manual review/targeted recovery branch;
+  see [grading recovery](grading.md#failure-recovery).
 - The grading editor retains prior workbook versions in
   `grading/review-history/`. Keep spreadsheet editors closed while using it:
   independent programs do not honor its lock and can race with a save. Never
@@ -94,7 +108,17 @@ saved similarity show it as unavailable.
   `--reuse-parent-cache`; matching responses may not be freshly generated.
   Follow `regrading.md` for prerequisites and preview.
 - Preserve source files, review history, delivery journals and partial
-  outputs. No destructive notebook cleanup is run automatically.
+  outputs, including approval-bound `regions/images/` and `grading/images/`.
+  Cleanup requires a separate confirmed plan and verified backup; missing images
+  must not be silently regenerated/reapproved. No automatic notebook cleanup.
+- Refresh the private assistant-maintained [offline HTML index](output-index.md)
+  on resume and after every output change, failure, archive and cleanup.
+  Preserve its user content, encode/escape relative links, omit student identities,
+  and mark partial/stale/unverified outputs. The CLI does not generate this guide;
+  it is not approval or permission to publish.
+- Recorded usage/priced estimates are not invoices or every SDK retry charge.
+  Unknown embedding usage persists as `cost_usd: null` with **UNPRICED** audit
+  rows/subtotals, not free usage. Do not promise fixed savings, accuracy or consistency.
 
 ## Notebook comparison and remaining gaps
 
@@ -110,10 +134,10 @@ The comparison uses the original repository's `notebbooks/step1` through
 | Step 4: OCR and scoring | Core ID, NAME and CLASS OCR, grading and moderation implemented through the Google Gen AI SDK, not the original ADK agent orchestration. Older runs may not contain NAME OCR. A selected question can be rerun in a separate reviewed child, including with a separately approved replacement rubric. Prompting, retries and output files are not identical. |
 | Step 4: review screen | Local individual review and a per-question comparison table support filtering, sorting and navigation. Bulk similarity suggestions can be explicitly applied as unreviewed drafts. Crop adjustments are temporary visual previews unless a separate shared/per-script crop proposal is reviewed and used for a child regrade. Old results cannot recover discarded similarity. |
 | Step 5: post-scoring checks | Read-only discrepancy diagnostics assist review; approval enforces complete unique present-student IDs, reviewed rows and score bounds. Explicit reviewed attendance provides a separate absence report; formatting differs from the notebook. History cleanup and reset tools are not implemented. |
-| Step 6.1: reports | Score workbooks, marked PDFs and stratified samples implemented. Layout, filenames and annotations differ; the original archive/cleanup workflow and exact workbook formatting are not ported. Explicit pass settings replace the notebook's assumed threshold. |
+| Step 6.1: reports | Score workbooks, marked PDFs and stratified samples implemented. Layout, filenames and annotations differ; confirmed cleanup preserves review/source evidence and deliverables. Explicit pass settings replace the notebook's assumed threshold. |
 | Step 6.2: analytics | Student/question/class AI reviews, offline statistics, charts including question box plots, teacher DOCX and PPTX exist. Explicit per-question thresholds enable pass rates; none are inferred. Chart layout, detailed formatting and analysis prompts are not fully reproduced. Review all generated material. |
 | Step 7: distribution | Individual preview, review, approval, SMTP STARTTLS send and delivery journal implemented. Recipient lookup and settings differ from the notebook; no live SMTP delivery has been verified. |
-| Caching and operations | The original ADK callback format and existing notebook cache are not imported. Search-grounded verification is deliberately not cached; notebook logging settings are not ported. No automatic archive, retention cleanup or generalized interrupted-stage recovery is provided. |
+| Caching and operations | The original ADK callbacks/notebook cache are not imported. Engine uses `google-genai`, not required ADK/Framework; ADK is optional external integration. Grounded verification is not cached. No automatic cleanup or generalized recovery; explicitly confirmed archive/cleanup and supported grading recovery only. |
 
 ## Verification status
 

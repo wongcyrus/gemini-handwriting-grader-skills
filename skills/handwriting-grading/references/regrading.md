@@ -7,6 +7,11 @@ separate child run. The parent must have current, human-approved scores,
 regions, rubric and attendance. It is not modified. The new child always
 needs fresh review and approval of every identity and every score.
 
+Reuse VERIFIED exam/Google model/project/location choices; ask only unresolved
+settings needed for this child. A new child stage still needs its own cost
+consent. Refresh the private [output index](output-index.md) after proposals,
+approvals, child outputs, review changes, recovery or failure.
+
 The original run is selected by omitting `--parent` or `--run`. A child can
 also be a parent by supplying its ID. Run and proposal IDs are 1–64 ASCII
 letters, digits, hyphens or underscores, starting with a letter or digit.
@@ -95,7 +100,7 @@ Add `--parent PARENT_RUN` for a child parent. Add `--rubric-proposal rubric-v2`
 or `--crop-proposal crop-v2` only if the separately approved proposal matches
 this parent and question.
 The preview displays the selected rubric, model, target, cache and upper
-bound of `2 × present students + 1` requests: answer OCR and grading for each
+bound of `2 × present students + 1` application requests, **excluding SDK retries**: answer OCR and grading for each
 student, plus whole-question moderation. Cache hits or skipped moderation may
 reduce calls; retries and in-flight requests may incur additional charges.
 After the user explicitly approves the target, data transfer and potential
@@ -143,8 +148,9 @@ for the exam is also checked against the child rubric's total marks.
 
 ## Recovery and validation
 
-An interrupted child with a valid manifest and checkpoint, but without a
-review workbook or approval, may be resumed:
+An interrupted child with valid `grading/manifest.json` and
+`grading/results.json` (`completed: false`), but without a review workbook or
+approval, may be resumed if its checkpoint schema is supported:
 
 ```sh
 handwriting-grader resume-grading --exam /private/exam.yaml --run revision-1
@@ -156,11 +162,16 @@ an in-flight request can repeat. The original cache selection is preserved and
 shown on resume. The exclusive lock prevents concurrent
 resume; investigate a stale lock and never remove a live one. Partial runs
 and prior outputs are not automatically deleted.
-If creation was interrupted before the manifest and checkpoint were written,
+If creation was interrupted before the manifest and results were written,
 resume cannot recover it; preserve the partial directory and use a new run ID.
+A completed child (`completed: true`) is not resumable; failed marks require
+completed-run manual review or the supported targeted retry branch. Original-run
+batch splitting must not be assumed available for children.
 
 Changes to parent approvals, review, results, manifest, images, rubric,
 attendance or exam inputs invalidate the child. Existing child reports do not
 disappear when this happens; do not distribute them as current. Hash-bound
 approvals are local records, not tamper-proof identity verification. Offline
 tests use synthetic inputs and fake services, not live Vertex or SMTP.
+Preserve sources, approval-bound region/grading images and reviews/history during
+separately confirmed cleanup. Recorded usage estimates are not invoices.

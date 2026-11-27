@@ -12,7 +12,7 @@ from PIL import Image, ImageDraw, ImageFont
 from pypdf import PdfReader, PdfWriter
 
 from .distribution import address, approved_report
-from .regions import atomic_json
+from .regions import atomic_json, file_hash
 
 
 def _safe_filename(text: str) -> str:
@@ -70,8 +70,8 @@ def _render_feedback_cover_pdf(exam_name: str, student_id: str, name: str, stude
     draw.rounded_rectangle([(60, 160), (w - 60, 290)], radius=10, fill=(248, 250, 252), outline=(203, 213, 225), width=2)
     draw.text((90, 182), f"Student ID: {student_id}    |    Name: {name}    |    Class: {student_class or '-'}",
               fill=(30, 41, 59), font=font_meta)
-    score_str = f"{score:.1f}".rstrip("0").rstrip(".")
-    max_str = f"{max_marks:.1f}".rstrip("0").rstrip(".")
+    score_str = format(score, ".15g")
+    max_str = format(max_marks, ".15g")
     draw.text((90, 228), f"Total Score: {score_str} / {max_str}", fill=(22, 163, 74), font=font_sub)
 
     # Feedback body
@@ -120,30 +120,80 @@ def export_moodle(config, config_dir, config_path, *, worksheet=None, participan
     validated, rows, report_root = approved_report(config, config_dir, config_path, run_id=run_id)
     grading_root = validated[0]
     exam_name = config["exam"]["name"]
-    max_marks = float(sum(q["marks"] for q in config.get("questions", [])) or 100)
+    max_marks = float(sum(q["marks"] for q in validated[3]))
+    report_manifest_hash = file_hash(report_root / "manifest.json")
 
-    # Load approved AI feedback if available
     feedback_by_idx = {}
-    try:
+    analysis_approval = grading_root.parent / "ai-analysis" / "approval.json"
+    analysis_hash = None
+    if analysis_approval.exists():
         from .advanced import read_approved_analysis
         _, _, students_fb, _, _, _ = read_approved_analysis(config, config_dir, config_path, run_id=run_id)
         feedback_by_idx = students_fb
-    except (OSError, ValueError):
-        feedback_by_idx = {}
+        analysis_hash = file_hash(analysis_approval)
+
+    filenames = [
+        f"{_safe_filename(str(row['id']))}_{_safe_filename(str(row['name']))}.pdf"
+        for row in rows
+    ]
+    if len({name.casefold() for name in filenames}) != len(filenames):
+        raise ValueError("Student names and IDs produce duplicate Moodle filenames")
+
+    student_ids = {str(row["id"]).strip() for row in rows}
+    if len(student_ids) != len(rows) or "" in student_ids:
+        raise ValueError("Moodle export requires distinct, nonempty student IDs")
+
+    matched_emails = {}
+    if participants:
+        with Path(participants).open(encoding="utf-8-sig", newline="") as file:
+            reader = csv.DictReader(file)
+            fields = set(reader.fieldnames or [])
+            if not fields.intersection({"ID number", "ID"}) or not fields.intersection({"Email address", "EMAIL"}):
+                raise ValueError("Participants CSV must contain an ID and email column")
+            for p_row in reader:
+                pid = str(p_row.get("ID number") or p_row.get("ID") or "").strip()
+                email_val = str(p_row.get("Email address") or p_row.get("EMAIL") or "").strip()
+                if pid in student_ids and email_val:
+                    if pid in matched_emails:
+                        raise ValueError(f"Participants CSV contains duplicate student ID: {pid}")
+                    matched_emails[pid] = address(email_val)
+
+    fieldnames, ws_rows = [], []
+    if worksheet:
+        with Path(worksheet).open(encoding="utf-8-sig", newline="") as file:
+            reader = csv.DictReader(file)
+            fieldnames = list(reader.fieldnames or [])
+            ws_rows = list(reader)
+        if not {"ID number", "Identifier", "Grade"}.issubset(fieldnames):
+            raise ValueError("Moodle grading worksheet CSV must contain 'Identifier', 'ID number' and 'Grade' columns")
+        seen_students, seen_identifiers = set(), set()
+        for ws_row in ws_rows:
+            sid = str(ws_row.get("ID number") or "").strip()
+            if sid not in student_ids:
+                continue
+            participant_id = _extract_participant_id(ws_row.get("Identifier", ""))
+            if not participant_id:
+                raise ValueError(f"Moodle worksheet has no participant identifier for student ID: {sid}")
+            if sid in seen_students or participant_id in seen_identifiers:
+                raise ValueError("Moodle worksheet contains duplicate student or participant identifiers")
+            seen_students.add(sid)
+            seen_identifiers.add(participant_id)
 
     moodle_dir = grading_root.parent / "moodle"
-    moodle_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        moodle_dir.mkdir(mode=0o700)
+    except FileExistsError as exc:
+        raise ValueError("Moodle export already exists; preserve the existing output") from exc
     pdfs_dir = moodle_dir / "student_pdfs"
-    pdfs_dir.mkdir(parents=True, exist_ok=True)
+    pdfs_dir.mkdir(mode=0o700)
 
     student_records = {}
-    for row in rows:
+    for row, out_name in zip(rows, filenames):
         sid = str(row["id"]).strip()
         name = str(row.get("name") or "").strip()
         sclass = str(row.get("class") or "").strip()
         idx = row["script_index"]
         script_pdf = report_root / row["pdf"]
-        out_name = f"{sid}_{_safe_filename(name)}.pdf" if name else f"{sid}.pdf"
         dest_pdf = pdfs_dir / out_name
         fb_text = feedback_by_idx.get(idx, "")
         if fb_text:
@@ -163,14 +213,6 @@ def export_moodle(config, config_dir, config_path, *, worksheet=None, participan
 
     recipients_out = None
     if participants:
-        with Path(participants).open(encoding="utf-8-sig", newline="") as file:
-            reader = csv.DictReader(file)
-            matched_emails = {}
-            for p_row in reader:
-                pid = str(p_row.get("ID number") or p_row.get("ID") or "").strip()
-                email_val = str(p_row.get("Email address") or p_row.get("EMAIL") or "").strip()
-                if pid in student_records and email_val:
-                    matched_emails[pid] = address(email_val)
         recipients_out = moodle_dir / "recipients.csv"
         with recipients_out.open("w", encoding="utf-8", newline="") as out:
             writer = csv.writer(out)
@@ -182,13 +224,6 @@ def export_moodle(config, config_dir, config_path, *, worksheet=None, participan
     zip_out = None
     matched_ws = 0
     if worksheet:
-        with Path(worksheet).open(encoding="utf-8-sig", newline="") as file:
-            reader = csv.DictReader(file)
-            fieldnames = list(reader.fieldnames or [])
-            ws_rows = list(reader)
-        if "ID number" not in fieldnames or "Identifier" not in fieldnames:
-            raise ValueError("Moodle grading worksheet CSV must contain 'Identifier' and 'ID number' columns")
-
         zip_out = moodle_dir / "feedback_files.zip"
         with zipfile.ZipFile(zip_out, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             for ws_row in ws_rows:
@@ -198,13 +233,13 @@ def export_moodle(config, config_dir, config_path, *, worksheet=None, participan
                     continue
                 matched_ws += 1
                 if "Grade" in ws_row:
-                    score_val = f"{rec['total']:.2f}".rstrip("0").rstrip(".")
+                    score_val = format(rec["total"], ".15g")
                     ws_row["Grade"] = score_val
                 if "Feedback comments" in ws_row and rec["feedback"]:
                     ws_row["Feedback comments"] = _clean_markdown(rec["feedback"])
                 part_id = _extract_participant_id(ws_row.get("Identifier", ""))
                 full_name = str(ws_row.get("Full name") or rec["name"] or sid).strip()
-                folder = f"{full_name}_{part_id}_assignsubmission_file_"
+                folder = f"{_safe_filename(full_name)}_{part_id}_assignsubmission_file_"
                 zf.write(rec["pdf"], arcname=f"{folder}/{rec['pdf_name']}")
 
         worksheet_out = moodle_dir / "grading_worksheet_filled.csv"
@@ -213,6 +248,13 @@ def export_moodle(config, config_dir, config_path, *, worksheet=None, participan
             writer.writeheader()
             writer.writerows(ws_rows)
 
+    approved_report(config, config_dir, config_path, run_id=run_id)
+    if file_hash(report_root / "manifest.json") != report_manifest_hash:
+        raise ValueError("Reports changed during Moodle export; inspect the partial output")
+    if analysis_hash is not None:
+        read_approved_analysis(config, config_dir, config_path, run_id=run_id)
+        if file_hash(analysis_approval) != analysis_hash:
+            raise ValueError("Analysis changed during Moodle export; inspect the partial output")
     atomic_json(moodle_dir / "manifest.json", {
         "version": 1,
         "students_exported": len(student_records),

@@ -11,7 +11,7 @@ Grading systems manage sensitive student data: handwritten scans, national/stude
 Core safety tenets:
 1. **Never Silently Overwrite**: Stages check for existing outputs and refuse to overwrite without explicit, separate human confirmation.
 2. **Never Silently Delete**: Intermediate data is never deleted automatically at the end of a run.
-3. **Audit Preservation by Default**: The review history (`grading/review-history/`), final student report PDFs (`reports/`), and statistics (`analytics/`) are preserved even when intermediate scratch data is cleaned.
+3. **Audit Preservation by Default**: Images required by approvals, checkpoints, reviews, child runs, reports, and statistics remain readable after ordinary cleanup.
 4. **Backup Before Purge**: An archive is created immediately before any destructive action takes place.
 
 ---
@@ -33,13 +33,14 @@ Execution flows through three mandatory gates:
            v (User approves with --confirm-delete)
 [Gate 2: Automatic Cross-Platform .zip Archival]
    - Bundles output directory into .zip
-   - Names: grading_archive_<run_id>_<timestamp>.zip
+   - Unique microsecond UTC timestamp; exclusive creation never replaces an archive
    - Stored in parent directory
            |
            v
 [Gate 3: Selective Purge / Report Preservation]
    - Preserves reports/ and analytics/ (unless --purge-reports passed)
-   - Removes intermediate OCR crops, checkpoints, and caches
+   - Removes only temporary .grading-* directories and the selected model-cache
+   - Keeps grading/regions images, checkpoints, reviews and final outputs
    - Logs deleted item names to stdout
 ```
 
@@ -53,7 +54,7 @@ Inspect and archive:
 # 1. Preview targets and size (no files deleted)
 handwriting-grader clean --exam /path/to/exam.yaml
 
-# 2. Archive to .zip and clean intermediate scratch (keeps reports/ & analytics/)
+# 2. Archive and clean scratch, preserving all approval-required images and reviews
 handwriting-grader clean --exam /path/to/exam.yaml --confirm-delete
 ```
 
@@ -65,21 +66,29 @@ Target contents:
   - regions (directory, 1,120,400 bytes, 6 files)
   - reports (directory, 2,850,110 bytes, 12 files)
   - rubric (directory, 18,400 bytes, 2 files)
-Total size: 8,204,730 bytes
+  - model-cache (directory, 100 bytes, 1 files)
+Total size: 8,204,830 bytes
+Items to delete: model-cache
 
-Backup archive created: /courses/CS101/grading_archive_original_20261121_000500.zip
-Cleaned items: grading, regions, rubric
-Final reports/ and analytics/ directories were preserved.
+Backup archive created: <new ZIP in the output parent directory>
+Cleaned items: model-cache
+Images, reviews, approvals, and final outputs were preserved.
 ```
 
 ### 3.2 Cleaning an Isolated Child Regrade Run
 ```bash
 handwriting-grader clean --exam /path/to/exam.yaml --run revision-1 --confirm-delete
 ```
-This removes only `/courses/CS101/output/runs/revision-1/` while leaving the approved original parent run completely untouched.
+This cleans only that child's temporary data and local model cache. Its images,
+reviews and reports remain; the approved parent is untouched. Add `--purge-reports`
+to explicitly archive and delete the entire selected child. Preview lists `.` as
+the deletion target, including for an empty child directory.
 
 ### 3.3 Full Purge (Including Reports)
 ```bash
 handwriting-grader clean --exam /path/to/exam.yaml --purge-reports --confirm-delete
 ```
 Removes all contents of `output/` after creating the backup `.zip` archive.
+An archive failure prevents deletion. Slim archives omit temporary/cache data;
+use `--full-archive` if those must be retained too. `--no-archive` is a separate,
+explicit choice and still requires deletion consent.

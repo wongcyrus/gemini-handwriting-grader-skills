@@ -21,8 +21,11 @@ Preflight checks the count, not the order or identity.
    Check its present and absent counts with the teacher.
 2. Run `handwriting-grader prepare-attendance --exam /path/to/exam.yaml`.
    Ask the teacher to inspect every ID, name, class and status in the generated
-   Excel workbook (`attendance_review.xlsx`, alongside `review.json`) and compare it
-   with the original list and roster.
+   Excel workbook and compare it with the original list and roster.
+   Resolve `attendance/current.json` to
+   `attendance/versions/<review_id>/attendance_review.xlsx`, alongside `review.json`.
+   The current version's `approval.json` must be validated against its inputs;
+   workbook or pointer presence alone is not approval.
 3. Only after explicit review, run `handwriting-grader
    approve-attendance --exam /path/to/exam.yaml --confirm-reviewed`.
    The command without the flag records no approval.
@@ -31,6 +34,10 @@ Preflight checks the count, not the order or identity.
    separately, with no numerical mark. Reports, analytics, AI feedback and
    email cover present students only. The email CSV must cover exactly them;
    decide separately how to communicate with absent students.
+
+Reuse VERIFIED attendance settings on resume; ask only unresolved choices.
+Refresh the private [output index](output-index.md) after preparation, approval,
+version changes or failure, without including student identities in the index.
 
 Answer sheets remain independent and use the full roster, including students
 later marked absent. Configuring attendance does not change this.

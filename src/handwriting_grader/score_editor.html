@@ -13,13 +13,18 @@ body {
   color: #1a202c; background-color: #f8fafc;
 }
 
-header { margin: 0.85rem 0 0.5rem 0; }
 h1 { font-size: 1.3rem; font-weight: 700; margin: 0 0 0.25rem 0; color: #1e293b; }
 p.instructions { font-size: 0.82rem; color: #475569; margin: 0 0 0.6rem 0; line-height: 1.4; }
 
 .top-nav-row {
   display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;
-  margin-bottom: 0.65rem; padding-bottom: 0.5rem; border-bottom: 2px solid #e2e8f0;
+  margin: 0.5rem 0 0.65rem; padding-bottom: 0.5rem; border-bottom: 2px solid #e2e8f0;
+}
+.review-menu { position: relative; margin: 0; overflow: visible; }
+.review-menu-content {
+  position: absolute; top: 100%; left: 0; z-index: 20; width: min(34rem, 90vw);
+  padding: 0.75rem; background: #ffffff; border: 1px solid #cbd5e1;
+  border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
 }
 .nav-tabs { display: flex; gap: 0.35rem; align-items: center; flex-wrap: wrap; }
 .nav-tab {
@@ -111,16 +116,22 @@ button.btn-warn:hover:not(:disabled) { background: #b45309; }
 #status {
   padding: 0.45rem 0.85rem; background: #eff6ff; border: 1px solid #bfdbfe;
   border-radius: 5px; color: #1d4ed8; font-size: 0.84rem; font-weight: 500;
-  margin-bottom: 0.65rem; white-space: pre-wrap;
+  margin-bottom: 0.65rem; white-space: pre-wrap; position: sticky; top: 0; z-index: 1;
 }
 
 .question-banner {
   background: #ffffff; border: 1px solid #cbd5e1; border-left: 4px solid #2563eb;
-  padding: 0.65rem 1rem; border-radius: 0 6px 6px 0; margin-bottom: 0.75rem; font-size: 0.85rem;
+  padding: 0; border-radius: 0 6px 6px 0; margin-bottom: 0.75rem; font-size: 0.85rem;
 }
+.question-banner summary { display: flex; align-items: baseline; gap: 0.5rem; }
+.question-banner summary::before { content: "▸"; }
+.question-banner[open] summary::before { content: "▾"; }
+.question-banner #q-banner-title { flex: 1; min-width: 0; }
+.question-banner:not([open]) #q-banner-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.question-banner #q-banner-stats { flex: none; white-space: nowrap; }
 .question-banner strong { color: #1e293b; }
 .question-banner pre {
-  margin: 0.3rem 0 0 0; font-family: inherit; white-space: pre-wrap; color: #475569; font-size: 0.8rem;
+  margin: 0; padding: 0.5rem 0.85rem; font-family: inherit; white-space: pre-wrap; color: #475569; font-size: 0.8rem;
 }
 
 .controls-bar {
@@ -141,9 +152,16 @@ button.btn-warn:hover:not(:disabled) { background: #b45309; }
 }
 
 /* Marksheet Table */
+.review-workspace {
+  max-height: 100vh; overflow: auto; position: relative;
+}
+.review-pinned {
+  position: sticky; top: 0; left: 0; z-index: 10;
+  width: 100%; max-height: 50vh; overflow-y: auto; background: #f8fafc;
+}
 .table-container {
   background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.03); overflow-x: auto; margin-bottom: 1.25rem;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.03); margin-bottom: 1.25rem;
 }
 table.marksheet { border-collapse: collapse; width: 100%; font-size: 0.85rem; table-layout: auto; }
 table.marksheet.hide-img .col-img { display: none !important; }
@@ -155,7 +173,8 @@ table.marksheet th, table.marksheet td {
   border: 1px solid #e2e8f0; padding: 0.5rem 0.65rem; vertical-align: middle; text-align: left;
 }
 table.marksheet th {
-  background: #f8fafc; font-weight: 600; color: #334155; position: sticky; top: 0; z-index: 5;
+  background: #f8fafc; font-weight: 600; color: #334155;
+  position: sticky; top: var(--review-panel-height, 0px); z-index: 5;
 }
 table.marksheet th.sortable {
   cursor: pointer; user-select: none; white-space: nowrap;
@@ -276,21 +295,21 @@ dialog#image-modal img {
 </head>
 <body>
 
-<header style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.75rem;">
-  <div>
-    <h1>Review grades</h1>
-    <p class="instructions">Verify every identity and answer against the image. Correct the answer and reasoning where needed.
+<div class="top-nav-row">
+  <details class="review-menu" id="review-menu">
+    <summary>Review menu</summary>
+    <div class="review-menu-content">
+      <h1>Review grades</h1>
+      <p class="instructions">Verify every identity and answer against the image. Correct the answer and reasoning where needed.
 Failed or flagged grades and corrected answers require a manual mark. Save each item as reviewed.
 Keep this URL private and close spreadsheet editors while using this interface.</p>
-  </div>
-  <div class="bar" style="padding-top:0.2rem; display:flex; gap:0.5rem;">
-    <button type="button" id="btn-all-status" class="btn-primary" title="View review status across Identity and all questions (Alt+S)">All Questions Status [Alt+S]</button>
-    <button type="button" id="reset-review" title="Back up current review.xlsx and reset all reviewed flags and manual marks to original AI results" style="color:#b91c1c; border-color:#fca5a5;">Reset Review</button>
-    <button id="approve" class="btn-success" title="Validates and approves all student identities and all questions for the whole assignment">Approve Entire Assignment [Alt+A]</button>
-  </div>
-</header>
-
-<div class="top-nav-row">
+      <div class="bar">
+        <button type="button" id="btn-all-status" class="btn-primary" title="View review status across Identity and all questions (Alt+S)">All Questions Status [Alt+S]</button>
+        <button type="button" id="reset-review" title="Back up current review.xlsx and reset all reviewed flags and manual marks to original AI results" style="color:#b91c1c; border-color:#fca5a5;">Reset Review</button>
+        <button id="approve" class="btn-success" title="Validates and approves all student identities and all questions for the whole assignment">Approve Entire Assignment [Alt+A]</button>
+      </div>
+    </div>
+  </details>
   <nav class="nav-tabs" id="question-tabs"></nav>
   <div class="global-actions">
     <label class="visually-hidden">Script <select id="script"></select></label>
@@ -299,15 +318,17 @@ Keep this URL private and close spreadsheet editors while using this interface.<
 </div>
 <div id="questions-drawer" class="questions-drawer" hidden></div>
 
+<div class="review-workspace" id="review-workspace">
+<div class="review-pinned" id="review-pinned">
 <div id="status" role="status">Connecting...</div>
-
-<div class="question-banner" id="q-banner">
-  <div style="display: flex; justify-content: space-between; align-items: baseline;">
+<details class="question-banner" id="q-banner" open>
+  <summary title="Show or hide the full question and marking scheme">
     <strong id="q-banner-title">Question Info</strong>
     <span id="q-banner-stats" style="font-size: 0.8rem; color: #64748b;"></span>
-  </div>
+    <span>Details</span>
+  </summary>
   <pre id="q-banner-scheme"></pre>
-</div>
+</details>
 
 <!-- Identity Matching Section (Only visible on Student Identity tab) -->
 <div class="identity-panel" id="script-fields">
@@ -358,7 +379,7 @@ Keep this URL private and close spreadsheet editors while using this interface.<
     <button type="button" class="toggle-vis active" data-col="img">Image</button>
     <button type="button" class="toggle-vis active" data-col="ans">Answer</button>
     <button type="button" class="toggle-vis active" data-col="mark">Mark</button>
-    <button type="button" class="toggle-vis active" data-col="sim">Similarity</button>
+    <button type="button" class="toggle-vis active" data-col="sim" id="similarity-toggle">Answer Similarity</button>
     <button type="button" class="toggle-vis active" data-col="reason">Reasoning</button>
     <button type="button" id="mark-question-reviewed" class="btn-primary" style="margin-left: 0.35rem;">Confirm Question Reviewed [Ctrl+Enter]</button>
   </div>
@@ -377,6 +398,7 @@ Keep this URL private and close spreadsheet editors while using this interface.<
   <span><code>Alt+S</code> All Status</span>
   <span><code>Alt+A</code> Approve</span>
 </div>
+</div>
 
 <!-- One-Page Marksheet Table (Blind Grading: No Student IDs) -->
 <div class="table-container">
@@ -387,13 +409,14 @@ Keep this URL private and close spreadsheet editors while using this interface.<
         <th class="col-img">Image</th>
         <th class="col-ans sortable sort-active" data-col="answer" title="Click to toggle Similar Answers Grouped / A-Z / Z-A">Answer<span class="sort-ind">📌</span></th>
         <th class="col-mark sortable" data-col="score" style="width: 105px;" title="Click to sort by mark">Mark<span class="sort-ind">⇅</span></th>
-        <th class="col-sim sortable" data-col="similarity" style="width: 95px;" title="Click to sort by similarity">Similarity<span class="sort-ind">⇅</span></th>
+        <th class="col-sim sortable" data-col="similarity" style="width: 95px;" title="Click to sort by answer similarity"><span id="similarity-label">Answer Similarity</span><span class="sort-ind">⇅</span></th>
         <th class="col-reason">Reasoning</th>
         <th class="sortable" data-col="status" style="width: 125px;" title="Click to sort by review status (Needs Mark ⚠ / Flagged / Auto / Reviewed)">Status<span class="sort-ind">⇅</span></th>
       </tr>
     </thead>
     <tbody id="marksheet-tbody"></tbody>
   </table>
+</div>
 </div>
 
 <!-- Native Full-screen Zoom & Pan Image Lightbox Modal -->
@@ -469,6 +492,11 @@ if (token) {
 }
 
 const byId = id => document.getElementById(id);
+const reviewPanel = byId("review-pinned");
+const updateReviewPanelHeight = () =>
+  byId("review-workspace").style.setProperty("--review-panel-height", `${reviewPanel.offsetHeight}px`);
+new ResizeObserver(updateReviewPanelHeight).observe(reviewPanel);
+updateReviewPanelHeight();
 let state, script = 0, section = "id", dirty = false, imageUrl = null, imageGeneration = 0;
 let busy = false, imageReady = false, suggestion = null, bulk = null;
 let savedSortCol = "answer", savedSortMode = "group";
@@ -485,7 +513,7 @@ const tableImageUrls = new Map();
 const qClusterCache = new Map();
 const qClusterLoading = new Set();
 
-function message(text) { byId("status").textContent = text; }
+function message(text) { byId("status").textContent = text; byId("status").hidden = false; }
 function kbConfirm(text) {
   return new Promise(resolve => {
     const dlg = byId("kb-confirm-modal");
@@ -601,6 +629,45 @@ function textSimilarity(a, b) {
   let inter = 0;
   for (const w of setA) if (setB.has(w)) inter++;
   return inter / (setA.size + setB.size - inter);
+}
+
+function updateSimilarityLabels(groupSimilarity) {
+  const label = groupSimilarity ? "Group Similarity" : "Answer Similarity";
+  byId("similarity-label").textContent = label;
+  byId("similarity-toggle").textContent = label;
+  byId("similarity-label").parentElement.title = groupSimilarity
+    ? "Click to sort by answer similarity and exit grouped view"
+    : "Click to sort by answer similarity";
+}
+
+function moveBlankZeroAnswersLast(clusters) {
+  const blankZeros = [];
+  const remaining = [];
+  const ungrouped = [];
+  for (const cluster of clusters) {
+    const items = [];
+    for (const item of cluster.items) {
+      if (!item.answer.trim() && item.hasScore && item.score === 0 && !item.needsManual) {
+        blankZeros.push(item);
+      } else {
+        items.push(item);
+      }
+    }
+    if (items.length) {
+      if (items.length === 1) {
+        ungrouped.push(items[0]);
+      } else {
+        remaining.push({...cluster, items, repText: cluster.repText || items[0].answer});
+      }
+    }
+  }
+  if (ungrouped.length) {
+    remaining.push({items: ungrouped, ungrouped: true});
+  }
+  if (blankZeros.length) {
+    remaining.push({repText: "(empty)", items: blankZeros, blankZero: true});
+  }
+  return remaining;
 }
 
 let allStatusIncompleteOnly = false;
@@ -1027,6 +1094,7 @@ async function renderMarksheetTable() {
 
   const sortMode = marksheetSort.mode;
   const filterMode = byId("marksheet-filter").value;
+  updateSimilarityLabels(false);
 
   const btnGroup = byId("btn-group-toggle");
   if (btnGroup) {
@@ -1062,7 +1130,9 @@ async function renderMarksheetTable() {
   let entries = state.scripts.map(s => {
     const mark = isId ? null : state.marks[s.script_index][qIdx];
     const rawScore = mark ? (mark.manual_mark != null && String(mark.manual_mark).trim() !== "" ? mark.manual_mark : mark.moderated_mark ?? mark.raw_mark) : 0;
-    const numScore = rawScore != null && Number.isFinite(Number(rawScore)) ? Number(rawScore) : 0;
+    const hasScore = rawScore != null && typeof rawScore !== "boolean" &&
+      String(rawScore).trim() !== "" && Number.isFinite(Number(rawScore));
+    const numScore = hasScore ? Number(rawScore) : 0;
     const simScore = mark ? (Number(mark.similarity_score) || 0) : 0;
     const ansText = isId
       ? (metaField === "name" ? (s.name_ocr || "") : (metaField === "class" ? (s.class_ocr || "") : (s.id_ocr || "")))
@@ -1077,6 +1147,7 @@ async function renderMarksheetTable() {
       script: s,
       mark,
       score: numScore,
+      hasScore,
       similarity: simScore,
       answer: ansText,
       normAnswer: normalizeAnswer(ansText),
@@ -1109,7 +1180,9 @@ async function renderMarksheetTable() {
     const cachedClusterData = useEmbedding ? qClusterCache.get(qIdx) : null;
     let clusters = [];
 
-    if (useEmbedding && cachedClusterData && cachedClusterData.clusters && cachedClusterData.clusters.length > 0) {
+    if (useEmbedding && cachedClusterData && cachedClusterData.method === "embedding" &&
+        cachedClusterData.clusters && cachedClusterData.clusters.length > 0) {
+      updateSimilarityLabels(true);
       const entryMap = new Map();
       for (const e of entries) {
         entryMap.set(e.script.script_index, e);
@@ -1128,12 +1201,13 @@ async function renderMarksheetTable() {
             id: c.id,
             repText: c.rep_text,
             items: cItems,
-            model: cachedClusterData.model || "gemini-embedding-2"
+            model: cachedClusterData.model
           });
         }
       }
     } else {
-      if (useEmbedding && !qClusterLoading.has(qIdx)) {
+      if (useEmbedding && !cachedClusterData && !qClusterLoading.has(qIdx)) {
+        const clusterRevision = state.revision;
         qClusterLoading.add(qIdx);
         fetch(`/api/cluster/${qIdx}`, {
           headers: {"Authorization": `Bearer ${token}`}
@@ -1141,7 +1215,7 @@ async function renderMarksheetTable() {
         .then(r => r.ok ? r.json() : null)
         .then(data => {
           qClusterLoading.delete(qIdx);
-          if (data && data.clusters) {
+          if (data && data.clusters && state.revision === clusterRevision) {
             qClusterCache.set(qIdx, data);
             if (section === String(qIdx) && marksheetSort.mode === "group") {
               renderMarksheetTable();
@@ -1161,7 +1235,7 @@ async function renderMarksheetTable() {
           }
         }
         if (!placed) {
-          clusters.push({repNorm: e.normAnswer, repText: e.answer, items: [e], model: useEmbedding ? "" : "Word Overlap"});
+          clusters.push({repNorm: e.normAnswer, repText: e.answer, items: [e], model: "Word Overlap"});
         }
       }
     }
@@ -1172,10 +1246,24 @@ async function renderMarksheetTable() {
       const simB = b.items.reduce((acc, i) => acc + i.similarity, 0) / b.items.length;
       return simB - simA;
     });
+    clusters = moveBlankZeroAnswersLast(clusters);
 
     let groupNum = 1;
     for (const cluster of clusters) {
-      if (cluster.items.length >= 2) {
+      if (cluster.ungrouped) {
+        const divRow = document.createElement("tr");
+        divRow.className = "group-divider";
+        const divCell = document.createElement("td");
+        divCell.colSpan = 7;
+        const badge = document.createElement("span");
+        badge.className = "group-badge";
+        badge.textContent = "Ungrouped answers";
+        divCell.append(badge, document.createTextNode(
+          ` · ${cluster.items.length} student${cluster.items.length === 1 ? "" : "s"} · Not matched to a similar group`
+        ));
+        divRow.append(divCell);
+        tbody.append(divRow);
+      } else if (cluster.items.length >= 2 || cluster.blankZero) {
         const avgSim = (cluster.items.reduce((acc, it) => acc + it.similarity, 0) / cluster.items.length).toFixed(2);
         const avgScore = (cluster.items.reduce((acc, it) => acc + it.score, 0) / cluster.items.length).toFixed(1);
         const rep = cluster.repText || "(empty)";
@@ -1188,12 +1276,13 @@ async function renderMarksheetTable() {
         const badge = document.createElement("span");
         badge.className = "group-badge";
         const modelLabel = cluster.model ? ` · ${cluster.model}` : "";
-        badge.textContent = `Similar Group ${groupNum}${modelLabel}`;
+        badge.textContent = cluster.blankZero ? "Blank answers · 0 marks" : `Similar Group ${groupNum}${modelLabel}`;
         divCell.append(badge);
 
         const strongCount = document.createElement("strong");
-        strongCount.textContent = `${cluster.items.length} students`;
-        divCell.append(strongCount, document.createTextNode(" · Avg Similarity: "));
+        strongCount.textContent = `${cluster.items.length} student${cluster.items.length === 1 ? "" : "s"}`;
+        const similarityLabel = byId("similarity-label").textContent;
+        divCell.append(strongCount, document.createTextNode(` · Avg ${similarityLabel}: `));
 
         const strongSim = document.createElement("strong");
         strongSim.textContent = avgSim;
@@ -1206,6 +1295,23 @@ async function renderMarksheetTable() {
         const emAnswer = document.createElement("em");
         emAnswer.textContent = `"${rep.slice(0, 90)}${rep.length > 90 ? '...' : ''}"`;
         divCell.append(emAnswer);
+
+        if (cluster.items.length >= 2) {
+          const groupMark = document.createElement("input");
+          groupMark.type = "number";
+          groupMark.min = "0";
+          groupMark.max = String(qData.marks);
+          groupMark.step = "any";
+          groupMark.placeholder = "Group mark";
+          groupMark.setAttribute("aria-label", `Mark for ${cluster.blankZero ? "blank answers" : `Similar Group ${groupNum}`}`);
+          groupMark.style.width = "6rem";
+          groupMark.style.marginLeft = "0.75rem";
+          const applyMark = document.createElement("button");
+          applyMark.type = "button";
+          applyMark.textContent = "Apply group mark";
+          applyMark.onclick = () => applyGroupMark(cluster, qIdx, groupMark);
+          divCell.append(groupMark, applyMark);
+        }
 
         divRow.append(divCell);
         tbody.append(divRow);
@@ -1273,6 +1379,50 @@ async function renderMarksheetTable() {
   }
 
   loadTableImages();
+}
+
+async function applyGroupMark(cluster, qIdx, input) {
+  if (busy) {
+    message("Wait for the current save to finish before applying a group mark.");
+    return;
+  }
+  const value = input.value.trim();
+  const number = Number(value);
+  if (!value || !Number.isFinite(number) || number < 0 || number > state.questions[qIdx].marks) {
+    message(`Enter a group mark between 0 and ${state.questions[qIdx].marks}.`);
+    input.focus();
+    return;
+  }
+  const revision = state.revision;
+  const items = cluster.items.map(item => ({
+    kind: "mark", question_index: qIdx, script_index: item.script.script_index,
+    answer: item.mark.answer || "", reasoning: item.mark.reasoning || "",
+    manual_mark: value, reviewed: false,
+  }));
+  const manualCount = cluster.items.filter(item =>
+    item.mark.manual_mark != null && String(item.mark.manual_mark).trim() !== "").length;
+  const reviewedCount = cluster.items.filter(item => item.mark.reviewed).length;
+  if (!(await kbConfirm(
+    `Apply ${value} marks to all ${items.length} shown answers in this group? ` +
+    `${manualCount} existing manual mark(s) will be replaced; ${reviewedCount} reviewed answer(s) will become unreviewed. ` +
+    "Every affected answer must be reviewed."
+  ))) return;
+  if (busy || section !== String(qIdx) || state.revision !== revision) {
+    message("Review changed; check the group and try again.");
+    return;
+  }
+  setBusy(true);
+  message("Saving group marks...");
+  try {
+    const result = await (await api("/api/save-batch", {revision, items})).json();
+    updateRevision(result.revision);
+    await reload();
+    message(`Saved ${items.length} group marks. Review each affected answer.`);
+  } catch (e) {
+    message(e.message);
+  } finally {
+    setBusy(false);
+  }
 }
 
 function createTableRow(item, isId, qIdx) {
@@ -1409,24 +1559,36 @@ function createTableRow(item, isId, qIdx) {
     markInput.oninput = () => {
       markInput.classList.add("locked");
     };
-    markInput.onkeydown = e => {
-      if (e.key === "Enter" && !e.ctrlKey && !e.metaKey) {
+    let markSave = null;
+    markInput.onkeydown = async e => {
+      const down = (e.key === "Enter" && !e.ctrlKey && !e.metaKey && !e.altKey) ||
+        e.key === "ArrowDown" || (e.altKey && e.key.toLowerCase() === "j");
+      const up = e.key === "ArrowUp" || (e.altKey && e.key.toLowerCase() === "k");
+      if (down || up) {
         e.preventDefault();
+        e.stopPropagation();
+        const inputs = [...document.querySelectorAll("#marksheet-tbody input.mark-input")];
+        const index = inputs.indexOf(markInput);
+        const target = inputs[Math.max(0, Math.min(inputs.length - 1, index + (down ? 1 : -1)))];
+        const targetId = target && target.id;
+        const originalSection = section;
+        markSave = null;
         markInput.blur();
-        focusMarkRow(1, markInput);
-      } else if (e.key === "ArrowDown" && !e.altKey) {
-        e.preventDefault();
-        focusMarkRow(1, markInput);
-      } else if (e.key === "ArrowUp" && !e.altKey) {
-        e.preventDefault();
-        focusMarkRow(-1, markInput);
+        const saved = markSave ? await markSave : true;
+        if (section !== originalSection ||
+            (document.activeElement !== document.body && document.activeElement !== markInput)) return;
+        const next = byId(saved ? targetId : markInput.id);
+        if (next && !next.disabled) {
+          next.focus();
+          next.select();
+        }
       } else if (e.key === "Escape") {
         markInput.blur();
       }
     };
-    markInput.onchange = async () => {
+    markInput.onchange = () => {
       markInput.classList.add("locked");
-      await saveInlineMark(sIdx, qIdx, markInput.value.trim(), true);
+      markSave = saveInlineMark(sIdx, qIdx, markInput.value.trim(), true);
     };
 
     const lockSpan = document.createElement("span");
@@ -1581,8 +1743,10 @@ async function saveInlineMark(sIdx, qIdx, markValue, markReviewed) {
       }
     }
     message(markReviewed ? `Script #${sIdx + 1} saved and reviewed.` : `Script #${sIdx + 1} mark saved.`);
+    return true;
   } catch (e) {
     message(e.message);
+    return false;
   } finally {
     setBusy(false);
   }
@@ -1635,6 +1799,30 @@ byId("mark-ids-reviewed").onclick = async () => {
 byId("mark-question-reviewed").onclick = async () => {
   if (section === "id" || !state) return;
   const qIdx = Number(section);
+  const invalidMarks = state.scripts.flatMap(s => {
+    const m = state.marks[s.script_index]?.[qIdx];
+    const input = byId(`inline-mark-${s.script_index}`);
+    const hasManual = m?.manual_mark != null && String(m.manual_mark).trim() !== "";
+    const value = input ? input.value : (hasManual ? m.manual_mark : (m?.moderated_mark ?? m?.raw_mark));
+    const text = value == null ? "" : String(value).trim();
+    let reason = "";
+    if (!text) {
+      reason = "empty";
+    } else if (typeof value === "boolean" ||
+               !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(text) ||
+               !Number.isFinite(Number(text))) {
+      reason = "not numeric";
+    } else if (Number(text) < 0 || Number(text) > state.questions[qIdx].marks) {
+      reason = `outside 0–${state.questions[qIdx].marks}`;
+    }
+    return reason ? [{script: s.script_index + 1, reason}] : [];
+  });
+  if (invalidMarks.length) {
+    const details = invalidMarks.slice(0, 10).map(item => `#${item.script} (${item.reason})`).join(", ");
+    const more = invalidMarks.length > 10 ? ", ..." : "";
+    message(`Cannot confirm this question: ${invalidMarks.length} invalid mark(s): ${details}${more}. Enter and save valid marks first; this confirmation did not mark any answers reviewed.`);
+    return;
+  }
   const unreviewed = state.scripts.filter(s => {
     const m = state.marks[s.script_index][qIdx];
     return m && !m.reviewed;
@@ -1696,6 +1884,7 @@ byId("mark-question-reviewed").onclick = async () => {
       if (nextIdx >= 0) {
         section = String(nextIdx);
         await render();
+        if (nextIdx !== qIdx) byId("review-workspace").scrollTop = 0;
         const nextLabel = state.questions[nextIdx].question_number;
         message(`Question reviewed ✓ — Moved to ${String(nextLabel).startsWith("Q") ? nextLabel : "Q" + nextLabel}.`);
       } else {
@@ -2074,7 +2263,12 @@ function updateClusterDropdown() {
 
 async function reload() {
   const firstLoad = !state;
+  const previousRevision = state && state.revision;
   state = await (await api("/api/state")).json();
+  if (previousRevision && previousRevision !== state.revision) {
+    qClusterCache.clear();
+    qClusterLoading.clear();
+  }
   if (firstLoad) {
     try {
       const savedSec = localStorage.getItem("handwriting_grader_section");
@@ -2319,7 +2513,9 @@ document.addEventListener("keydown", e => {
   try {
     if (!token) throw new Error("Open the full URL printed by the review command.");
     initPreferences();
-    await reload(); message("Review each identity and every mark before approval.");
+    await reload();
+    byId("status").textContent = "Review each identity and every mark before approval.";
+    byId("status").hidden = true;
     setBusy(false);
   } catch (e) { message(e.message); }
 })();

@@ -403,34 +403,66 @@ def _generate_infographic(client, model, prompt, out_path: Path, label: str = ""
         duration = time.perf_counter() - start
         candidates = getattr(resp, "candidates", None) or []
         parts = getattr(getattr(candidates[0], "content", None), "parts", None) if candidates else None
+        image_data = None
         for part in (parts or []):
             inline = getattr(part, "inline_data", None)
             if inline and getattr(inline, "data", None):
-                out_path.parent.mkdir(parents=True, exist_ok=True)
-                out_path.write_bytes(inline.data)
-                if tracker:
-                    tracker.record_call(
-                        phase="infographics",
-                        step_label=f"Infographic: {label or out_path.stem}",
-                        model=model,
-                        usage_metadata=getattr(resp, "usage_metadata", None),
-                        duration_sec=duration,
-                        images_count=1,
-                    )
-                return out_path, None
-        return None, "No image data returned"
+                image_data = inline.data
+                break
+        if tracker:
+            tracker.record_call(
+                phase="infographics",
+                step_label=f"Infographic: {label or out_path.stem}",
+                model=model,
+                usage_metadata=getattr(resp, "usage_metadata", None),
+                duration_sec=duration,
+                images_count=int(image_data is not None),
+            )
+        if image_data is None:
+            return None, "No image data returned"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(image_data)
+        return out_path, None
     except Exception as exc:
         err = f"{type(exc).__name__}: {exc}"
         print(f"[Infographic] Failed {out_path.name}: {err}", flush=True)
         return None, err
 
 
-def create_advanced_report(config, config_dir, config_path, *, run_id=None, infographics=True, image_model=None):
+def image_generation_settings(root, image_model=None, image_model_config=None):
+    with (root / "manifest.json").open(encoding="utf-8") as file:
+        manifest = json.load(file)
+    model_config = Path(image_model_config or manifest["model_config_path"]).expanduser().resolve()
+    digest = file_hash(model_config)
+    with model_config.open(encoding="utf-8") as file:
+        settings = yaml.safe_load(file)
+    if not isinstance(settings, dict):
+        raise ValueError("Image model configuration must be a mapping")
+    vertex = settings.get("vertex_ai", {})
+    project = vertex.get("project_id") if image_model_config else manifest.get("project")
+    location = vertex.get("location", "global") if image_model_config else manifest.get("location", "global")
+    if (vertex.get("use_vertexai") is not True or not isinstance(project, str) or not project.strip()
+            or not isinstance(location, str) or not location.strip()):
+        raise ValueError("Infographics require a configured Vertex project and location")
+    model = image_model or load_model_settings(model_config, "analytics_image")
+    from .discovery import validate_model_eligibility
+    validate_model_eligibility(model, agent="analytics_image")
+    return {"project": project, "location": location, "model": model,
+            "model_config_path": str(model_config), "model_config_sha256": digest}
+
+
+def create_advanced_report(config, config_dir, config_path, *, run_id=None, infographics=False,
+                           image_model=None, image_model_config=None, report_name="reports"):
     root, validated, students, questions_text, overview, approval = read_approved_analysis(
         config, config_dir, config_path, run_id=run_id
     )
     approval_hash = file_hash(root / "approval.json")
-    report = root / "reports"
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", report_name):
+        raise ValueError("Report name must be a simple directory name of at most 64 characters")
+    if not infographics and (image_model or image_model_config):
+        raise ValueError("Image overrides require infographics")
+    image_settings = image_generation_settings(root, image_model, image_model_config) if infographics else None
+    report = root / report_name
     try:
         report.mkdir(mode=0o700)
     except FileExistsError as exc:
@@ -454,24 +486,16 @@ def create_advanced_report(config, config_dir, config_path, *, run_id=None, info
     infographic_paths = {}
     failed_infographics = []
     if infographics:
-        with (root / "manifest.json").open(encoding="utf-8") as file:
-            analysis_manifest = json.load(file)
-        proj = analysis_manifest.get("project")
-        loc = analysis_manifest.get("location") or "global"
-        if proj and proj != "test-project":
-            info_dir = root / "infographics"
-            img_model = "gemini-3-pro-image"
-            if image_model:
-                from .discovery import validate_model_eligibility
-                validate_model_eligibility(image_model, agent="analytics_image")
-                img_model = image_model
-            else:
-                cfg_path_str = analysis_manifest.get("model_config_path")
-                if cfg_path_str and Path(cfg_path_str).exists():
-                    try:
-                        img_model = load_model_settings(Path(cfg_path_str), "analytics_image")
-                    except ValueError:
-                        pass
+        model_config_path = Path(image_settings["model_config_path"])
+        if file_hash(model_config_path) != image_settings["model_config_sha256"]:
+            raise ValueError("Image configuration changed before generation")
+        proj, loc, img_model = (image_settings[key] for key in ("project", "location", "model"))
+        if proj:
+            import hashlib
+            cache_key = hashlib.sha256(json.dumps(
+                {"analysis_approval": approval_hash, **image_settings}, sort_keys=True,
+            ).encode()).hexdigest()
+            info_dir = root / "infographics" / cache_key
             print(f"Generating Gemini infographics for Class & {len(questions)} questions ({img_model}, no auto-retry)...", flush=True)
             with genai.Client(
                 vertexai=True,
@@ -497,6 +521,8 @@ def create_advanced_report(config, config_dir, config_path, *, run_id=None, info
                         f"Visually summarize the key concepts, strengths, and common student misconceptions below "
                         f"using clear icons, minimal readable labels, and structured visual blocks:\n{summary}"
                     )
+                    if file_hash(model_config_path) != image_settings["model_config_sha256"]:
+                        raise ValueError("Image configuration changed during generation")
                     res, err = _generate_infographic(img_client, img_model, prompt, dest, label=label)
                     if res:
                         print(f"[Infographic] Generated {label}", flush=True)
@@ -516,9 +542,14 @@ def create_advanced_report(config, config_dir, config_path, *, run_id=None, info
     presentation.slide_height = Inches(7.5)
     blank_layout = presentation.slide_layouts[6]
 
-    def _add_analysis_slide(title_text, md_body, info_key):
+    def _add_analysis_slide(title_text, md_body, info_key, score_summary):
         slide = presentation.slides.add_slide(blank_layout)
         _add_styled_header(slide, title_text)
+        summary = _add_content_card(slide, Inches(0.55), Inches(1.15), Inches(12.23), Inches(0.75))
+        _add_markdown_to_frame(summary, score_summary)
+        tf = _add_content_card(slide, Inches(0.55), Inches(2.05), Inches(12.23), Inches(5.05))
+        _add_markdown_to_frame(tf, f"**Reviewed AI analysis (verify claims)**\n{md_body}", max_chars=1800)
+        slide.notes_slide.notes_text_frame.text = md_body or ""
         img_path = infographic_paths.get(info_key)
         if img_path and img_path.exists():
             from PIL import Image as _PILImage
@@ -527,22 +558,29 @@ def create_advanced_report(config, config_dir, config_path, *, run_id=None, info
                     aspect = im.width / im.height
             except Exception:
                 aspect = 16.0 / 9.0
+            slide = presentation.slides.add_slide(blank_layout)
+            _add_styled_header(slide, f"{title_text} - Infographic")
+            warning = slide.shapes.add_textbox(Inches(0.6), Inches(1.05), Inches(12.1), Inches(0.5))
+            _add_markdown_to_frame(
+                warning.text_frame, "**AI-generated image:** Text and numbers may be inaccurate or "
+                "sample-based. Use the reviewed marks and editable statistics.",
+            )
             avail_w = Inches(12.2)
-            avail_h = Inches(6.05)
+            avail_h = Inches(5.65)
             target_w = avail_w
             target_h = int(avail_w / aspect)
             if target_h > avail_h:
                 target_h = avail_h
                 target_w = int(avail_h * aspect)
             left_pos = int((presentation.slide_width - target_w) / 2)
-            top_pos = int(Inches(1.15) + (avail_h - target_h) / 2)
+            top_pos = int(Inches(1.65) + (avail_h - target_h) / 2)
             slide.shapes.add_picture(str(img_path), left_pos, top_pos, width=target_w, height=target_h)
             slide.notes_slide.notes_text_frame.text = md_body or ""
-        else:
-            tf = _add_content_card(slide, Inches(0.55), Inches(1.2), Inches(12.23), Inches(5.9))
-            _add_markdown_to_frame(tf, md_body, max_chars=1800)
 
-    _add_analysis_slide("Class Overview", overview, "class")
+    total_marks = sum(q["marks"] for q in questions)
+    class_mean = statistics.mean(row["total"] for row in rows)
+    _add_analysis_slide("Class Overview", overview, "class",
+                        f"Reviewed marks: {len(rows)} students; mean {class_mean:.2f} / {total_marks:g}.")
 
     chart_slide = presentation.slides.add_slide(blank_layout)
     _add_styled_header(chart_slide, "Mean Score by Question (%)")
@@ -557,7 +595,12 @@ def create_advanced_report(config, config_dir, config_path, *, run_id=None, info
 
     for idx, question in enumerate(questions):
         qn = question["question_number"]
-        _add_analysis_slide(f"Question {qn}", questions_text[question_key(qn)], f"q_{idx}")
+        mean = statistics.mean(row["marks"][idx] for row in rows)
+        _add_analysis_slide(
+            f"Question {qn}", questions_text[question_key(qn)], f"q_{idx}",
+            f"Reviewed marks: {len(rows)} students; mean {mean:.2f} / {question['marks']:g} "
+            f"({100 * mean / question['marks']:.1f}%).",
+        )
 
     presentation.save(report / "class-presentation.pptx")
     validate_analysis(config, config_dir, config_path, run_id=run_id)
@@ -565,16 +608,21 @@ def create_advanced_report(config, config_dir, config_path, *, run_id=None, info
             or file_hash(root / "manifest.json") != approval["manifest_sha256"]
             or file_hash(root / "approval.json") != approval_hash):
         raise ValueError("AI review changed during report generation")
-    atomic_json(report / "manifest.json", {"version": 1, "completed": True,
+    if image_settings is not None and file_hash(model_config_path) != image_settings["model_config_sha256"]:
+        raise ValueError("Image configuration changed during report generation")
+    report_manifest = {"version": 1, "completed": True,
                                             "analysis_approval_sha256": approval_hash,
                                             "infographics_count": len(infographic_paths),
-                                            "failed_infographics": failed_infographics})
+                                            "failed_infographics": failed_infographics}
+    if image_settings is not None:
+        report_manifest["image_generation"] = image_settings
+    atomic_json(report / "manifest.json", report_manifest)
     if failed_infographics:
         labels = ", ".join(item["label"] for item in failed_infographics[:10])
         more = f" (+{len(failed_infographics) - 10} more)" if len(failed_infographics) > 10 else ""
         print(
             f"Warning: {len(failed_infographics)} infographic(s) failed ({labels}{more}); "
-            f"cached images are preserved in {root / 'infographics'}. "
+            f"cached images are preserved in {info_dir}. "
             f"Ask the user whether to retry failed images or keep the text-card fallback.",
             flush=True,
         )

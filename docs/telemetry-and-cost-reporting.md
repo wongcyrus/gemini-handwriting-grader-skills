@@ -1,6 +1,7 @@
-# ADK Telemetry, Live Progress & Cost Reporting
+# Gemini Telemetry, Live Progress & Estimated Cost Reporting
 
-This document describes the observability architecture, real-time step progress tracking, token accounting, and cost auditing implemented in `gemini-handwriting-grader-skills` following Google Agent Development Kit (ADK) conventions.
+The engine uses the Google GenAI SDK directly; ADK is not required. Progress
+messages retain an ADK-style prefix for compatibility, not as evidence of ADK execution.
 
 ---
 
@@ -9,7 +10,8 @@ This document describes the observability architecture, real-time step progress 
 1. **Sub-Step Visibility**: Long-running batch operations (identifier OCR, question grading, moderation, AI feedback) must display immediate visual progress without waiting for the batch to finish.
 2. **Deterministic Token Accounting**: Capture input, candidate, cached, and thought tokens directly from Gemini's `usage_metadata`.
 3. **Financial Transparency**: Provide auditable cost tracking both during execution and via offline reports.
-4. **Resilience**: Telemetry logging must be append-only (`.jsonl`) so that interrupted runs retain all billable metrics.
+4. **Resilience**: Append-only JSONL retains recorded usage after interruption.
+   Unlogged failures and SDK retries may still be billed; this is not an invoice.
 
 ---
 
@@ -37,7 +39,8 @@ This document describes the observability architecture, real-time step progress 
 
 ## 3. Data Schema: `CallTrace`
 
-Every model invocation generates a typed `CallTrace` record:
+Successfully recorded responses generate a `CallTrace`; it is not a complete
+ledger of every billable attempt:
 
 ```python
 @dataclass
@@ -53,7 +56,7 @@ class CallTrace:
     thoughts_tokens: int    # Model thinking tokens
     images_count: int       # Number of generated images (0 or 1)
     latency_ms: float       # API roundtrip latency in milliseconds
-    cost_usd: float         # Calculated financial cost in USD
+    cost_usd: Optional[float]  # Estimate; None means unknown usage, not free
     cached_call: bool       # True if served from local cache
 ```
 
@@ -61,7 +64,9 @@ class CallTrace:
 
 ## 4. Vertex AI Pricing Model
 
-Standard rates configured in [`src/handwriting_grader/telemetry.py`](../src/handwriting_grader/telemetry.py):
+Fallback estimates configured in [`src/handwriting_grader/telemetry.py`](../src/handwriting_grader/telemetry.py)
+may be outdated. Verify current provider prices and use explicit configuration
+rates; the table below is not a current pricing attestation:
 
 | Model Family | Input / 1M Tokens | Output / 1M Tokens | Cached / 1M Tokens | Role |
 | :--- | :--- | :--- | :--- | :--- |
@@ -100,11 +105,16 @@ handwriting-grader cost-report --exam /path/to/exam.yaml [--run CHILD_RUN]
 ```
 
 ### 6.1 `cost_report.xlsx` Sheets:
-1. **Summary**: High-level table aggregating calls, prompt tokens, candidate tokens, cached tokens, images, and total cost grouped by phase and model.
-2. **API Audit Log**: Chronological line-item log recording every single request with timestamp, step, model, token metrics, latency, and cache hit status.
+1. **Summary**: Recorded usage and estimated priced subtotals grouped by phase,
+   with a separate count of unpriced calls.
+2. **API Audit Log**: Recorded calls with token metrics, latency and cache status;
+   missing usage produces `UNPRICED`, not a zero-dollar call.
+3. **Billing Notes**: Limitations on unknown usage, retry accounting and estimates.
 
 ### 6.2 `cost_summary.json`:
-Structured JSON export designed for programmatic ingestion by dashboards or external billing systems:
+JSON estimates are suitable for local dashboards, not authoritative billing.
+`unpriced_calls` counts records excluded from priced subtotals; native embedding
+responses without token usage retain `cost_usd: null` in the journal.
 ```json
 {
   "total_calls": 24,

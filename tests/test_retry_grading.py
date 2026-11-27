@@ -2,7 +2,7 @@ import json
 import tempfile
 from pathlib import Path
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from handwriting_grader.cli import main
 from handwriting_grader.grading import inspect_retry_grading, retry_grading
@@ -167,7 +167,7 @@ class TestRetryGrading(unittest.TestCase):
             "ID": (0, {"x": 0, "y": 0, "width": 10, "height": 10}),
             "CLASS": (0, {"x": 0, "y": 0, "width": 10, "height": 10}),
         }
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as td:
             img_dir = Path(td)
             from PIL import Image
             img = Image.new("RGB", (100, 100), color="white")
@@ -183,3 +183,43 @@ class TestRetryGrading(unittest.TestCase):
             self.assertIn(0, res)
             self.assertEqual(res[0]["id_ocr"], "extracted_ID")
             self.assertEqual(res[0]["class_ocr"], "extracted_CLASS")
+
+    def test_partial_duplicate_and_unexpected_metadata_never_fall_back_to_paid_ocr(self):
+        from handwriting_grader.grading import batch_extract_metadata, MetadataBatchResponse
+        boxes = {field: (0, {}) for field in ("ID", "CLASS", "NAME")}
+        for ids in ([0], [0, 0], [0, 9]):
+            with self.subTest(ids=ids):
+                provider = Mock()
+                provider.ocr_metadata_batch.return_value = MetadataBatchResponse(
+                    students=[{"script_index": index, "id_ocr": "synthetic"} for index in ids],
+                )
+                checkpoint = Mock()
+                with patch("handwriting_grader.grading.crop_image", return_value=b"synthetic"):
+                    with self.assertRaises(ValueError):
+                        batch_extract_metadata(provider, [0, 1], list(boxes), boxes, 1, Path("."),
+                                               on_chunk=checkpoint)
+                provider.ocr.assert_not_called()
+                checkpoint.assert_not_called()
+
+    def test_metadata_checkpoint_survives_later_failure_and_preserves_35_script_baseline(self):
+        from handwriting_grader.grading import batch_extract_metadata, MetadataBatchResponse
+        boxes = {field: (0, {}) for field in ("ID", "CLASS", "NAME")}
+        saved = {}
+        requests = []
+        class Provider:
+            def ocr_metadata_batch(self, items, fields, roster_list=None):
+                requests.append((len(items), sum(len(item["crops"]) for item in items)))
+                if len(requests) == 2:
+                    raise RuntimeError("synthetic metadata second chunk")
+                return MetadataBatchResponse(students=[
+                    {"script_index": item["script_index"], "id_ocr": "synthetic"}
+                    for item in items
+                ])
+            def ocr(self, *args, **kwargs):
+                raise AssertionError("Must not fall back to paid OCR")
+        with patch("handwriting_grader.grading.crop_image", return_value=b"synthetic"):
+            with self.assertRaisesRegex(RuntimeError, "synthetic metadata second chunk"):
+                batch_extract_metadata(Provider(), list(range(36)), list(boxes), boxes, 1, Path("."),
+                                       on_chunk=lambda chunk: saved.update(chunk))
+        self.assertEqual(requests, [(35, 105), (1, 3)])
+        self.assertEqual(set(saved), set(range(35)))

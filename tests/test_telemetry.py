@@ -41,6 +41,39 @@ class TestTelemetryTracker(unittest.TestCase):
         )
         self.assertAlmostEqual(cost, 0.375, places=5)
 
+    def test_missing_usage_is_unpriced_in_logs_and_reports(self):
+        from openpyxl import load_workbook
+
+        for usage in (None, SimpleNamespace()):
+            trace = self.tracker.record_call("embedding", "Q1", "gemini-embedding-2", usage, 1)
+            self.assertIsNone(trace.cost_usd)
+        self.assertEqual(self.tracker.get_summary()["unpriced_calls"], 2)
+        output = self.tracker.write_cost_report(self.log_dir)
+        book = load_workbook(output)
+        try:
+            self.assertEqual(book["API Audit Log"]["K2"].value, "UNPRICED")
+            self.assertEqual(book["Summary"]["H2"].value, 2)
+        finally:
+            book.close()
+        restored = TelemetryTracker()
+        restored.load_existing_log(self.log_dir / "gemini_usage.jsonl")
+        self.assertEqual(restored.get_summary()["unpriced_calls"], 2)
+
+    def test_infographic_response_without_image_still_records_usage(self):
+        from handwriting_grader.advanced import _generate_infographic
+
+        client = MagicMock()
+        client.models.generate_content.return_value = SimpleNamespace(
+            candidates=[], usage_metadata=SimpleNamespace(prompt_token_count=100),
+        )
+        set_active_tracker(self.tracker)
+        result, error = _generate_infographic(client, "gemini-3-pro-image", "Synthetic example",
+                                             self.log_dir / "image.png")
+        self.assertIsNone(result)
+        self.assertEqual(error, "No image data returned")
+        self.assertEqual(self.tracker.traces[0].prompt_tokens, 100)
+        self.assertEqual(self.tracker.traces[0].images_count, 0)
+        client.models.generate_content.assert_called_once()
     def test_retry_cli_uses_manifest_pricing_and_selected_child_telemetry(self):
         model_config = self.log_dir / "models.yaml"
         model_config.write_text("pricing:\n  gemini-3.8-flash:\n    input: 2\n    output: 8\n")
@@ -73,10 +106,16 @@ class TestTelemetryTracker(unittest.TestCase):
 
     def test_infographic_cli_uses_pricing_from_analysis_manifest(self):
         model_config = self.log_dir / "models.yaml"
-        model_config.write_text("pricing:\n  gemini-3-pro-image:\n    input: 2\n    output: 8\n")
+        model_config.write_text(
+            "vertex_ai:\n  use_vertexai: true\n  project_id: test-project\n  location: global\n"
+            "models:\n  analytics_image: gemini-3-pro-image\n"
+            "pricing:\n  gemini-3-pro-image:\n    input: 2\n    output: 8\n"
+        )
         analysis = self.log_dir / "ai-analysis"
         analysis.mkdir()
-        (analysis / "manifest.json").write_text(json.dumps({"model_config_path": str(model_config)}))
+        (analysis / "manifest.json").write_text(json.dumps({
+            "model_config_path": str(model_config), "project": "test-project", "location": "global",
+        }))
 
         def report(*args, **kwargs):
             get_active_tracker().record_call(
@@ -88,8 +127,11 @@ class TestTelemetryTracker(unittest.TestCase):
         with patch("handwriting_grader.cli.load_config", return_value={"exam": {"output_dir": "output"}}), \
                 patch("handwriting_grader.cli.check_exam", return_value=([], {})), \
                 patch("handwriting_grader.run_context.run_directory", return_value=self.log_dir), \
+                patch("handwriting_grader.advanced.read_approved_analysis",
+                      return_value=(analysis, (None, None, None, []), None, [], None, None)), \
                 patch("handwriting_grader.advanced.create_advanced_report", side_effect=report):
-            self.assertEqual(main(["advanced-report", "--exam", str(self.log_dir / "exam.yaml")]), 0)
+            self.assertEqual(main(["advanced-report", "--exam", str(self.log_dir / "exam.yaml"),
+                                   "--infographics", "--confirm-cost"]), 0)
         trace = json.loads((analysis / "telemetry" / "gemini_usage.jsonl").read_text())
         self.assertEqual(trace["cost_usd"], 0.01)
         self.assertEqual(json.loads((analysis / "cost_summary.json").read_text())["total_cost_usd"], 0.01)

@@ -1,4 +1,4 @@
-"""ADK-style live progress and token/cost telemetry for Gemini calls."""
+"""Live progress and estimated token/cost telemetry for Gemini calls."""
 
 import json
 import os
@@ -61,7 +61,7 @@ class CallTrace:
     thoughts_tokens: int
     images_count: int
     latency_ms: float
-    cost_usd: float
+    cost_usd: Optional[float]
     cached_call: bool = False
 
 
@@ -118,7 +118,10 @@ class TelemetryTracker:
         cached_tokens = getattr(usage_metadata, "cached_content_token_count", 0) or 0
         thoughts_tokens = getattr(usage_metadata, "thoughts_token_count", 0) or 0
 
-        cost = self.calculate_cost(model, prompt_tokens, candidate_tokens, cached_tokens, images_count)
+        usage_known = any(getattr(usage_metadata, key, None) is not None for key in
+                          ("prompt_token_count", "candidates_token_count", "total_token_count"))
+        cost = (self.calculate_cost(model, prompt_tokens, candidate_tokens, cached_tokens, images_count)
+                if usage_known else (0.0 if cached_call else None))
         trace = CallTrace(
             timestamp=datetime.now(timezone.utc).isoformat(),
             phase=phase,
@@ -168,23 +171,25 @@ class TelemetryTracker:
         total_c = sum(t.candidate_tokens for t in self.traces)
         total_cached = sum(t.cached_tokens for t in self.traces)
         total_imgs = sum(t.images_count for t in self.traces)
-        total_cost = sum(t.cost_usd for t in self.traces)
+        total_cost = sum(t.cost_usd or 0.0 for t in self.traces)
 
         by_phase: Dict[str, Dict[str, Any]] = {}
         by_model: Dict[str, Dict[str, Any]] = {}
 
         for t in self.traces:
             if t.phase not in by_phase:
-                by_phase[t.phase] = {"calls": 0, "total_tokens": 0, "cost_usd": 0.0}
+                by_phase[t.phase] = {"calls": 0, "total_tokens": 0, "cost_usd": 0.0, "unpriced_calls": 0}
             by_phase[t.phase]["calls"] += 1
             by_phase[t.phase]["total_tokens"] += t.total_tokens
-            by_phase[t.phase]["cost_usd"] = round(by_phase[t.phase]["cost_usd"] + t.cost_usd, 5)
+            by_phase[t.phase]["cost_usd"] = round(by_phase[t.phase]["cost_usd"] + (t.cost_usd or 0.0), 5)
+            by_phase[t.phase]["unpriced_calls"] += t.cost_usd is None
 
             if t.model not in by_model:
-                by_model[t.model] = {"calls": 0, "total_tokens": 0, "cost_usd": 0.0}
+                by_model[t.model] = {"calls": 0, "total_tokens": 0, "cost_usd": 0.0, "unpriced_calls": 0}
             by_model[t.model]["calls"] += 1
             by_model[t.model]["total_tokens"] += t.total_tokens
-            by_model[t.model]["cost_usd"] = round(by_model[t.model]["cost_usd"] + t.cost_usd, 5)
+            by_model[t.model]["cost_usd"] = round(by_model[t.model]["cost_usd"] + (t.cost_usd or 0.0), 5)
+            by_model[t.model]["unpriced_calls"] += t.cost_usd is None
 
         return {
             "total_calls": len(self.traces),
@@ -193,6 +198,7 @@ class TelemetryTracker:
             "total_cached_tokens": total_cached,
             "total_images": total_imgs,
             "total_cost_usd": round(total_cost, 5),
+            "unpriced_calls": sum(t.cost_usd is None for t in self.traces),
             "by_phase": by_phase,
             "by_model": by_model,
         }
@@ -215,7 +221,7 @@ class TelemetryTracker:
             if trace.cached_tokens > 0:
                 tok_str += f" ({trace.cached_tokens:,} cached)"
             parts.append(tok_str)
-            parts.append(f"${trace.cost_usd:.5f}")
+            parts.append(f"${trace.cost_usd:.5f}" if trace.cost_usd is not None else "unpriced usage")
         if duration_sec is not None:
             parts.append(f"{duration_sec:.1f}s")
         elif trace and trace.latency_ms:
@@ -243,7 +249,8 @@ class TelemetryTracker:
         # 1. Summary Sheet
         ws_sum = wb.active
         ws_sum.title = "Summary"
-        ws_sum.append(["Phase", "Calls", "Prompt Tokens", "Candidate Tokens", "Cached Tokens", "Images", "Total Cost (USD)"])
+        ws_sum.append(["Phase", "Calls", "Prompt Tokens", "Candidate Tokens", "Cached Tokens", "Images",
+                       "Estimated Priced Subtotal (USD)", "Unpriced Calls"])
         for cell in ws_sum[1]:
             cell.fill = header_fill
             cell.font = header_font
@@ -251,14 +258,16 @@ class TelemetryTracker:
         phases: Dict[str, Dict[str, Any]] = {}
         for t in self.traces:
             if t.phase not in phases:
-                phases[t.phase] = {"calls": 0, "p": 0, "c": 0, "cached": 0, "img": 0, "cost": 0.0}
+                phases[t.phase] = {"calls": 0, "p": 0, "c": 0, "cached": 0, "img": 0, "cost": 0.0,
+                                   "unpriced_calls": 0}
             d = phases[t.phase]
             d["calls"] += 1
             d["p"] += t.prompt_tokens
             d["c"] += t.candidate_tokens
             d["cached"] += t.cached_tokens
             d["img"] += t.images_count
-            d["cost"] += t.cost_usd
+            d["cost"] += t.cost_usd or 0.0
+            d["unpriced_calls"] += t.cost_usd is None
 
         for p_name, data in phases.items():
             ws_sum.append([
@@ -269,14 +278,17 @@ class TelemetryTracker:
                 data["cached"],
                 data["img"],
                 round(data["cost"], 5),
+                data["unpriced_calls"],
             ])
 
-        total_cost = sum(t.cost_usd for t in self.traces)
+        total_cost = sum(t.cost_usd or 0.0 for t in self.traces)
+        unpriced_calls = sum(t.cost_usd is None for t in self.traces)
         total_p = sum(t.prompt_tokens for t in self.traces)
         total_c = sum(t.candidate_tokens for t in self.traces)
         total_cached = sum(t.cached_tokens for t in self.traces)
         total_imgs = sum(t.images_count for t in self.traces)
-        ws_sum.append(["TOTAL", len(self.traces), total_p, total_c, total_cached, total_imgs, round(total_cost, 5)])
+        ws_sum.append(["TOTAL", len(self.traces), total_p, total_c, total_cached, total_imgs,
+                       round(total_cost, 5), unpriced_calls])
         total_row = ws_sum[ws_sum.max_row]
         for cell in total_row:
             cell.font = Font(bold=True)
@@ -303,11 +315,15 @@ class TelemetryTracker:
                 t.thoughts_tokens,
                 t.images_count,
                 round(t.latency_ms / 1000.0, 2),
-                round(t.cost_usd, 5),
+                round(t.cost_usd, 5) if t.cost_usd is not None else "UNPRICED",
                 "YES" if t.cached_call else "NO",
             ])
 
-        for ws in (ws_sum, ws_det):
+        notes = wb.create_sheet("Billing Notes")
+        notes.append(["These are estimates for recorded calls, not provider invoices."])
+        notes.append(["UNPRICED means usage is unknown, not free; priced subtotals exclude these calls."])
+        notes.append(["Unlogged failures and SDK retry attempts may still be billed. Verify current rates."])
+        for ws in (ws_sum, ws_det, notes):
             for col in ws.columns:
                 max_len = max(len(str(cell.value or "")) for cell in col)
                 col_letter = openpyxl.utils.get_column_letter(col[0].column)
@@ -324,6 +340,7 @@ class TelemetryTracker:
             "total_cached_tokens": total_cached,
             "total_images": total_imgs,
             "total_cost_usd": round(total_cost, 5),
+            "unpriced_calls": unpriced_calls,
             "phases": phases,
         }
         with (target_dir / "cost_summary.json").open("w", encoding="utf-8") as f:

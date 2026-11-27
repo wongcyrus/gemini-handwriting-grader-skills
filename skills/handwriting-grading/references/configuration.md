@@ -1,7 +1,12 @@
 # Exam configuration
 
-`exam.yaml.template` is a starting point, not a real configuration. Place a
-local copy outside version control. Relative paths resolve from its directory.
+[The exam template](../../../exam.yaml.template) is a starting point, not a real
+configuration. Place a local copy outside version control. Relative paths resolve
+from its directory. Inspect existing exam/model files and approval bindings first.
+Reuse VERIFIED values and clear stage selections; ask only for unresolved,
+stage-needed decisions. Do not repeat setup because a new stage starts.
+Offline preparation/review does not require model credentials. Defer optional
+embedding, image and email settings until those stages are requested.
 
 | Field | User decision or check |
 |---|---|
@@ -14,8 +19,8 @@ local copy outside version control. Relative paths resolve from its directory.
 | `exam.output_dir` | Select a separate location; inspect any existing outputs before writing. |
 | `layout.pages_per_student` | User confirms a positive integer; preflight compares it with the PDF and present-student counts. |
 | `layout.same_layout_for_all` | User explicitly confirms the current shared-layout assumption. Unsupported otherwise. |
-| `reporting.pass_mark`, `reporting.passing_includes_equal` | Both needed for pass-only samples; configure before starting. Never infer a threshold or comparison. |
-| `reporting.question_pass_marks`, `reporting.question_passing_includes_equal` | Optional per-question mark thresholds and explicit equality policy for analytics. Supply both; unset questions have blank pass statistics. Configure before approvals. |
+| `reporting.pass_mark`, `reporting.passing_includes_equal` | Both needed when pass-only samples/statistics are requested; settle before approvals. Never infer a threshold or comparison. |
+| `reporting.question_pass_marks`, `reporting.question_passing_includes_equal` | Optional per-question thresholds and explicit equality policy. Ask only if needed, supply both, and settle before approvals; unset questions have blank pass statistics. |
 | `reporting.advanced_analysis` | Not used as an automatic trigger; run AI analysis explicitly after consent. |
 | `email.enabled` | Not an automatic send trigger; distribution requires separate settings and explicit approval. |
 
@@ -34,7 +39,13 @@ Thresholds are marks, not percentages; each must be within its question's
 maximum. Only listed questions receive pass counts and rates. Both fields
 must be supplied together, and canonical question labels must be unique.
 
-Use the project's `config.yaml` for Vertex mode and model selection:
+Use the existing verified `config.yaml` for Vertex mode and model selection.
+Credentials stay in the environment/Google authentication, never YAML or Git.
+Reuse the selected Google Cloud project and Vertex location; do not ask again
+unless unresolved or intentionally changing target. Save changes to a fresh
+private configuration instead of modifying one bound to approvals.
+
+Google `google-genai` settings include:
 - `models.annotation`: Automated bounding box proposals on layout template pages (Reasoning tier).
 - `models.marking_scheme`: DOCX rubric extraction and search verification (Flash tier).
 - `models.one_pass_metadata_ocr` (or `batch_metadata_ocr`): High-throughput batch student metadata OCR (ID, Class, Name; Flash tier).
@@ -44,41 +55,72 @@ Use the project's `config.yaml` for Vertex mode and model selection:
 - `models.embedding`: Semantic clustering of student answers before review (default: `gemini-embedding-2`).
 `vertex_ai.use_vertexai` must be true.
 
-### Model Eligibility & Boundary Policy
+### Gemini capability and thinking semantics
 
-The grading pipeline cannot function with arbitrary models. Every step relies on three non-negotiable capabilities:
-1. **Multimodal image bytes input**: The engine sends raw cropped PNG bytes (`types.Part.from_bytes(data=image, mime_type="image/png")`) for handwriting OCR, bounding box annotation, and answer evaluation. Text-only models will immediately crash.
-2. **Pydantic structured output schemas**: Complex response schemas (`QuestionBatchGradeResponse`, `MetadataBatchResponse`, `SuggestedBoxes`, `ExtractedRubric`) require Gemini's native JSON schema engine (`response_schema`, `response_mime_type="application/json"`).
-3. **Dynamic thinking budget**: Reasoning tasks require `ThinkingConfig(thinking_budget=-1)` (supported on Gemini 3.8 and Gemini 4). Legacy Gemini 1.x models reject this configuration.
+Keep the existing Google model policy; do not import Azure deployment restrictions.
+Image stages send `types.Part.from_bytes` for crops/pages. Evaluation uses
+Pydantic `response_schema` and `response_mime_type="application/json"`.
+Reasoning uses the supported Gemini `ThinkingConfig` semantics, including
+`thinking_budget=-1` where compatible; do not substitute another provider's
+reasoning controls or assume every model accepts every thinking option.
+Embedding and image-generation models are separate capabilities, not grading
+model replacements. Runtime name validation is not a live capability guarantee.
 
-| Model Tier | Allowed / Supported Models (Gemini 3.8+ Only) | Assigned Pipeline Steps | Rationale |
-|---|---|---|---|
-| **Fast / High-Volume (Flash)** | `gemini-3.8-flash` | `marking_scheme`<br>`one_pass_metadata_ocr`<br>`ocr`<br>`grading` (item mode) | High throughput, lowest token cost (~$0.075/1M input). SOTA OCR and structured grading against rubrics. |
-| **Deep Reasoning** | `gemini-4-argon`<br>`gemini-4-hydrogen` | `annotation`<br>`one_pass_grading`<br>`moderation`<br>`analytics` | Frontier spatial precision for template box proposals; deep cross-script reasoning for cohort consistency moderation and misconception diagnosis. |
-| **Semantic Embedding** | `gemini-embedding-2` | `embedding` | Semantic clustering of student answers in the human review browser interface. |
+Existing configurations commonly use Flash (such as `gemini-3.8-flash`) for
+rubric/metadata/item grading, reasoning models (such as `gemini-4-argon` or
+`gemini-4-hydrogen`) for annotation/batch grading/moderation/analysis, and
+`gemini-embedding-2` for optional clustering. Retain a verified eligible selection;
+do not rediscover or reallocate it at every stage, or quote fixed token prices,
+accuracy, consistency or savings. Stage workload and current rates determine cost.
 
-#### Strictly Incompatible & Prohibited Models
-- **Non-Gemini models** (`claude-*`, `gpt-*`, `llama-*`, `gemma-*`, `palm-*`, `text-embedding-*`, etc.): Only Google Gemini models are permitted across the entire pipeline.
-- **Gemini models older than 3.8** (`gemini-1.x`, `gemini-2.0-*`, `gemini-2.5-*`, `gemini-3.0-*`, `gemini-3.5-*`): Models below Gemini 3.8 are strictly rejected.
-- **Dedicated media/image generation models** (`imagen-*`, `veo-*`, `chirp-*`): Cannot accept bounding box/rubric instructions or output structured grading JSON.
-- **Text-only models**: Cannot receive cropped student handwriting images.
-- **Specialized variants** (`*-tts`, `*-audio`, `*-live`, `*-robotics`, `*-computer-use`): Unsupported for exam grading.
-- **Cross-tier assignment**: Embedding models (`gemini-embedding-2`) cannot be used for grading/OCR/annotation.
+### Metadata discovery versus paid probes
 
-Runtime model loading in `load_model_settings` and `write_model_config` strictly validates model eligibility against these rules and raises an immediate, actionable `ValueError` if an unsupported model is detected.
+If model choices remain unresolved, metadata listing is the default:
 
-### Dynamic online model discovery & cost-tiered configuration policy
-Never hardcode static model versions or recommend non-existent or deprecated models. Google continuously updates and retires models online. Never use expensive frontier reasoning models (Gemini 4) across all stages, as high-volume tasks (OCR, grading, template annotation) become slow and cost-prohibitive.
-
-Always dynamically discover, profile, and allocate models online by capability and cost:
 ```bash
 handwriting-grader discover-models --project <PROJECT_ID> [--location <LOCATION>] [--write-config /path/to/config.yaml]
 ```
-This queries Vertex AI online, inspects live model properties and quota, benchmarks pricing rates, and assigns:
-- **Fast / High-Volume Tier** (e.g. `gemini-3.8-flash` at ~$0.075/1M input): for `marking_scheme`, `ocr`, and `grading` (item mode).
-- **Deep Reasoning Tier** (e.g. `gemini-4-argon` at ~$1.250/1M input, ~16.7x cost): for low-volume, high-precision spatial reasoning (`annotation` on template pages), cohort-wide question grading (`batch_grading` in batch mode), and cohort-wide reasoning (`moderation` and `analytics`).
 
-The skill runs this command during initial setup and configures `config.yaml` automatically with verified online models.
+This lists model metadata without paid inference/capability pings. It does not
+verify quota, live pricing or model quality. If paid capability probing is needed,
+preview the target, data, request bounds and current price estimate; only after
+explicit consent use `--probe --confirm-cost`. A probe is limited evidence of
+capability at that time, not verified quota/pricing or consent to later grading.
+Review any proposed allocation; write only a fresh private configuration and never
+overwrite an approved one. Discovery/access errors should be explained with a
+manual-configuration alternative, not repeated setup questions.
+
+Vertex model listing does not return prices. Independently review current Vertex
+rates or a current reviewed private pricing cache before each paid estimate.
+Report unpriced/unknown usage honestly. Offline `cost-report` uses recorded usage
+and estimated rates, not an invoice or every SDK retry/failed-response charge.
+Unknown embedding usage persists as `cost_usd: null`, with **UNPRICED** audit
+rows/subtotals rather than an invented zero-cost amount.
+
+### Optional embedding and image settings
+
+`cluster-answers` and `review-grading` default offline. To request paid embeddings,
+preview with `--preview-embedding` and optional `--model-config PATH`, inspect the
+resolved Google target/model and rates, then obtain new consent and execute with
+the exact `--revision REVISION --confirm-cost`. An override is optional, not a
+requirement to repeat setup. Keep local lexical grouping available.
+The printed **Review and configuration revision** binds both the review/grading
+revision and the selected model-config SHA-256. Changing review state or the
+selected configuration (including target/model) requires a new preview and
+consent; do not reuse the old token. Native embedding calls require explicit
+`vertex_ai.project_id` and `vertex_ai.location` in the resolved configuration,
+without silently inferring a target. Offline grouping remains the default and
+does not require these settings.
+
+For advanced-report images, first inspect settings recorded with the approved
+analysis. An optional `--image-model` selects the compatible Google image model;
+`--image-model-config PATH` supplies separate image settings/Vertex target when
+needed. Do not change the approved analysis configuration or auto-discover an
+unrelated adjacent image file. Ask only unresolved image-stage choices.
+No root model/image configuration template is assumed: use existing verified
+settings and the installed CLI/config schema, not links to nonexistent templates.
+The advanced-report image adapter is not a standalone image-generation skill;
+an unrelated skill/provider is not a substitute and has its own consent contract.
 
 Enabled caches apply to `ocr`, `grading`, `batch_grading`, `moderation`,
 `annotation`, `marking_scheme` extraction and `analytics`; they
@@ -90,8 +132,9 @@ changes, so do not reuse cached results when freshness is required. Grounded
 verification is not cached; logging settings are not applied.
 Cache hits never substitute for cost consent or review. Credentials must remain
 outside configuration and Git.
-Preflight does not contact Vertex AI or confirm model access. Changing any
-exam configuration invalidates existing approvals, so settle settings first.
+Preflight and Gemini `check-scans` are offline and do not confirm model access.
+Changing exam configuration invalidates approvals: settle relevant settings first,
+then explicitly review again if an intentional later change requires it.
 
 Excel may store an ID as a number even when it is displayed with leading
 zeroes. Confirm IDs against the original roster; do not assume the displayed

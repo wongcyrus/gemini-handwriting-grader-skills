@@ -1,6 +1,7 @@
 """Private cache for explicitly enabled model calls."""
 
 import hashlib
+import inspect
 import json
 import os
 from pathlib import Path
@@ -8,6 +9,14 @@ from pathlib import Path
 import yaml
 
 from .regions import atomic_json, file_hash
+
+
+def invoke_ocr(provider, image, field, candidates=None):
+    try:
+        inspect.signature(provider.ocr).bind(image, field, candidates=candidates)
+    except TypeError:
+        return provider.ocr(image, field)
+    return provider.ocr(image, field, candidates=candidates)
 
 
 def enabled_agents(model_config_path):
@@ -52,26 +61,38 @@ def cache_directory(model_config_path, run_root):
     return directory / "handwriting-grader-cache-v1"
 
 
-def shared_embedding_cache_path(model_config_path=None, model_name="gemini-embedding-2"):
-    """Returns cross-assignment shared embedding cache path, partitioned by embedding model."""
+def validate_private_cache_directory(directory):
+    stat = directory.stat()
+    if not directory.is_dir() or (hasattr(os, "getuid") and
+                                  (stat.st_uid != os.getuid() or stat.st_mode & 0o077)):
+        raise ValueError("Cache directory must be owned by the user and private (mode 0700)")
+
+
+def shared_embedding_cache_path(model_config_path=None, model_name="gemini-embedding-2", *, namespace=""):
+    """Return a shared embedding cache path only when explicitly enabled."""
     import re
+    if model_config_path is None:
+        return None
+    p = Path(model_config_path)
+    if not p.is_file():
+        return None
+    with p.open(encoding="utf-8") as file:
+        settings = yaml.safe_load(file) or {}
+    cache = settings.get("caching", {})
+    if not isinstance(cache, dict) or type(cache.get("enabled", False)) is not bool:
+        raise ValueError("caching must be a mapping with a boolean enabled setting")
+    if not cache.get("enabled", False) or cache.get("scope", "run") == "run":
+        return None
+    if cache.get("scope") != "shared" or not isinstance(cache.get("directory"), str) or not cache["directory"].strip():
+        raise ValueError("For shared caching set caching.scope: shared and caching.directory")
     safe_model = re.sub(r"[^\w\-.]", "_", model_name or "gemini-embedding-2")
-    if model_config_path is not None:
-        try:
-            p = Path(model_config_path)
-            if p.is_file():
-                with p.open(encoding="utf-8") as file:
-                    settings = yaml.safe_load(file)
-                cache = settings.get("caching", {})
-                if isinstance(cache, dict):
-                    c_dir = cache.get("directory")
-                    if isinstance(c_dir, str) and c_dir.strip():
-                        base = (p.resolve().parent / Path(c_dir).expanduser()).resolve()
-                        return base / "embeddings" / f"{safe_model}.json"
-        except Exception:
-            pass
-    base = Path.home() / ".cache" / "gemini-handwriting-grader" / "embeddings"
-    return base / f"{safe_model}.json"
+    if namespace:
+        safe_model += "-" + hashlib.sha256(namespace.encode()).hexdigest()[:16]
+    base = (p.resolve().parent / Path(cache["directory"]).expanduser()).resolve()
+    directory = base / "embeddings"
+    if directory.exists():
+        validate_private_cache_directory(directory)
+    return directory / f"{safe_model}.json"
 
 
 class CachedGrader:
@@ -82,19 +103,17 @@ class CachedGrader:
         self.models = models
         self.project = project
         self.location = location
-        self.code_sha256 = [file_hash(Path(__file__))] + [
+        self.code_sha256 = [file_hash(Path(__file__)), file_hash(Path(__file__).with_name("telemetry.py"))] + [
             file_hash(Path(__file__).with_name(name)) for name in (source_files or ["grading.py"])
         ]
         if self.agents:
             root.mkdir(mode=0o700, parents=True, exist_ok=True)
-            stat = root.stat()
-            if hasattr(os, "getuid") and (stat.st_uid != os.getuid() or stat.st_mode & 0o077):
-                raise ValueError("Cache directory must be owned by the user and private (mode 0700)")
+            validate_private_cache_directory(root)
 
     def call(self, kind, payload, compute, validate):
         if kind not in self.agents:
             return validate(compute())
-        key = {"format": 1, "code_sha256": self.code_sha256, "kind": kind, "model": self.models[kind],
+        key = {"format": 2, "provider": "vertex_ai", "code_sha256": self.code_sha256, "kind": kind, "model": self.models[kind],
                "project": self.project, "location": self.location, "input": payload}
         digest = hashlib.sha256(json.dumps(key, sort_keys=True, ensure_ascii=False, allow_nan=False).encode()).hexdigest()
         path = self.root / f"{digest}.json"
@@ -117,15 +136,11 @@ class CachedGrader:
         if candidates is not None:
             payload["candidates_sha256"] = hashlib.sha256(json.dumps(candidates, sort_keys=True).encode("utf-8")).hexdigest()
         def do_ocr():
-            try:
-                return self.provider.ocr(image, field, candidates=candidates)
-            except TypeError:
-                return self.provider.ocr(image, field)
+            return invoke_ocr(self.provider, image, field, candidates)
         return self.call("ocr", payload, do_ocr, validate)
 
     def grade(self, question, answer="", image=None):
         from .grading import GradeResponse
-        import inspect
         import math
 
         payload = {"question": question}
@@ -146,15 +161,13 @@ class CachedGrader:
         def compute():
             try:
                 sig = inspect.signature(self.provider.grade)
-                params = sig.parameters
-                if "image" in params and "answer" in params:
-                    return self.provider.grade(question, answer=answer, image=image)
-                elif "image" in params:
-                    return self.provider.grade(question, image=image)
-                elif "answer" in params:
-                    return self.provider.grade(question, answer or "")
             except (ValueError, TypeError):
-                pass
+                return self.provider.grade(question, answer or "")
+            params = sig.parameters
+            if "image" in params and "answer" in params:
+                return self.provider.grade(question, answer=answer, image=image)
+            if "image" in params:
+                return self.provider.grade(question, image=image)
             return self.provider.grade(question, answer or "")
 
         return self.call("grading", payload, compute, validate)

@@ -14,6 +14,16 @@ from pypdf import PdfReader
 from .telemetry import TelemetryTracker, set_active_tracker, get_active_tracker
 
 
+def _report_failed_marks(target):
+    with (target / "results.json").open(encoding="utf-8") as file:
+        results = json.load(file)
+    failures = [row for row in results["marks"] if row.get("grading_failed")]
+    if failures:
+        questions = sorted({str(row["question"]) for row in failures})
+        print(f"Manual review required: {len(failures)} failed answers across "
+              f"{', '.join(questions)}; these are not zero marks.", file=sys.stderr)
+
+
 def load_config(path):
     with path.open(encoding="utf-8") as file:
         config = yaml.safe_load(file)
@@ -202,15 +212,19 @@ def main(argv=None):
     grade.add_argument("--project", required=True, help="Explicit Google Cloud project")
     grade.add_argument("--location", required=True, help="Explicit Vertex AI location")
     grade.add_argument("--confirm-cost", action="store_true", help="Confirm sending student work to Vertex AI")
+    grade.add_argument("--continue-on-image-policy-block", action="store_true",
+                       help="Continue other questions after a typed Gemini safety block; never retry blocked images")
     grade.add_argument("--mode", choices=["batch", "item"], default="batch",
                        help="Grading mode: 'batch' (fast one-pass structured output per question) or 'item' (student-by-student with moderation)")
     grade.add_argument("--concurrency", type=int, default=3, help="Concurrent questions for batch grading (default: 3)")
     resume = commands.add_parser("resume-grading", help="Resume a supported interrupted grading checkpoint")
     resume.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     resume.add_argument("--confirm-cost", action="store_true", help="Confirm resumed paid calls")
+    resume.add_argument("--continue-on-image-policy-block", action="store_true",
+                        help="Continue other questions after a typed Gemini safety block")
     resume.add_argument("--mode", choices=["batch", "item"], default=None,
                         help="Override grading mode (default: from manifest or batch)")
-    resume.add_argument("--concurrency", type=int, default=3, help="Concurrent questions for batch grading (default: 3)")
+    resume.add_argument("--concurrency", type=int, default=None, help="Concurrent questions for original batch runs")
     retry_cmd = commands.add_parser("retry-grading", help="Retry failed marks and unmoderated questions in a grading run")
     retry_cmd.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     retry_cmd.add_argument("--run", help="Target child run ID (default: original run)")
@@ -256,9 +270,15 @@ def main(argv=None):
     cluster_cmd.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     cluster_cmd.add_argument("--threshold", type=float, default=0.82, help="Cosine similarity threshold (default: 0.82)")
     cluster_cmd.add_argument("--run", help="Optional run ID (default: current run)")
+    cluster_cmd.add_argument("--model-config", type=Path, help="Separate embedding model configuration")
+    cluster_cmd.add_argument("--preview-embedding", action="store_true", help="Preview paid embedding work without inference")
+    cluster_cmd.add_argument("--revision", help="Exact review revision from the embedding preview")
+    cluster_cmd.add_argument("--confirm-cost", action="store_true", help="Authorize paid embeddings; otherwise stay offline")
     grade_review = commands.add_parser("review-grading", help="Start a local browser-based grading editor")
     grade_review.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     grade_review.add_argument("--port", type=int, default=0, help="Local port (default: automatically selected)")
+    grade_review.add_argument("--model-config", type=Path, help="Separate embedding model configuration")
+    grade_review.add_argument("--confirm-cost", action="store_true", help="Authorize paid embeddings in the review editor")
     grade_check = commands.add_parser("check-grading-review", help="Diagnose review discrepancies without approval")
     grade_check.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     grade_approve = commands.add_parser("approve-grading", help="Validate and approve human-reviewed scores")
@@ -280,7 +300,11 @@ def main(argv=None):
     advanced_report = commands.add_parser("advanced-report", help="Generate reviewed Word and PowerPoint reports")
     advanced_report.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     advanced_report.add_argument("--no-infographics", action="store_true",
-                                 help="Skip generating Gemini infographic images (enabled by default)")
+                                 help="Keep reports offline (default); incompatible with --infographics")
+    advanced_report.add_argument("--infographics", action="store_true", help="Preview optional paid Gemini infographics")
+    advanced_report.add_argument("--confirm-cost", action="store_true", help="Authorize paid infographic generation")
+    advanced_report.add_argument("--image-model-config", type=Path, help="Separate image model configuration")
+    advanced_report.add_argument("--report-name", default="reports", help="New report directory; refuses overwrite")
     advanced_report.add_argument("--image-model", default=None,
                                  help="Override Gemini 3+ image model for infographics (e.g. gemini-3.1-flash-image)")
     cost_report = commands.add_parser("cost-report", help="Generate or display token, model and cost breakdown")
@@ -289,7 +313,7 @@ def main(argv=None):
     clean.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     clean.add_argument("--no-archive", action="store_true", help="Skip creating backup .zip archive before cleaning")
     clean.add_argument("--full-archive", action="store_true",
-                       help="Include bulky raw scanned JPEGs (grading/images/, regions/images/) in the backup .zip")
+                       help="Also include temporary grading folders and model-cache in the backup .zip")
     clean.add_argument("--purge-reports", action="store_true", help="Also delete final reports and analytics (default: preserved)")
     clean.add_argument("--confirm-delete", action="store_true", help="Explicit human confirmation to delete files")
     email_preview = commands.add_parser("preview-email", help="Create a private recipient and attachment preview")
@@ -309,18 +333,44 @@ def main(argv=None):
                             help="Optional Moodle Assignment grading worksheet CSV")
     moodle_exp.add_argument("--participants", type=Path, default=None,
                             help="Optional Moodle course participants CSV (to build recipients.csv)")
-    discover_models = commands.add_parser("discover-models", help="Discover and probe available Vertex AI models online")
+    failed_retry = commands.add_parser("retry-failed-batches", help="Retry failed answers in an incomplete batch checkpoint")
+    failed_retry.add_argument("--exam", required=True, type=Path)
+    failed_retry.add_argument("--exclude-question", action="append", default=[])
+    failed_retry.add_argument("--checkpoint-sha256", help="Exact checkpoint hash from preview")
+    failed_retry.add_argument("--confirm-cost", action="store_true")
+    failed_export = commands.add_parser("export-failed-review", help="Export a separate offline failed-answer worksheet")
+    failed_export.add_argument("--exam", required=True, type=Path)
+    failed_export.add_argument("--output", required=True, type=Path)
+    bisect = commands.add_parser("bisect-failed-batch", help="Explicitly bounded recovery of filtered batch answers")
+    bisect.add_argument("--exam", required=True, type=Path)
+    bisect.add_argument("--question", required=True)
+    bisect.add_argument("--max-requests", required=True, type=int)
+    bisect.add_argument("--revision", help="Exact review revision from preview")
+    bisect.add_argument("--confirm-cost", action="store_true")
+    discover_models = commands.add_parser("discover-models", help="List Vertex model metadata; inference probes are opt-in")
     discover_models.add_argument("--project", required=True, help="Explicit Google Cloud project")
     discover_models.add_argument("--location", default="global", help="Vertex AI location (default: global)")
-    discover_models.add_argument("--write-config", type=Path, help="Path to write/update model configuration YAML")
+    discover_models.add_argument("--write-config", type=Path, help="New model configuration YAML; refuses overwrite")
+    discover_models.add_argument("--probe", action="store_true", help="Request potentially billed model capability probes")
+    discover_models.add_argument("--confirm-cost", action="store_true", help="Authorize paid capability probes")
     for selected in (resume, grade_review, grade_check, grade_approve, report, analytics, ai_analysis, analysis_approve,
-                     advanced_report, cost_report, clean, email_preview, email_approve, email_send):
+                     advanced_report, cost_report, clean, email_preview, email_approve, email_send, moodle_exp):
         selected.add_argument("--run", help="Child run ID (default: original run)")
     args = parser.parse_args(argv)
     if args.command == "discover-models":
         from .discovery import discover_and_report
         try:
-            discover_and_report(args.project, args.location, args.write_config)
+            if args.write_config is not None and args.write_config.exists():
+                raise ValueError("Configuration already exists; preserve it and select a new path")
+            if args.probe and not args.confirm_cost:
+                print("Paid capability probes require --confirm-cost; no inference sent.", file=sys.stderr)
+                return 1
+            if args.confirm_cost and not args.probe:
+                raise ValueError("--confirm-cost requires --probe")
+            print("Model metadata and configured rates do not verify quota, current retail prices or grading quality.")
+            if args.probe:
+                print("Capability probes send 'ping', can incur charges and try candidates across advertised regions.")
+            discover_and_report(args.project, args.location, args.write_config, probe=args.probe)
             return 0
         except Exception as exc:
             print(f"Model discovery failed: {exc}", file=sys.stderr)
@@ -601,12 +651,18 @@ def main(argv=None):
             return 1
         mode = getattr(args, "mode", "batch")
         concurrency = getattr(args, "concurrency", 3)
+        if args.continue_on_image_policy_block and mode != "batch":
+            print("Continuing after a safety block requires an original batch run.", file=sys.stderr)
+            return 1
+        from math import ceil
+        from .grading import MAX_IMAGES_PER_REQUEST
+        metadata_requests = ceil(summary["students"] / min(35, MAX_IMAGES_PER_REQUEST // 3))
         if mode == "batch":
-            chunks_per_q = max(1, (summary["students"] + 49) // 50)
-            request_count = summary["students"] * 3 + len(questions) * chunks_per_q
+            chunks_per_q = ceil(summary["students"] / MAX_IMAGES_PER_REQUEST)
+            request_count = metadata_requests + len(questions) * chunks_per_q
             print(f"Mode: BATCH (multimodal structured output, {concurrency} questions concurrent).")
         else:
-            request_count = summary["students"] * (3 + len(questions)) + len(questions)
+            request_count = metadata_requests + 2 * summary["students"] * len(questions) + len(questions)
             print("Mode: ITEM (sequential student-by-student grading + moderation).")
         print(f"Vertex target: project={args.project}, location={args.location}, models={models}. "
               f"Up to {request_count} requests will send student work or answers and incur charges. "
@@ -618,14 +674,15 @@ def main(argv=None):
         tracker = TelemetryTracker(log_dir=output_dir / "telemetry", config_path=args.model_config)
         set_active_tracker(tracker)
         try:
+            options = {"continue_on_image_policy_block": True} if args.continue_on_image_policy_block else {}
             output = grade_exam(
                 config, path.parent, path, args.model_config, args.project.strip(),
-                args.location.strip(), summary, mode=mode, batch_concurrency=concurrency,
+                args.location.strip(), summary, mode=mode, batch_concurrency=concurrency, **options,
             )
             tracker.write_cost_report(output)
         except Exception as exc:
             tracker.write_cost_report(output_dir)
-            print(f"Grading failed ({type(exc).__name__}); requests may have incurred charges. "
+            print(f"Grading failed ({type(exc).__name__}): {str(exc)[:2000]}; requests may have incurred charges. "
                   "Inspect any partial run before choosing a new output directory.", file=sys.stderr)
             return 1
         finally:
@@ -633,10 +690,47 @@ def main(argv=None):
         print(f"Grading results and review workbook saved to {output}. Human review is required.")
         return 0
     if args.command == "cluster-answers":
-        from .score_editor import ScoreServer
+        from .regions import atomic_json
+        from .score_editor import ScoreServer, load_state, writer_lock
 
         try:
-            server = ScoreServer(config, path.parent, 0, path, run_id=args.run)
+            if not 0 <= args.threshold <= 1:
+                raise ValueError("Clustering threshold must be between 0 and 1")
+            if args.preview_embedding and args.confirm_cost:
+                raise ValueError("Embedding preview cannot be combined with --confirm-cost")
+            server = ScoreServer(config, path.parent, 0, path, run_id=args.run, allow_ai=args.confirm_cost,
+                                 embedding_model_config=args.model_config)
+            if args.preview_embedding:
+                from .suggestions import load_model_settings
+
+                with server.embedding_model_config.open(encoding="utf-8") as file:
+                    model_config = yaml.safe_load(file)
+                model_name = load_model_settings(server.embedding_model_config, "embedding")
+                vertex = model_config["vertex_ai"]
+                project = vertex.get("project_id")
+                location = vertex.get("location", "global")
+                if vertex.get("use_vertexai") is not True or not project or not location:
+                    raise ValueError("Embedding preview requires a Vertex project and location")
+                _, revision, _, _, _, marks = load_state(server)
+                unique = {" ".join(str(item["answer"]).lower().split())
+                          for item in marks.values() if item.get("answer") and str(item["answer"]).strip()}
+                print(f"Embedding target: project={project}, location={location}, "
+                      f"model={model_name}.")
+                print(f"Up to {len(unique)} application requests, excluding SDK retries; "
+                      "transcribed non-empty student answers are sent, not images.")
+                print(f"Review and configuration revision: {server.embedding_preview_revision(revision)}")
+                print("No request sent. Verify current pricing and obtain data and cost approval.")
+                return 0
+            if not args.confirm_cost:
+                print("Word-overlap grouping is available in review-grading; no embeddings or output created.")
+                return 0
+            _, revision, _, _, _, _ = load_state(server)
+            if args.revision != server.embedding_preview_revision(revision):
+                raise ValueError("Embedding preview revision is missing or changed; no request sent")
+            clusters_path = server.root / "clusters.json"
+            if clusters_path.exists():
+                raise ValueError("clusters.json already exists; preserve it before starting a new clustering run")
+            server.expected_revision = revision
             _, model_name = server.get_embedding_client()
             total_q = len(server.questions)
             print(f"Pre-computing semantic clusters using {model_name} (threshold={args.threshold})...")
@@ -648,14 +742,20 @@ def main(argv=None):
                 c_count = len(res.get("clusters", []))
                 cached_all[q_num] = res
                 print(f"[{q_idx + 1}/{total_q}] Question {q_num}: {c_count} semantic clusters ready")
-            clusters_path = server.root / "clusters.json"
-            with clusters_path.open("w", encoding="utf-8") as f:
-                json.dump(cached_all, f, indent=2, ensure_ascii=False)
+            with writer_lock(server):
+                if load_state(server)[1] != revision:
+                    raise ValueError("Grading or review changed; clustering results were not saved")
+                if clusters_path.exists():
+                    raise ValueError("clusters.json appeared during clustering; it was not overwritten")
+                atomic_json(clusters_path, cached_all)
             print(f"Semantic clustering complete! Saved to {clusters_path} for review-grading.")
             return 0
         except Exception as exc:
             print(f"Semantic clustering failed: {exc}", file=sys.stderr)
             return 1
+        finally:
+            if "server" in locals():
+                server.server_close()
     if args.command == "review-grading":
         from .score_editor import ScoreServer
 
@@ -663,7 +763,8 @@ def main(argv=None):
             print("Port must be between 0 and 65535", file=sys.stderr)
             return 1
         try:
-            server = ScoreServer(config, path.parent, args.port, path, run_id=args.run)
+            server = ScoreServer(config, path.parent, args.port, path, run_id=args.run,
+                                 allow_ai=args.confirm_cost, embedding_model_config=args.model_config)
         except (OSError, ValueError, KeyError) as exc:
             print(f"Cannot start grading editor: {exc}", file=sys.stderr)
             return 1
@@ -710,17 +811,27 @@ def main(argv=None):
         return 0
     if args.command == "resume-grading":
         from .grade_review import verify_grading_run
-        from .grading import resume_grading
+        from .grading import resume_grading, MAX_IMAGES_PER_REQUEST
 
         try:
-            root, manifest, results, _ = verify_grading_run(config, path.parent, path, require_completed=False,
-                                                           run_id=args.run)
+            root, manifest, results, questions = verify_grading_run(config, path.parent, path,
+                                                                   require_completed=False, run_id=args.run)
             if results.get("checkpoint_version") != 1:
                 raise ValueError("This partial run predates resumable checkpoints")
             if (root / "review.xlsx").exists() or (root / "approval.json").exists():
                 raise ValueError("A review or approval already exists; do not overwrite it")
             if (root / "processing.lock").exists():
                 raise ValueError("Another grading process or a stale lock exists")
+            if args.run is not None and (args.mode is not None or args.concurrency is not None):
+                raise ValueError("--mode and --concurrency are not supported for child runs")
+            if args.concurrency is not None and args.concurrency < 1:
+                raise ValueError("Concurrency must be a positive integer")
+            if args.continue_on_image_policy_block and (args.run is not None
+                    or (args.mode or manifest.get("grading_mode", "batch")) != "batch"):
+                raise ValueError("Continuing after an image policy block requires an original batch run")
+            fields = manifest.get("metadata_fields", ["ID", "CLASS"])
+            if fields not in (["ID", "CLASS"], ["ID", "CLASS", "NAME"]):
+                raise ValueError(f"Unsupported metadata fields in checkpoint: {fields!r}")
         except (OSError, ValueError, KeyError) as exc:
             print(f"Cannot resume grading: {exc}", file=sys.stderr)
             return 1
@@ -728,24 +839,175 @@ def main(argv=None):
               f"models={manifest['models']}; run={args.run or 'original'}"
               f"{'; question=' + manifest['question_key'] if args.run else ''}. "
               "In-flight requests can be repeated and billed.")
+        if not results.get("completed"):
+            from math import ceil
+            from .rubric import question_key
+
+            keys = {question_key(q["question_number"]) for q in questions}
+            finished = set(results.get("moderated_questions", []))
+            pairs = {(row["script_index"], question_key(row["question"])) for row in results["marks"]}
+            missing = summary["students"] - len(results["scripts"])
+            metadata_requests = ceil(max(0, missing) / min(35, MAX_IMAGES_PER_REQUEST // len(fields)))
+            mode = "batch" if args.run is not None else (args.mode or manifest.get("grading_mode", "batch"))
+            pending = [sum((si, key) not in pairs for si in range(summary["students"]))
+                       for key in keys - finished]
+            if mode == "batch":
+                requests = sum(ceil(count / MAX_IMAGES_PER_REQUEST) for count in pending)
+                print(f"Remaining batch preview: up to {metadata_requests} metadata request(s) and "
+                      f"{requests} question request(s), excluding SDK retries. Previously failed answers are not retried.")
+            else:
+                requests = 2 * sum(pending) + len(pending)
+                print(f"Remaining item preview: up to {metadata_requests} metadata request(s) and "
+                      f"up to {requests} item-mode request(s), including possible answer OCR and moderation; "
+                      "excluding SDK retries. Previously failed answers are not retried.")
+        else:
+            print("The checkpoint is complete; finalizing the review requires no model requests.")
         if manifest.get("reuse_parent_cache"):
             print(f"Parent cache reuse remains enabled: {manifest['cache_root']}. "
                   "Matching responses may be reused rather than regenerated.")
+        if args.continue_on_image_policy_block:
+            print("Image-policy-blocked answers will be flagged for manual review; other questions will still incur requests.")
         if not args.confirm_cost:
             print("No request sent. Obtain user approval and rerun with --confirm-cost.", file=sys.stderr)
             return 1
+        tracker = TelemetryTracker(log_dir=root / "telemetry", config_path=manifest["model_config_path"])
+        tracker.load_existing_log(root / "telemetry" / "gemini_usage.jsonl")
+        set_active_tracker(tracker)
         try:
             if args.run is None:
+                options = {"continue_on_image_policy_block": True} if args.continue_on_image_policy_block else {}
                 output = resume_grading(config, path.parent, path, summary, mode=args.mode,
-                                        batch_concurrency=getattr(args, "concurrency", 3))
+                                        batch_concurrency=args.concurrency if args.concurrency is not None else 3, **options)
             else:
                 from .regrading import resume_regrade
                 output = resume_regrade(config, path.parent, path, args.run)
+            tracker.write_cost_report(output)
         except Exception as exc:
-            print(f"Resume failed ({type(exc).__name__}); requests may have incurred charges.", file=sys.stderr)
+            tracker.write_cost_report(root)
+            detail = " ".join(str(exc).split())[:2000] or "No provider error detail was available"
+            print(f"Resume failed ({type(exc).__name__}): {detail}; requests may have incurred charges.",
+                  file=sys.stderr)
             return 1
+        finally:
+            set_active_tracker(None)
         print(f"Grading review saved to {output}. Human review is required.")
+        if args.continue_on_image_policy_block:
+            _report_failed_marks(output)
         return 0
+    if args.command == "bisect-failed-batch":
+        from .batch_recovery import inspect_batch_recovery
+
+        try:
+            if args.max_requests < 1:
+                raise ValueError("Request limit must be positive")
+            info = inspect_batch_recovery(config, path.parent, path, args.question)
+        except (OSError, ValueError, KeyError) as exc:
+            print(f"Cannot preview batch recovery: {exc}", file=sys.stderr)
+            return 1
+        if not info["rows"]:
+            print("No unreviewed failed answers are eligible.")
+            return 0
+        manifest = info["manifest"]
+        print(f"Recovery target: project={manifest['project']}, location={manifest['location']}, "
+              f"model={manifest['models'].get('one_pass_grading', manifest['models']['grading'])}.")
+        print(f"Question {info['question']['question_number']}: {len(info['rows'])} failed answer crops; "
+              f"at most {min(args.max_requests, info['max_requests'])} requests, excluding SDK retries. "
+              "Each request includes the question and rubric. Filtered single answers remain for manual review.")
+        print(f"Review and grading revision: {info['revision']}")
+        if not args.confirm_cost:
+            print("No request sent. Obtain data and cost approval before retrying.", file=sys.stderr)
+            return 1
+        if args.revision != info["revision"]:
+            print("Revision changed since preview; no request sent.", file=sys.stderr)
+            return 1
+        tracker = TelemetryTracker(log_dir=info["root"] / "telemetry", config_path=manifest["model_config_path"])
+        set_active_tracker(tracker)
+        try:
+            from .batch_recovery import recover_question_batches
+            result = recover_question_batches(config, path.parent, path, args.question, args.revision,
+                                                 args.max_requests)
+        except (OSError, ValueError, RuntimeError, KeyError) as exc:
+            print(f"Batch recovery stopped: {exc}; requests may have incurred charges.", file=sys.stderr)
+            return 1
+        finally:
+            set_active_tracker(None)
+        print(f"Recovery: {result['recovered']} recovered, {result['blocked']} filtered single answers, "
+              f"{result['pending']} pending; {result['requests']} calls. "
+              f"History: {result['history']}. Human review remains required.")
+        if result["error"]:
+            print(f"Batch recovery stopped on error: {result['error']}", file=sys.stderr)
+            return 1
+        if result["pending"]:
+            print("Request limit reached; remaining answers were not retried.", file=sys.stderr)
+            return 1
+        return 0
+
+    if args.command == "retry-failed-batches":
+        from .grading import inspect_failed_question_batches, retry_failed_question_batches
+        from .rubric import question_key
+
+        try:
+            info = inspect_failed_question_batches(
+                config, path.parent, path, summary, exclude_questions=args.exclude_question,
+            )
+        except (OSError, ValueError, KeyError) as exc:
+            print(f"Cannot inspect batch retry: {exc}", file=sys.stderr)
+            return 1
+        if not info["failed"]:
+            print("No failed answers to retry.")
+            return 0
+        manifest = info["manifest"]
+        counts = [
+            f"{q['question_number']}: {sum(question_key(row['question']) == question_key(q['question_number']) for row in info['failed'])}"
+            for q in info["questions"] if question_key(q["question_number"]) in info["failed_keys"]
+        ]
+        print(
+            f"Batch retry target: project={manifest['project']}, location={manifest['location']}, "
+            f"model={manifest['models'].get('one_pass_grading', manifest['models']['grading'])}.\n"
+            f"Failed answer crops by question: {', '.join(counts)}. "
+            f"Up to {info['requests']} sequential requests, excluding SDK retries; "
+            "each includes the question and rubric. Stops at the first error. "
+            "Previously successful marks are preserved; the remaining questions require a separate resume.\n"
+            f"Checkpoint SHA-256: {info['checkpoint_hash']}"
+        )
+        if args.exclude_question:
+            print(f"Excluded questions remain unchanged: {', '.join(args.exclude_question)}.")
+        if not args.confirm_cost:
+            print("No request sent. Obtain user approval and rerun with --confirm-cost.", file=sys.stderr)
+            return 1
+        if args.checkpoint_sha256 != info["checkpoint_hash"]:
+            print("Checkpoint hash does not match the approved preview; no request sent.", file=sys.stderr)
+            return 1
+        tracker = TelemetryTracker(log_dir=info["target"] / "telemetry", config_path=manifest["model_config_path"])
+        set_active_tracker(tracker)
+        try:
+            retry_failed_question_batches(
+                config, path.parent, path, summary, info["checkpoint_hash"],
+                exclude_questions=args.exclude_question,
+            )
+        except Exception as exc:
+            detail = " ".join(str(exc).split())[:2000] or "No provider error detail available"
+            print(f"Batch retry failed ({type(exc).__name__}): {detail}; requests may have incurred charges.",
+                  file=sys.stderr)
+            return 1
+        finally:
+            set_active_tracker(None)
+        print("Failed question batches retried; preview resume-grading to process the remaining questions.")
+        return 0
+
+    if args.command == "export-failed-review":
+        from .grading import export_failed_review
+
+        try:
+            output = export_failed_review(config, path.parent, path, summary, args.output)
+        except (OSError, ValueError, KeyError) as exc:
+            print(f"Offline review export failed: {exc}; any partial export is not ready for use.",
+                  file=sys.stderr)
+            return 1
+        print(f"Offline manual-review worksheet and crops saved to {output}. "
+              "Marks are not imported into the grading run; no approval was recorded.")
+        return 0
+
     if args.command == "retry-grading":
         from .grading import inspect_retry_grading, retry_grading
 
@@ -895,20 +1157,37 @@ def main(argv=None):
         print("AI analysis approved; later changes invalidate the approval.")
         return 0
     if args.command == "advanced-report":
-        from .advanced import create_advanced_report
+        from .advanced import create_advanced_report, read_approved_analysis, image_generation_settings
         from .run_context import run_directory
 
         analysis_dir = run_directory(config, path.parent, args.run) / "ai-analysis"
         try:
-            model_config_path = None
-            if not getattr(args, "no_infographics", False):
-                with (analysis_dir / "manifest.json").open(encoding="utf-8") as file:
-                    model_config_path = json.load(file)["model_config_path"]
+            import re
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", args.report_name):
+                raise ValueError("Report name must be a simple directory name of at most 64 characters")
+            if args.no_infographics and args.infographics:
+                raise ValueError("--no-infographics cannot be combined with --infographics")
+            if not args.infographics and (args.image_model or args.image_model_config or args.confirm_cost):
+                raise ValueError("Image overrides and cost consent require --infographics")
+            root, validated, _, _, _, _ = read_approved_analysis(config, path.parent, path, run_id=args.run)
+            if (root / args.report_name).exists():
+                raise ValueError("Advanced reports already exist; choose a new --report-name")
+            image_settings = image_generation_settings(root, args.image_model, args.image_model_config) if args.infographics else None
+            model_config_path = image_settings["model_config_path"] if image_settings else None
+            if image_settings:
+                print(f"Infographic target: project={image_settings['project']}, "
+                      f"location={image_settings['location']}, model={image_settings['model']}. "
+                      f"Up to {len(validated[3]) + 1} single-attempt requests send reviewed analysis text; "
+                      "cached images can reduce requests. Verify current image/token prices before consent.")
+                if not args.confirm_cost:
+                    print("No request sent. Obtain data and cost approval and rerun with --confirm-cost.",
+                          file=sys.stderr)
+                    return 1
             tracker = TelemetryTracker(log_dir=analysis_dir / "telemetry", config_path=model_config_path)
             set_active_tracker(tracker)
             output = create_advanced_report(config, path.parent, path, run_id=args.run,
-                                            infographics=not getattr(args, "no_infographics", False),
-                                            image_model=getattr(args, "image_model", None))
+                                            infographics=args.infographics, image_model=args.image_model,
+                                            image_model_config=args.image_model_config, report_name=args.report_name)
             if tracker.traces:
                 tracker.write_cost_report(analysis_dir)
         except (OSError, ValueError, KeyError) as exc:
@@ -944,14 +1223,16 @@ def main(argv=None):
             summary = tracker.get_summary()
             cost_file = tracker.write_cost_report(grading_dir)
             print("============================================================")
-            print("                ADK GEMINI USAGE & COST REPORT              ")
+            print("               GEMINI RECORDED USAGE & COST ESTIMATES       ")
             print("============================================================")
-            print(f"Total API Calls:    {summary['total_calls']}")
+            print(f"Recorded API Calls:{summary['total_calls']}")
             print(f"Total Input Tokens: {summary['total_input_tokens']:,}")
             print(f"Total Output Tokens:{summary['total_output_tokens']:,}")
             print(f"Cached Tokens:      {summary['total_cached_tokens']:,}")
             print(f"Images Generated:   {summary['total_images']}")
-            print(f"Estimated Cost:     ${summary['total_cost_usd']:.4f} USD")
+            print(f"Estimated priced subtotal: ${summary['total_cost_usd']:.4f} USD")
+            if summary["unpriced_calls"]:
+                print(f"Unpriced calls: {summary['unpriced_calls']}; unknown usage is not free.")
             print("------------------------------------------------------------")
             print("By Phase Breakdown:")
             for phase, p_stat in summary.get("by_phase", {}).items():
@@ -962,6 +1243,7 @@ def main(argv=None):
                 print(f"  - {model:20}: {m_stat['calls']} calls, {m_stat['total_tokens']:,} tokens, ${m_stat['cost_usd']:.4f}")
             print("============================================================")
             print(f"Detailed Excel and JSON reports written to: {cost_file.parent}")
+            print("Recorded usage excludes unlogged failures/retry attempts; provider billing determines actual spend.")
         except Exception as exc:
             print(f"Failed to generate cost report: {exc}", file=sys.stderr)
             return 1
@@ -970,18 +1252,22 @@ def main(argv=None):
         from .cleanup import inspect_cleanup_targets, archive_and_clean
 
         try:
-            info = inspect_cleanup_targets(config, path.parent, run_id=args.run)
+            info = inspect_cleanup_targets(config, path.parent, run_id=args.run,
+                                           preserve_reports=not args.purge_reports)
             print(f"Target directory: {info['output_dir']} (run: {info['run_id']})")
-            if not info["items"]:
+            if not info["items"] and not info["deletion_targets"]:
                 print("Output directory is empty or does not exist. Nothing to clean.")
                 return 0
             print("Target contents:")
             for item in info["items"]:
                 print(f"  - {item['name']} ({item['type']}, {item['size']:,} bytes, {item['files']} files)")
             print(f"Total size: {info['total_bytes']:,} bytes")
+            print(f"Items to delete: {', '.join(info['deletion_targets']) or '(none)'}")
             if not args.confirm_delete:
                 archive_note = "A cross-platform archive (.zip) will be created first." if not args.no_archive else "NO ARCHIVE will be created (--no-archive)."
-                preserve_note = "Final reports and analytics will be preserved." if not args.purge_reports else "ALL reports and analytics will be deleted."
+                preserve_note = ("Images, reviews, approvals and final outputs will be preserved."
+                                 if not args.purge_reports else
+                                 "ALL selected outputs will be deleted, including an entire selected child run.")
                 print(f"\nSafety gate: {archive_note} {preserve_note}")
                 print("No files were deleted. Obtain explicit user confirmation and rerun with --confirm-delete.", file=sys.stderr)
                 return 1

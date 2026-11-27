@@ -1,6 +1,8 @@
 """Generate reviewed score workbooks and scored script PDFs."""
 
 import math
+import re
+import unicodedata
 
 from openpyxl import Workbook
 from PIL import Image, ImageDraw, ImageFont
@@ -10,6 +12,16 @@ from .grade_review import read_approved_grading
 from .grading import safe_append
 from .regions import atomic_json, file_hash, resolve_path
 from .rubric import question_key
+
+
+def script_pdf_name(student_id, name, script_index):
+    def component(value):
+        text = unicodedata.normalize("NFC", str(value))
+        text = re.sub(r"[^\w-]+", "_", text).strip("_") or "student"
+        # Bound bytes rather than characters for portable Unicode filenames.
+        return text.encode("utf-8")[:96].decode("utf-8", errors="ignore")
+
+    return f"{component(student_id)}_{component(name)}_script-{script_index + 1:05d}.pdf"
 
 
 def report_rows(validated):
@@ -29,7 +41,7 @@ def report_rows(validated):
             "class": roster[student_id]["class"],
             "marks": question_marks,
             "total": math.fsum(question_marks),
-            "pdf": f"pdfs/script-{index + 1:05d}.pdf",
+            "pdf": f"pdfs/{script_pdf_name(student_id, roster[student_id]['name'], index)}",
         })
     return rows, baselines
 
@@ -233,7 +245,7 @@ def create_reports(config, config_dir, config_path, *, run_id=None):
     if file_hash(grading_root / "review.xlsx") != review_hash or file_hash(grading_root / "approval.json") != approval_hash:
         raise ValueError("Grading approval changed during report generation; discard the partial reports")
     atomic_json(root / "manifest.json", {
-        "version": 1, "review_sha256": review_hash, "grading_approval_sha256": approval_hash,
+        "version": 2, "review_sha256": review_hash, "grading_approval_sha256": approval_hash,
         "students": len(rows), "completed": True,
         "script_pdf_sha256": {row["pdf"]: file_hash(root / row["pdf"]) for row in rows},
     })

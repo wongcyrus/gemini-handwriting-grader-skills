@@ -3,7 +3,9 @@
 ## Inputs and privacy
 
 Require approved grading and completed, current scored PDFs. Ask the user
-for an explicit `ID,EMAIL` CSV matching every present roster ID and a separate YAML
+only for unresolved distribution settings; reuse VERIFIED selections but still
+review the exact new preview and obtain separate dispatch authorization.
+Require an explicit `ID,EMAIL` CSV matching every present roster ID and a separate YAML
 with `sender`, `smtp_host`, `smtp_port`, `smtp_username`, `subject` and
 `body`. Never guess email addresses or store a password in these files.
 Without an attendance list, every roster entry is present. Never infer or
@@ -26,6 +28,10 @@ Never print or commit credentials, previews, student data or generated PDFs.
 3. Immediately before dispatch obtain separate explicit authorization. Run
    `send-email --exam /path/to/exam.yaml --confirm-send`. SMTP uses STARTTLS;
    the program rechecks source, preview, approval and attachments.
+
+Refresh the private [output index](output-index.md) after preview, approval,
+dispatch journal changes, exports or failure. Link preview/collection folders;
+never enumerate recipients or student identities in the index.
 
 ## Failure handling
 

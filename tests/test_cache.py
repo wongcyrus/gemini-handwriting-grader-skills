@@ -3,6 +3,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import yaml
 
@@ -28,6 +29,37 @@ class Provider:
 
 
 class CacheTests(unittest.TestCase):
+    def test_provider_errors_do_not_trigger_duplicate_requests(self):
+        class FailingProvider:
+            def __init__(self):
+                self.ocr_calls = 0
+                self.grade_calls = 0
+
+            def ocr(self, image, field, candidates=None):
+                self.ocr_calls += 1
+                raise TypeError("provider OCR failure")
+
+            def grade(self, question, answer="", image=None):
+                self.grade_calls += 1
+                raise ValueError("provider grading failure")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            provider = FailingProvider()
+            cached = CachedGrader(provider, Path(temporary), [], {}, "endpoint", "v1")
+            with self.assertRaisesRegex(TypeError, "provider OCR failure"):
+                cached.ocr(b"image", "ID", candidates=["001"])
+            with self.assertRaisesRegex(ValueError, "provider grading failure"):
+                cached.grade({"marks": 2}, image=b"image")
+            self.assertEqual((provider.ocr_calls, provider.grade_calls), (1, 1))
+            from handwriting_grader.grading import batch_extract_metadata
+            with patch("handwriting_grader.grading.crop_image", return_value=b"image"):
+                result = batch_extract_metadata(
+                    provider, [0], ["ID"], {"ID": (0, {})}, 1, Path(temporary),
+                    metadata_candidates={"ID": ["001"]},
+                )
+            self.assertEqual(provider.ocr_calls, 2)
+            self.assertEqual(result[0]["errors"], [{"field": "ID", "type": "TypeError"}])
+
     def test_only_enabled_agents_are_cached_and_reused_across_resume(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -39,14 +71,14 @@ class CacheTests(unittest.TestCase):
             self.assertEqual(agents, ["ocr", "grading"])
             models = {"ocr": "o", "grading": "g", "moderation": "m"}
             first = Provider()
-            cached = CachedGrader(first, root / "cache", agents, models, "project", "location")
+            cached = CachedGrader(first, root / "cache", agents, models, "endpoint", "api_version")
             question = {"question_number": "1", "question_text": "Question", "marking_scheme": "Scheme", "marks": 2}
             entries = [{"script_index": 0, "answer": "answer", "mark": 1, "reasoning": "example"}]
             cached.ocr(b"image", "answer")
             cached.grade(question, "answer")
             cached.moderate(question, entries)
             second = Provider()
-            resumed = CachedGrader(second, root / "cache", agents, models, "project", "location")
+            resumed = CachedGrader(second, root / "cache", agents, models, "endpoint", "api_version")
             self.assertEqual(resumed.ocr(b"image", "answer"), "answer")
             self.assertEqual(resumed.grade(question, "answer")["mark"], 1)
             resumed.moderate(question, entries)
@@ -121,7 +153,7 @@ class CacheTests(unittest.TestCase):
                     }
 
             first = BatchProvider()
-            cached = CachedGrader(first, root / "cache", agents, models, "project", "location")
+            cached = CachedGrader(first, root / "cache", agents, models, "endpoint", "api_version")
             q = {"question_number": "1", "question_text": "Q", "marking_scheme": "S", "marks": 2}
             scripts = [{"script_index": 0, "image": b"fake_png_data"}]
             res1 = cached.grade_question_batch(q, scripts)
@@ -129,7 +161,7 @@ class CacheTests(unittest.TestCase):
             self.assertEqual(first.calls, 1)
 
             second = BatchProvider()
-            resumed = CachedGrader(second, root / "cache", agents, models, "project", "location")
+            resumed = CachedGrader(second, root / "cache", agents, models, "endpoint", "api_version")
             res2 = resumed.grade_question_batch(q, scripts)
             self.assertEqual(res2.grades[0].mark, 2.0)
             self.assertEqual(second.calls, 0)

@@ -78,12 +78,13 @@ Metadata extraction operates in high-speed, structured batch mode (`ocr_metadata
   - Automatically loads the complete student roster (`id`, `name`, `class`) from `present_roster` or `roster_ids`.
   - Injects the official enrolled roster into the batch prompt.
   - Gemini cross-references the three fields simultaneously: smudged handwriting in an ID is resolved by reading the printed or cursive Name and Class, and vice versa.
-  - Achieves **100% exact match** against enrolled student records without hallucinating non-existent students.
+  - Candidate lists help disambiguation but do not guarantee exact matching or prevent hallucinations. Review every identity.
 - **Speed & Efficiency**:
   - Replaces $N \times 3$ sequential single-field calls (e.g. 222 API calls for 74 students) with only $\lceil N / 35 \rceil$ structured batch calls (e.g. 3 calls).
-  - Completes full-cohort metadata OCR in **~40 seconds** instead of 5–10 minutes.
-- **Graceful Fallback**:
-  - If batch metadata extraction is unsupported or fails, the engine falls back seamlessly to individual field-by-field OCR with candidate list guidance.
+  - Latency depends on model, cohort, region, and service availability; no timing guarantee is made.
+- **Compatibility Without Hidden Retry**:
+  - Providers without batch metadata support use individual fields. A failed
+    native batch does not silently fall back to additional billable calls.
 - **Model**: `gemini-3.8-flash`, `temperature=0`, `thinking_budget=0` (eliminates latency overhead).
 
 ---
@@ -154,7 +155,7 @@ To prevent loss of work or duplicate billing if a network error occurs:
 
 ## 6. Built-in SDK Retry Primitives & Targeted `retry-grading` Recovery
 
-### Built-in GenAI SDK / ADK Retry Architecture
+### Built-in GenAI SDK Retry Architecture
 Connection-level transient errors (429 RateLimit/ResourceExhausted, 500 Internal, 502 Bad Gateway, 503 ServiceUnavailable, 504 DeadlineExceeded) are handled automatically by the Google GenAI SDK client via `types.HttpOptions`:
 ```python
 http_options=types.HttpOptions(
@@ -239,10 +240,14 @@ Live tests against the grading prompt with real injection payloads verify that G
 
 ## 8. Semantic Answer Clustering & Dynamic Thresholding (`cluster-answers`)
 
-To accelerate teacher moderation and enforce cohort grading consistency across dozens or hundreds of scripts, the engine provides an optional semantic clustering step between grading and review:
+Optional semantic grouping can help teachers compare answers; it does not enforce
+correct or consistent grading. Local word overlap remains available without model calls:
 
 ```bash
-handwriting-grader cluster-answers --exam exam.yaml [--threshold 0.82] [--embedding-model gemini-embedding-2]
+handwriting-grader cluster-answers --exam exam.yaml --model-config /private/embedding.yaml --preview-embedding
+# After data/cost approval, using the printed review/configuration revision:
+handwriting-grader cluster-answers --exam exam.yaml --model-config /private/embedding.yaml \
+  --threshold 0.82 --revision REVISION --confirm-cost
 ```
 
 ### 8.1 How Cluster Count is Decided (Dynamic Greedy Thresholding)
@@ -274,11 +279,12 @@ Teachers can tune the clustering granularity for different subject areas:
 | **`0.72` – `0.78`** | Loose / Broad | **Fewer clusters** | Long-form descriptive explanations or essay prompts where teachers want broad thematic groupings. |
 
 ### 8.3 Cross-Question & Cross-Assignment Embedding Cache
-Embeddings are computationally cached in a global shared cache:
-- **Location**: `~/.cache/gemini-handwriting-grader/embeddings/<model>.json` (or `caching.directory` if configured).
-- **Partitioned by Model**: Safe filenames (e.g. `gemini-embedding-2.json`).
-- **Atomic Persistence**: Flushes safely via atomic rename to eliminate race conditions.
-- **Zero Redundant API Calls**: Any unique answer phrase embedded once is reused indefinitely across all questions within an exam and across all exams/assignments graded on that machine.
+Embedding caches require explicit enablement; shared reuse additionally requires
+an explicit private directory and shared scope. Cache identity includes model and
+Vertex project/location, with no automatic home-directory fallback. Matching
+vectors can avoid calls; misses still incur consented requests. Atomic publication
+does not guarantee freedom from all concurrent-update races. See
+[Model Configuration & Caching](model-configuration-and-caching.md).
 
 ### 8.4 Adaptive Review UI & Student Privacy Safeguards
 In the Score Editor (`review-grading`):

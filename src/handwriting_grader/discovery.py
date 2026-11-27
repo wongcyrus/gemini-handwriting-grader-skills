@@ -209,7 +209,7 @@ def discover_best_tier_models(
     project: str,
     location: str = "global",
     candidate_locations: Optional[List[str]] = None,
-    probe: bool = True,
+    probe: bool = False,
 ) -> Dict[str, Any]:
     """Query Vertex AI online and discover the best active Flash and Reasoning models."""
     locs = [location]
@@ -368,7 +368,7 @@ def write_model_config(
     location: str,
     step_models: Dict[str, str],
 ) -> Dict[str, Any]:
-    """Write or update an AI model config YAML file with per-step model allocations."""
+    """Write a new AI model config without replacing an existing configuration."""
     config_data = {
         "vertex_ai": {
             "use_vertexai": True,
@@ -387,7 +387,7 @@ def write_model_config(
             "embedding": step_models.get("embedding", "gemini-embedding-2"),
         },
         "caching": {
-            "enabled": True,
+            "enabled": False,
             "scope": "run",
             "agents": {
                 "annotation": True,
@@ -405,7 +405,7 @@ def write_model_config(
 
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as file:
+    with path.open("x", encoding="utf-8") as file:
         yaml.safe_dump(config_data, file, sort_keys=False, allow_unicode=True)
     return config_data
 
@@ -414,10 +414,12 @@ def discover_and_report(
     project: str,
     location: str = "global",
     write_config_path: Optional[Path] = None,
+    *,
+    probe: bool = False,
 ) -> Dict[str, Any]:
     """Discover best models online by tier, allocate per-step, and optionally write config."""
     print(f"Discovering active models and pricing tiers online for project={project}...")
-    tier_models = discover_best_tier_models(project, location)
+    tier_models = discover_best_tier_models(project, location, probe=probe)
     working_loc = tier_models["location"]
     step_models = resolve_step_models(tier_models)
 

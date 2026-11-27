@@ -32,7 +32,7 @@ from handwriting_grader.cli import check_exam, main
 from handwriting_grader.grade_review import approve_grading, read_approved_grading, validate_review
 from handwriting_grader.grading import VertexGrader, approved_inputs, grade_exam, resume_grading, safe_append
 from handwriting_grader.regions import atomic_json, file_hash, prepare_regions, verify_run
-from handwriting_grader.reporting import passing_policy, passing_rows, sample_rows, write_workbooks
+from handwriting_grader.reporting import passing_policy, passing_rows, report_rows, sample_rows, write_workbooks
 from handwriting_grader.rubric import approve_rubric, import_rubric, write_rubric
 from handwriting_grader.score_editor import ScoreServer
 
@@ -184,6 +184,10 @@ class GradingTests(unittest.TestCase):
 
     def test_saved_clusters_do_not_override_current_threshold_answers_or_model(self):
         server = object.__new__(ScoreServer)
+        server.allow_ai = True
+        server.expected_revision = None
+        server.embedding_tracker = None
+        server.embedding_cache_enabled = False
         server.lock = threading.Lock()
         server.embedding_lock = threading.Lock()
         server.root = self.root
@@ -460,24 +464,24 @@ class GradingTests(unittest.TestCase):
                 page = browser.new_page()
                 page.on("dialog", lambda dialog: dialog.accept())
                 page.goto(f"{self.score_server.origin}/#{self.score_server.token}")
-                page.get_by_text("Review each identity and every mark before approval.").wait_for()
+                self.assert_browser_status(page, "Review each identity and every mark before approval.")
                 self.assertNotIn(self.score_server.token, page.url)
                 for index, student in enumerate(("001", "002")):
                     page.locator("#section").select_option("id")
                     page.locator("#marksheet-tbody select").nth(index).select_option(student)
-                    page.get_by_text(f"Script #{index + 1} identity saved and reviewed.").wait_for()
+                    self.assert_browser_status(page, f"Script #{index + 1} identity saved and reviewed.")
                 page.get_by_role("button", name="Q1").click()
                 page.locator("#inline-mark-0").fill("2")
                 page.locator("#inline-mark-0").press("Enter")
-                page.get_by_text("Script #1 saved and reviewed.").wait_for()
+                self.assert_browser_status(page, "Script #1 saved and reviewed.")
                 page.locator("#inline-ans-0").fill("Corrected answer")
                 page.locator("#inline-rev-0").click()
-                page.get_by_text("Script #1 saved and reviewed.").wait_for()
+                self.assert_browser_status(page, "Script #1 saved and reviewed.")
                 page.locator("#inline-rev-1").click()
-                page.get_by_text("Script #2 saved and reviewed.").wait_for()
-                page.locator("#approve").click()
+                self.assert_browser_status(page, "Script #2 saved and reviewed.")
+                page.keyboard.press("Alt+a")
                 page.locator("#kb-confirm-ok").click()
-                page.get_by_text("Approved 2 students and 2 marks.").wait_for()
+                self.assert_browser_status(page, "Approved 2 students and 2 marks.")
                 reviewed = read_approved_grading(self.config, self.root, self.exam)
                 self.assertEqual(reviewed[2]["marks"][0]["answer"], "Corrected answer")
                 self.assertEqual(reviewed[6][(0, "1")], 2)
@@ -506,9 +510,9 @@ class GradingTests(unittest.TestCase):
             try:
                 page = browser.new_page()
                 page.goto(f"{self.score_server.origin}/#{self.score_server.token}")
-                page.get_by_text("Review each identity and every mark before approval.").wait_for()
+                self.assert_browser_status(page, "Review each identity and every mark before approval.")
                 page.get_by_role("button", name="Q1").click()
-                self.assertEqual(page.locator("#marksheet-tbody tr").count(), 2)
+                self.assertEqual(page.locator("#marksheet-tbody tr:not(.group-divider)").count(), 2)
                 self.assertIn('<img src=x', page.locator("#inline-ans-1").input_value())
                 page.locator("#marksheet-tbody td strong", has_text="#2").click()
                 self.assertEqual(page.locator("#script").input_value(), "1")
@@ -536,14 +540,26 @@ class GradingTests(unittest.TestCase):
             try:
                 page = browser.new_page()
                 page.goto(f"{self.score_server.origin}/#{self.score_server.token}")
-                page.get_by_text("Review each identity and every mark before approval.").wait_for()
+                self.assert_browser_status(page, "Review each identity and every mark before approval.")
                 page.get_by_role("button", name="Q1").click()
                 page.locator("#marksheet-tbody img.answer-crop-img").first.click()
                 page.locator("#image-modal[open]").wait_for()
-                page.wait_for_function("() => document.querySelector('#modal-img').naturalWidth > 0")
+                self.wait_for_browser(page, "() => document.querySelector('#modal-img').naturalWidth > 0")
             finally:
                 browser.close()
         self.assertEqual(file_hash(root / "review.xlsx"), before)
+
+    def assert_browser_status(self, page, text):
+        from playwright.sync_api import expect
+
+        expect(page.locator("#status")).to_have_text(text)
+
+    def wait_for_browser(self, page, predicate):
+        for _ in range(200):
+            if page.evaluate(predicate):
+                return
+            page.wait_for_timeout(25)
+        self.fail(f"Browser did not reach expected state: {predicate}")
 
     def test_preview_requires_consent_and_real_prerequisites(self):
         models = yaml.safe_load(self.models.read_text())
@@ -558,7 +574,7 @@ class GradingTests(unittest.TestCase):
             self.assertEqual(main(arguments), 1)
             run.assert_not_called()
         self.assertIn("Cache: disabled; location=none", output.getvalue())
-        self.assertIn("Up to 7 requests", output.getvalue())
+        self.assertIn("Up to 2 requests", output.getvalue())
         self.assertFalse((self.root / "output" / "grading").exists())
 
     def test_review_diagnostics_reports_multiple_issues_without_approval(self):
@@ -837,6 +853,8 @@ class GradingTests(unittest.TestCase):
             approved_inputs(self.config, self.root, self.exam)
 
     def test_reports_require_approval_and_use_reviewed_marks(self):
+        from handwriting_grader.moodle import export_moodle
+
         root = self.run_grading()
         self.fill_review(root / "review.xlsx", flagged_override=2)
         arguments = ["report", "--exam", str(self.exam)]
@@ -849,7 +867,7 @@ class GradingTests(unittest.TestCase):
         book = load_workbook(reports / "score_report.xlsx", read_only=True)
         try:
             rows = list(book["Marks"].values)
-            self.assertEqual(rows[1], ("001", "One", "A", 2, "pdfs/script-00001.pdf"))
+            self.assertEqual(rows[1], ("001", "One", "A", 2, "pdfs/001_One_script-00001.pdf"))
             self.assertEqual(rows[2][3], 1)
         finally:
             book.close()
@@ -857,14 +875,45 @@ class GradingTests(unittest.TestCase):
         try:
             self.assertEqual(book.sheetnames, ["Marks", "Answers", "Reasoning", "AnswersRaw", "ReasoningRaw"])
             self.assertEqual(book["Marks"]["D2"].value, 2)
+            self.assertEqual(book["Marks"]["F2"].value, "pdfs/001_One_script-00001.pdf")
             self.assertEqual(book["Answers"]["D2"].value, "Example answer")
         finally:
             book.close()
-        self.assertEqual(len(PdfReader(reports / "pdfs" / "script-00001.pdf").pages), 2)
+        self.assertEqual(len(PdfReader(reports / "pdfs" / "001_One_script-00001.pdf").pages), 2)
         self.assertEqual(len(PdfReader(reports / "all.pdf").pages), 4)
         self.assertEqual(file_hash(root / "images" / "0.jpg"), image_hash)
-        self.assertTrue(json.loads((reports / "manifest.json").read_text())["completed"])
+        manifest = json.loads((reports / "manifest.json").read_text())
+        self.assertTrue(manifest["completed"])
+        self.assertEqual(manifest["version"], 2)
+        self.assertIn("pdfs/001_One_script-00001.pdf", manifest["script_pdf_sha256"])
+        export_moodle(self.config, self.root, self.exam)
+        self.assertEqual(
+            (root.parent / "moodle" / "student_pdfs" / "001_One.pdf").read_bytes(),
+            (reports / "pdfs" / "001_One_script-00001.pdf").read_bytes(),
+        )
         self.assertEqual(main(arguments), 1)
+
+    def test_report_paths_include_safe_unicode_identity_and_remain_unique(self):
+        from handwriting_grader.rubric import question_key
+
+        ids = ["00/1", "00:1", "003"]
+        name = "Zo\u00eb \u674e\u5c0f\u660e / .."
+        roster = {
+            sid: {"name": name if index < 2 else "\u674e" * 100, "class": "A"}
+            for index, sid in enumerate(ids)
+        }
+        identities = dict(enumerate(ids))
+        results = {"marks": [{"script_index": index, "question": "Q1"} for index in identities]}
+        marks = {(index, question_key("Q1")): 1 for index in identities}
+        rows, _ = report_rows((None, None, results, [{"question_number": "Q1"}], roster, identities, marks))
+        self.assertEqual(rows[0]["pdf"], "pdfs/00_1_Zo\u00eb_\u674e\u5c0f\u660e_script-00001.pdf")
+        self.assertEqual(rows[1]["pdf"], "pdfs/00_1_Zo\u00eb_\u674e\u5c0f\u660e_script-00002.pdf")
+        self.assertEqual(len({row["pdf"].casefold() for row in rows}), 3)
+        for row in rows:
+            path = Path(row["pdf"])
+            self.assertEqual(path.parent, Path("pdfs"))
+            self.assertLessEqual(len(path.name.encode("utf-8")), 255)
+            self.assertEqual(row["name"], roster[row["id"]]["name"])
 
     def test_stale_review_cannot_generate_reports(self):
         root = self.run_grading()
@@ -1137,11 +1186,39 @@ class GradingTests(unittest.TestCase):
             self.assertEqual(server.sendmail.call_count, 2)
             self.assertEqual(server.sendmail.call_args_list[0].args[1], ["one@example.test"])
             self.assertIn(b"application/pdf", server.sendmail.call_args_list[0].args[2])
+            self.assertIn(b"001_One_script-00001.pdf", server.sendmail.call_args_list[0].args[2])
             self.assertEqual(main(send + ["--confirm-send"]), 1)
             self.assertEqual(server.sendmail.call_count, 2)
         delivery = json.loads((root.parent / "email" / "delivery.json").read_text())
         self.assertEqual(delivery["status"], "completed")
         self.assertEqual(len(delivery["sent"]), 2)
+
+    def test_legacy_report_paths_remain_usable_and_integrity_checked(self):
+        from handwriting_grader.distribution import approved_report
+        from handwriting_grader.moodle import export_moodle
+
+        root, settings, recipients = self.prepare_email()
+        _, rows, reports = approved_report(self.config, self.root, self.exam)
+        manifest = json.loads((reports / "manifest.json").read_text())
+        hashes = {}
+        for row in rows:
+            legacy = f"pdfs/script-{row['script_index'] + 1:05d}.pdf"
+            (reports / row["pdf"]).rename(reports / legacy)
+            hashes[legacy] = manifest["script_pdf_sha256"][row["pdf"]]
+        manifest.update(version=1, script_pdf_sha256=hashes)
+        atomic_json(reports / "manifest.json", manifest)
+        _, legacy_rows, _ = approved_report(self.config, self.root, self.exam)
+        self.assertEqual(legacy_rows[0]["pdf"], "pdfs/script-00001.pdf")
+        self.assertEqual(main(["preview-email", "--exam", str(self.exam), "--settings", str(settings),
+                               "--recipients", str(recipients)]), 0)
+        export_moodle(self.config, self.root, self.exam)
+        self.assertEqual(
+            (root.parent / "moodle" / "student_pdfs" / "001_One.pdf").read_bytes(),
+            (reports / "pdfs" / "script-00001.pdf").read_bytes(),
+        )
+        (reports / "pdfs" / "script-00001.pdf").write_bytes(b"changed")
+        with self.assertRaisesRegex(ValueError, "changed"):
+            approved_report(self.config, self.root, self.exam)
 
     def test_email_refuses_changed_recipients_or_attachment(self):
         root, settings, recipients = self.prepare_email()
@@ -1151,7 +1228,7 @@ class GradingTests(unittest.TestCase):
         self.assertEqual(main(["approve-email", "--exam", str(self.exam), "--confirm-reviewed"]), 1)
         self.assertFalse((root.parent / "email" / "approval.json").exists())
         recipients.write_text("ID,EMAIL\n001,one@example.test\n002,two@example.test\n")
-        (root.parent / "reports" / "pdfs" / "script-00001.pdf").write_bytes(b"changed")
+        (root.parent / "reports" / "pdfs" / "001_One_script-00001.pdf").write_bytes(b"changed")
         self.assertEqual(main(["approve-email", "--exam", str(self.exam), "--confirm-reviewed"]), 1)
 
     def test_email_delivery_failure_is_not_retried_automatically(self):

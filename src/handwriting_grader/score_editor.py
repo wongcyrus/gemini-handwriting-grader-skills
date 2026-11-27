@@ -1,5 +1,6 @@
 """Local browser review of identities, OCR and scores."""
 
+import hashlib
 import hmac
 import json
 import math
@@ -9,6 +10,7 @@ import secrets
 import shutil
 import tempfile
 import threading
+import time
 from contextlib import contextmanager
 from decimal import Decimal, InvalidOperation, ROUND_FLOOR, localcontext
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -23,7 +25,7 @@ from .attendance import present_roster
 from .cache import shared_embedding_cache_path
 from .grade_review import approve_grading, confirmed, read_approved_grading, reviewed_rows, verify_grading_run
 from .grading import approved_inputs, crop_image
-from .regions import file_hash
+from .regions import atomic_json, file_hash
 from .rubric import question_key
 from .run_context import run_directory
 
@@ -66,20 +68,37 @@ def load_state(server):
                 "reviewed_id": item["reviewed_id"], "reviewed": confirmed(item["reviewed"]),
             }
         marks = {}
+        mark_headers = [str(cell.value).strip().lower() if cell.value is not None else ""
+                        for cell in book["Marks"][1]]
+        if mark_headers.count("recovery_touched") > 1:
+            raise ValueError("Review workbook has duplicate recovery columns")
+        touched_column = mark_headers.index("recovery_touched") + 1 if "recovery_touched" in mark_headers else None
+        touched = {}
+        if touched_column:
+            for row in book["Marks"].iter_rows(min_row=2):
+                pair = (row[mark_headers.index("script_index")].value,
+                        question_key(row[mark_headers.index("question")].value))
+                touched[pair] = row[touched_column - 1].value == "yes"
         for item in reviewed_rows(book, "Marks", (
                 "script_index", "question", "answer", "reasoning", "manual_mark", "reviewed")):
             pair = (item["script_index"], question_key(item["question"]))
             if type(pair[0]) is not int or pair not in expected_marks or pair in marks:
                 raise ValueError("Review workbook contains invalid marks")
             original = raw_marks[pair]
+            use_recovered = (
+                original.get("batch_recovery_review_pending") is True
+                and item["answer"] in (None, "") and item["reasoning"] in (None, "")
+                and item["manual_mark"] is None and not confirmed(item["reviewed"]) and not touched.get(pair)
+            )
             marks[pair] = {
-                "answer": item["answer"] if item["answer"] is not None else "",
-                "reasoning": item["reasoning"] if item["reasoning"] is not None else "",
+                "answer": original["answer"] if use_recovered else (item["answer"] if item["answer"] is not None else ""),
+                "reasoning": original["reasoning"] if use_recovered else (item["reasoning"] if item["reasoning"] is not None else ""),
                 "manual_mark": item["manual_mark"], "reviewed": confirmed(item["reviewed"]),
                 "raw_mark": original["raw_mark"], "moderated_mark": original["moderated_mark"],
                 "similarity_score": original.get("similarity_score"),
                 "moderator_flag": original["moderator_flag"], "moderator_note": original["moderator_note"],
                 "grading_failed": original["grading_failed"], "original_answer": original["answer"],
+                "batch_recovery_review_pending": original.get("batch_recovery_review_pending", False),
                 "previous": previous.get(pair),
             }
         if set(scripts) != expected or set(marks) != expected_marks:
@@ -200,6 +219,11 @@ def _apply_review_item(book, roster, questions, scripts, marks, data, *, seen_id
             cell = sheet.cell(row, pos[name], value)
             cell.data_type = "s"
         sheet.cell(row, pos["manual_mark"]).value = manual
+        if original.get("batch_recovery_review_pending"):
+            headers = [str(cell.value).strip().lower() if cell.value is not None else "" for cell in sheet[1]]
+            column = headers.index("recovery_touched") + 1 if "recovery_touched" in headers else len(headers) + 1
+            sheet.cell(1, column, "recovery_touched")
+            sheet.cell(row, column, "yes")
     else:
         raise ValueError("Invalid review kind")
     sheet.cell(row, pos["reviewed"], "yes" if reviewed else "")
@@ -236,6 +260,10 @@ def reset_review(server, data):
             temp = Path(file.name)
         temp.unlink(missing_ok=True)
         write_review(temp, results, overwrite=False)
+        verify_grading_run(server.config, server.config_dir, server.config_path, run_id=server.run_id)
+        if (file_hash(root / "review.xlsx") != review_hash or file_hash(root / "results.json") != result_hash
+                or file_hash(root / "manifest.json") != manifest_hash):
+            raise RuntimeError("Grading or review changed during reset; reload before resetting")
         os.replace(temp, root / "review.xlsx")
     finally:
         if temp is not None:
@@ -385,8 +413,18 @@ def writer_lock(server):
         lock.unlink(missing_ok=True)
 
 
+
+def _embedding_namespace(settings):
+    vertex = settings.get("vertex_ai", {})
+    return json.dumps([vertex.get("project_id"),
+                       vertex.get("location", "global")], separators=(",", ":"))
+
+
 class ScoreServer(ThreadingHTTPServer):
-    def __init__(self, config, config_dir, port=0, config_path=None, *, run_id=None):
+    def __init__(self, config, config_dir, port=0, config_path=None, *, run_id=None, allow_ai=False,
+                 embedding_model_config=None):
+        import yaml
+
         self.config, self.config_dir, self.config_path = config, config_dir, config_path
         self.run_id = run_id
         self.token = secrets.token_urlsafe(32)
@@ -396,55 +434,48 @@ class ScoreServer(ThreadingHTTPServer):
         self.image_lock = threading.Lock()
         self.embedding_cache = {}
         self.embedding_lock = threading.Lock()
+        self.allow_ai = allow_ai is True
         self._genai_client = None
         self._embedding_model = None
-
-        _, model_name = self.get_embedding_client()
-        self.embedding_model_name = model_name
-        model_cfg_path = Path(config_dir) / config.get("exam", {}).get("model_config", "config.yaml")
-        if not model_cfg_path.is_file():
-            model_cfg_path = Path("config.yaml")
-        self.shared_cache_path = shared_embedding_cache_path(model_cfg_path if model_cfg_path.is_file() else None, model_name)
-
-        # 1. Load from cross-assignment shared cache
-        if self.shared_cache_path.is_file():
-            try:
-                with self.shared_cache_path.open("r", encoding="utf-8") as f:
-                    self.embedding_cache.update(json.load(f))
-            except Exception:
-                pass
+        self.embedding_tracker = None
+        self.expected_revision = None
+        self.embedding_model_name = "none"
+        self.embedding_namespace = ""
+        self.shared_cache_path = None
+        self.embedding_model_config = Path(embedding_model_config) if embedding_model_config else (
+            Path(config_dir) / config["exam"].get("model_config", "config.yaml")
+        )
+        if embedding_model_config is None and not self.embedding_model_config.is_file():
+            self.embedding_model_config = Path("config.yaml")
+        self.embedding_cache_enabled = False
+        self._embedding_config_digest = None
+        embedding_settings = {}
+        if self.embedding_model_config.is_file():
+            self._embedding_config_digest = file_hash(self.embedding_model_config)
+            with self.embedding_model_config.open(encoding="utf-8") as file:
+                embedding_settings = yaml.safe_load(file) or {}
+            cache_settings = embedding_settings.get("caching", {})
+            if not isinstance(cache_settings, dict) or type(cache_settings.get("enabled", False)) is not bool:
+                raise ValueError("caching must be a mapping with a boolean enabled setting")
+            self.embedding_cache_enabled = cache_settings.get("enabled", False)
+            shared_embedding_cache_path(self.embedding_model_config)
 
         root, manifest, _, questions = verify_grading_run(config, config_dir, config_path, run_id=run_id)
         self.root = root
 
-        # 2. Load and merge assignment-local cache if present
         cache_path = root / ".embedding_cache.json"
-        if cache_path.is_file():
+        if self.embedding_cache_enabled and cache_path.is_file():
             try:
                 with cache_path.open("r", encoding="utf-8") as f:
-                    self.embedding_cache.update(json.load(f))
-            except Exception:
-                pass
-
-        # 3. Seed shared cache if local has entries not yet in shared cache
-        if self.embedding_cache:
-            try:
-                self.shared_cache_path.parent.mkdir(parents=True, exist_ok=True)
-                shared_to_write = {}
-                if self.shared_cache_path.is_file():
-                    try:
-                        with self.shared_cache_path.open("r", encoding="utf-8") as f:
-                            shared_to_write = json.load(f)
-                    except Exception:
-                        shared_to_write = {}
-                if len(self.embedding_cache) > len(shared_to_write):
-                    shared_to_write.update(self.embedding_cache)
-                    tmp_p = self.shared_cache_path.with_suffix(".tmp")
-                    with tmp_p.open("w", encoding="utf-8") as f:
-                        json.dump(shared_to_write, f)
-                    tmp_p.replace(self.shared_cache_path)
-            except Exception:
-                pass
+                    cached = json.load(f)
+                if (cached.get("version") == 1 and isinstance(cached.get("embeddings"), dict)
+                        and cached.get("namespace") == _embedding_namespace(embedding_settings)
+                        and cached.get("model") == embedding_settings.get("models", {}).get("embedding")):
+                    self.embedding_cache.update(cached["embeddings"])
+                    self.embedding_namespace = cached["namespace"]
+                    self.embedding_model_name = cached["model"]
+            except (OSError, ValueError, TypeError) as exc:
+                raise ValueError(f"Cannot read embedding cache: {exc}") from exc
 
         clusters_path = root / "clusters.json"
         self.precomputed_clusters = {}
@@ -454,7 +485,10 @@ class ScoreServer(ThreadingHTTPServer):
                     self.precomputed_clusters = json.load(f)
             except Exception:
                 self.precomputed_clusters = {}
-        self.has_clusters = bool(self.precomputed_clusters) or bool(self.embedding_cache)
+        self.has_clusters = bool(self.embedding_cache) or any(
+            isinstance(value, dict) and value.get("method") == "embedding" and value.get("answer_hash")
+            for value in self.precomputed_clusters.values()
+        )
         self.questions = questions
         self.effective_crops = manifest.get("effective_crops", {})
         _, _, _, boxes = approved_inputs(config, config_dir, config_path)
@@ -466,41 +500,88 @@ class ScoreServer(ThreadingHTTPServer):
         load_state(self)
         super().__init__(("127.0.0.1", port), ScoreHandler)
 
-    def get_embedding_client(self):
-        if self._genai_client is None:
-            try:
-                from google import genai
-                import yaml
-                model_cfg_path = Path(self.config_dir) / self.config["exam"].get("model_config", "config.yaml")
-                if not model_cfg_path.is_file():
-                    model_cfg_path = Path("config.yaml")
-                if model_cfg_path.is_file():
-                    with open(model_cfg_path, encoding="utf-8") as f:
-                        cfg = yaml.safe_load(f)
-                    vertex = cfg.get("vertex_ai", {})
-                    project = vertex.get("project_id", os.environ.get("GOOGLE_CLOUD_PROJECT"))
-                    location = vertex.get("location", "global")
-                    self._embedding_model = cfg.get("models", {}).get("embedding", "gemini-embedding-2")
-                    from .discovery import validate_model_eligibility
-                    validate_model_eligibility(self._embedding_model, agent="embedding")
-                    self._genai_client = genai.Client(vertexai=True, project=project, location=location)
-                else:
-                    self._genai_client = None
-                    self._embedding_model = "gemini-embedding-2"
-            except Exception:
-                self._genai_client = None
-                self._embedding_model = "gemini-embedding-2"
-        return self._genai_client, self._embedding_model or "gemini-embedding-2"
 
-    def cluster_question(self, question_idx, threshold=0.82):
+    def _verify_embedding_config(self):
+        digest = getattr(self, "_embedding_config_digest", None)
+        if digest is not None and file_hash(self.embedding_model_config) != digest:
+            raise ValueError("Embedding model configuration changed; preview again before any request")
+
+    def embedding_preview_revision(self, revision):
+        self._verify_embedding_config()
+        return hashlib.sha256(
+            f"{revision}:{file_hash(self.embedding_model_config)}".encode("utf-8")
+        ).hexdigest()
+
+    def get_embedding_client(self):
+        if not self.allow_ai:
+            return None, self.embedding_model_name
+        self._verify_embedding_config()
+        with self.embedding_lock:
+            if self._genai_client is None:
+                import yaml
+                from google import genai
+                from .suggestions import load_model_settings
+                from .cache import validate_private_cache_directory
+                from .telemetry import TelemetryTracker
+
+                model_cfg_path = self.embedding_model_config
+                with model_cfg_path.open(encoding="utf-8") as file:
+                    cfg = yaml.safe_load(file) or {}
+                vertex = cfg.get("vertex_ai", {})
+                project = vertex.get("project_id")
+                location = vertex.get("location", "global")
+                if (vertex.get("use_vertexai") is not True or not isinstance(project, str)
+                        or not project.strip() or not isinstance(location, str) or not location.strip()):
+                    raise ValueError("AI clustering requires an explicit Vertex project and location")
+                model = load_model_settings(model_cfg_path, "embedding")
+                namespace = _embedding_namespace(cfg)
+                cache_path = shared_embedding_cache_path(model_cfg_path, model, namespace=namespace)
+                shared_embeddings = {}
+                if cache_path is not None:
+                    cache_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                    validate_private_cache_directory(cache_path.parent)
+                    if cache_path.is_file():
+                        with cache_path.open(encoding="utf-8") as file:
+                            shared_embeddings = json.load(file)
+                        if not isinstance(shared_embeddings, dict):
+                            raise ValueError("Shared embedding cache must be a mapping")
+                self._verify_embedding_config()
+                client = genai.Client(vertexai=True, project=project, location=location)
+                if self.embedding_namespace != namespace or self.embedding_model_name != model:
+                    self.embedding_cache.clear()
+                self.embedding_namespace = namespace
+                self.embedding_model_name = self._embedding_model = model
+                self.shared_cache_path = cache_path
+                self.embedding_cache.update(shared_embeddings)
+                self.embedding_tracker = TelemetryTracker(log_dir=self.root / "telemetry",
+                                                          config_path=model_cfg_path)
+                self._genai_client = client
+        return self._genai_client, self._embedding_model
+
+    def server_close(self):
+        try:
+            if self._genai_client is not None:
+                self._genai_client.close()
+                self._genai_client = None
+        finally:
+            super().server_close()
+
+    def cluster_question(self, question_idx, threshold=None):
         from concurrent.futures import ThreadPoolExecutor
         import numpy as np
 
         with self.lock:
             root, revision, roster, questions, scripts, marks = load_state(self)
+        if self.expected_revision is not None and revision != self.expected_revision:
+            raise ValueError("Grading or review changed after the embedding preview")
         if not (0 <= question_idx < len(questions)):
             raise ValueError("Invalid question index")
         q_num = questions[question_idx]["question_number"]
+        saved = self.precomputed_clusters.get(q_num)
+        if threshold is None:
+            threshold = saved.get("threshold", 0.82) if isinstance(saved, dict) else 0.82
+        if not isinstance(threshold, (int, float)) or not 0 <= threshold <= 1:
+            raise ValueError("Clustering threshold must be between 0 and 1")
         # Rebuild membership from current answers and vectors, not potentially stale saved groups.
         q_key = question_key(q_num)
 
@@ -509,6 +590,13 @@ class ScoreServer(ThreadingHTTPServer):
             mark = marks.get((s_idx, q_key), {})
             ans = (mark.get("answer") or "").strip()
             script_answers[s_idx] = ans
+        answer_hash = hashlib.sha256(json.dumps(
+            script_answers, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")).hexdigest()
+
+        if (not self.allow_ai and isinstance(saved, dict) and saved.get("method") == "embedding"
+                and saved.get("answer_hash") == answer_hash and saved.get("threshold") == threshold):
+            return saved
 
         norm_map = {}
         for ans in script_answers.values():
@@ -524,7 +612,7 @@ class ScoreServer(ThreadingHTTPServer):
                     "id": 1, "rep_text": "(empty)", "avg_similarity": 1.0,
                     "scripts": [{"script_index": s_idx, "similarity": 1.0} for s_idx in sorted(script_answers)]
                 }],
-                "model": "none"
+                "model": "none", "method": "empty", "answer_hash": answer_hash
             }
 
         client, model_name = self.get_embedding_client()
@@ -539,13 +627,19 @@ class ScoreServer(ThreadingHTTPServer):
                 else:
                     to_fetch.append(n)
 
-        if to_fetch and client is not None:
+        if to_fetch and client is not None and self.allow_ai:
             def _embed(norm_k):
-                try:
-                    res = client.models.embed_content(model=model_name, contents=norm_map[norm_k])
-                    return norm_k, res.embeddings[0].values
-                except Exception:
-                    return norm_k, None
+                self._verify_embedding_config()
+                started = time.monotonic()
+                res = client.models.embed_content(model=model_name, contents=norm_map[norm_k])
+                if self.embedding_tracker is not None:
+                    self.embedding_tracker.record_call(
+                        "embedding", f"Question {q_num}", model_name,
+                        getattr(res, "usage_metadata", None), time.monotonic() - started,
+                    )
+                if not res.embeddings or not res.embeddings[0].values:
+                    raise ValueError("Embedding response returned no vector")
+                return norm_k, res.embeddings[0].values
 
             new_embeddings = {}
             with ThreadPoolExecutor(max_workers=min(8, len(to_fetch))) as executor:
@@ -557,28 +651,19 @@ class ScoreServer(ThreadingHTTPServer):
             if new_embeddings:
                 with self.embedding_lock:
                     self.embedding_cache.update(new_embeddings)
-                    try:
-                        cache_file = self.root / ".embedding_cache.json"
-                        with cache_file.open("w", encoding="utf-8") as f:
-                            json.dump(self.embedding_cache, f)
-                    except Exception:
-                        pass
-                    try:
+                    if self.embedding_cache_enabled:
+                        atomic_json(self.root / ".embedding_cache.json", {
+                            "version": 1, "namespace": self.embedding_namespace,
+                            "model": model_name, "embeddings": self.embedding_cache,
+                        })
+                    if self.embedding_cache_enabled and self.shared_cache_path is not None:
                         self.shared_cache_path.parent.mkdir(parents=True, exist_ok=True)
                         shared_data = {}
                         if self.shared_cache_path.is_file():
-                            try:
-                                with self.shared_cache_path.open("r", encoding="utf-8") as f:
-                                    shared_data = json.load(f)
-                            except Exception:
-                                shared_data = {}
+                            with self.shared_cache_path.open("r", encoding="utf-8") as f:
+                                shared_data = json.load(f)
                         shared_data.update(new_embeddings)
-                        tmp_path = self.shared_cache_path.with_suffix(".tmp")
-                        with tmp_path.open("w", encoding="utf-8") as f:
-                            json.dump(shared_data, f)
-                        tmp_path.replace(self.shared_cache_path)
-                    except Exception:
-                        pass
+                        atomic_json(self.shared_cache_path, shared_data)
 
         has_vecs = [n for n in unique_norms if n in embeddings]
         clusters = []
@@ -656,7 +741,9 @@ class ScoreServer(ThreadingHTTPServer):
         return {
             "question_index": question_idx,
             "clusters": output_clusters,
-            "model": model_name
+            "model": model_name if len(has_vecs) == len(unique_norms) else "none",
+            "method": "embedding" if len(has_vecs) == len(unique_norms) else "exact",
+            "answer_hash": answer_hash, "threshold": threshold,
         }
 
     @property

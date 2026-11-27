@@ -101,9 +101,12 @@ def approved_report(config, config_dir, config_path, *, run_id=None):
     with (root / "manifest.json").open(encoding="utf-8") as file:
         manifest = json.load(file)
     rows, _ = report_rows(validated)
+    if manifest.get("version") == 1:
+        for row in rows:
+            row["pdf"] = f"pdfs/script-{row['script_index'] + 1:05d}.pdf"
     expected = {row["pdf"] for row in rows}
     hashes = manifest.get("script_pdf_sha256")
-    if (manifest.get("version") != 1 or manifest.get("completed") is not True
+    if (manifest.get("version") not in (1, 2) or manifest.get("completed") is not True
             or manifest.get("review_sha256") != file_hash(grading_root / "review.xlsx")
             or manifest.get("grading_approval_sha256") != file_hash(grading_root / "approval.json")
             or not isinstance(hashes, dict) or set(hashes) != expected):

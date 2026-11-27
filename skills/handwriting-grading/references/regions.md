@@ -9,22 +9,27 @@
   and approve the rubric (`approve-rubric --confirm-reviewed`) before running `suggest-regions`
   so Gemini receives the finalized list of question IDs and does not waste calls or miss sub-questions.
 - The project's Python environment (PDF rendering uses pure-Python `pypdfium2`; no Poppler install needed).
-- An approved output location; `output_dir/regions` must not already exist.
+- A verified output location. Inspect existing region images/drafts/proposals
+  before resuming; do not recreate or overwrite an existing region directory.
 
 ## Procedure
 
 1. Run `handwriting-grader prepare-regions --exam /path/to/exam.yaml`.
    It renders the first script into `output_dir/regions/images/`; it does not
    make model calls or modify the original PDF.
-2. Automated Gemini AI proposals: run `suggest-regions` with `--exam`, `--model-config`
-   pointing to the model config, `--project` and `--location`. Region setup must run
-   Gemini for AI suggestion so teachers review and adjust proposed boxes rather than
-   drawing them manually from scratch.
+2. Recommend automated Gemini AI proposals: run `suggest-regions` with `--exam`,
+   `--model-config`, `--project` and `--location`, reusing VERIFIED settings.
+   Teachers can review and adjust proposed boxes rather than draw from scratch.
+   Also offer an explicit **offline manual choice/fallback**: open `review-regions`
+   and draw every required box without any model call. Honor that selection;
+   AI suggestions are recommended, not mandatory, and unavailable access or
+   declined cost consent must not block offline manual setup.
    The command previews the target and image count without sending anything.
    Obtain the user's explicit approval for data transfer and charges before
    repeating it with `--confirm-cost`. One page is submitted per request;
    retries or partial failures can add cost. Check model access and current
    pricing separately. A failure is not proof that no requests were billed.
+   Refresh the private [output index](output-index.md) after proposals or failures.
 3. Run `handwriting-grader review-regions --exam /path/to/exam.yaml`.
    Open the complete localhost URL shown in the terminal. Do not share its
    temporary token. The server runs until stopped with Ctrl+C; once regions are
@@ -41,12 +46,13 @@
    after editing `annotations.json` directly, run:
    `handwriting-grader approve-regions --exam /path/to/exam.yaml --confirm-reviewed`.
    Saving another edit invalidates approval; source PDF, page images or configuration
-   changes block the run.
+   changes block the run. Refresh the private index after edits and approval;
+   never describe saved boxes or AI suggestions as approval.
 
 ## Scanner Shift, Orientation, and Page Alignment
 
 Scanners commonly introduce vertical/horizontal shifts, slight skew, upside-down feeds, or out-of-order pages:
-- **Orientation & sequence validation (`check-scans`)**:
+- **Orientation & sequence validation (`check-scans`, no paid printed markers required)**:
   Run `handwriting-grader check-scans --exam /path/to/exam.yaml` (offline, 0 AI cost) **before** `prepare-regions` (and `grade` also runs it automatically before any Vertex AI calls). Using majority consensus across scripts, it flags any upside-down (`180°`), sideways (`90°/270°`), blank, or out-of-sequence page (including Script 1 itself) by exact PDF page number and script number. **Never auto-flip or auto-reorder pages** — instruct the user to fix the physical paper or source PDF manually and re-run `check-scans`.
 - **Automatic alignment during `grade`**: Every rendered page is automatically aligned (rigid translation + small rotation via 4-quadrant phase correlation with outlier-quadrant rejection) to `output_dir/regions/images/` before cropping.
 - **Recovering an existing unaligned run**:
@@ -69,4 +75,8 @@ and grading enforces it. The Vertex path has been tested
 against a local fake service, not with a live model.
 
 If preparation detects an existing run, stop and ask the user to choose a new
-output directory. Do not delete the existing run to retry.
+output directory only if it cannot be safely reused for the requested review.
+Do not delete the existing run to retry. Preserve `regions/images/` and
+`grading/images/` during cleanup: these are approval-bound review evidence.
+Missing referenced images require an explained, separately authorized exact
+backup restoration, not silent regeneration.

@@ -11,205 +11,174 @@ version: 1
 
 # Human-reviewed handwriting grading
 
-## Prerequisites
+## Prerequisites and scope
 
-For ADK-style agent workflows, telemetry, and live progress tracing, ensure the Google Agent Development Kit (ADK) skills suite is installed:
-```bash
-uvx google-agents-cli setup
-```
-Or install the python package directly into your environment:
-```bash
-pip install google-adk
-```
-This skill leverages ADK patterns for structured execution, token/cost auditing (`cost-report`), and real-time step progress updates.
+Use the repository's Python CLI, `handwriting-grader`, in its existing environment,
+not notebooks. The engine uses `google-genai` with Google Gemini models and Vertex
+project/location settings. Google ADK is an optional external integration only;
+neither ADK nor Microsoft Agent Framework is required. PDF rendering uses
+`pypdfium2` on Windows, macOS and Linux, without Poppler. LibreOffice is needed
+only for optional answer-sheet conversion.
 
-### Cross-platform support
-PDF page rendering is powered by pure-Python `pypdfium2` and works out of the box across Windows, macOS, and Linux without external Poppler or `pdftoppm` installs.
+If installation is needed, install the checkout into the selected environment:
+`python -m pip install -e /path/to/gemini-handwriting-grader-skills`.
+Quote filesystem paths. Relative paths in `exam.yaml` resolve from its parent,
+not the working directory.
 
-### Installation & Execution
-Install the tool into your Python environment:
-```bash
-pip install -e /path/to/gemini-handwriting-grader-skills
-```
-Once installed, `handwriting-grader` is available globally on your `PATH` (or via `.venv/bin/handwriting-grader` on Unix / `.venv\Scripts\handwriting-grader` on Windows).
+Answer sheets, offline input/scan checks, rubric import/extraction, reviewed
+attendance, regions, grading, human score review, reports, statistics, optional
+grounded verification, reviewed AI analysis, supported grading recovery, caches,
+child regrading and gated email are available. Check installed CLI help before
+using an enhanced command. If unavailable, explain the missing implementation;
+never simulate success, use notebooks as a workaround, or claim approval.
 
-All `--exam "/path/to/exam.yaml"` and `--model-config "/path/to/config.yaml"` paths can be located anywhere on the filesystem (always quote paths in shell commands in case directories contain spaces); all relative paths declared inside `exam.yaml` resolve relative to `exam.yaml`'s parent folder, not the current working directory.
+## Safety and cost governance
 
-## Scope and availability
+- Keep scans, rosters, answers, feedback, caches, configurations and outputs
+  private and outside version control. Do not expose credentials or student data.
+- Never infer approval from a saved file, completed manifest, passing test,
+  model response or index. Validate current hash-bound approvals and inputs.
+- Do not overwrite outputs, delete history, call a paid model or send email
+  without the relevant explicit authorization. Skill text is not enforcement;
+  the executable stage must enforce its own gates.
+- Preserve VERIFIED configuration and selected stages. Capability requirements
+  differ by stage: image input for OCR/annotation/grading, structured JSON schemas
+  for evaluation, compatible Gemini thinking settings for reasoning, and a
+  separate embedding or image model where needed. Keep Google SDK/Vertex semantics;
+  do not substitute another provider or promise capability from a model name.
+  See [configuration](references/configuration.md).
+- `discover-models --project PROJECT [--location LOCATION] [--write-config PATH]`
+  lists model metadata by default; it does not perform paid capability pings.
+  Only `--probe --confirm-cost` authorizes those paid pings, after a separate
+  target/data/request/cost preview and consent. Listing or probing does not
+  verify quota, current pricing, quality or permission for subsequent calls.
+- Before **each new paid stage**, present the selected project/location/models,
+  transferred data, request bounds and estimated cost using independently
+  reviewed current Vertex rates. Request bounds exclude SDK retry attempts.
+  Missing prices mean an unpriced estimate, not free usage. Reusing settings,
+  caches or a previous consent does not authorize a new paid stage.
+- After success or failure, use offline `cost-report --exam EXAM` and recorded
+  `telemetry/gemini_usage.jsonl` / `cost_summary.json` to report recorded calls,
+  usage, priced estimates and missing usage/pricing. These are not invoices or
+  authoritative totals including every failed call and SDK retry. Google billing
+  is authoritative. Do not promise fixed savings, accuracy or cohort consistency.
+  Unknown embedding usage persists with `cost_usd: null` and **UNPRICED** audit
+  rows/subtotals; never present it as zero cost.
 
-Use the Python tools in this repository, not notebooks. Answer sheets, preflight, rubric
-import/extraction, explicit reviewed attendance, region review, Vertex grading, human score review and
-basic reports, offline statistics, optional search-grounded verification,
-reviewed AI analysis, resumable checkpoints, opt-in
-model caches, targeted question regrading and gated email are implemented. Report formatting and cache
-coverage differ from the notebooks.
-Stop and tell the user when a requested stage is unavailable; never simulate success,
-execute a notebook as a workaround, or claim a human approval occurred.
+## Private teacher output index
 
-## Safety
+Once `exam.output_dir` exists, maintain a self-contained, offline `index.html`
+there. This is an **assistant-maintained private guide**, not CLI-generated output
+or an approval record. Refresh on resume and after **every output change,
+failure, archive or cleanup**, before presenting the outcome. Link the page and
+explain that it opens in a normal browser without a server or internet.
 
-- Treat scans, rosters, feedback, output, cache and notebook output as student
-  data. Never commit or share them without authorization.
-- Do not overwrite inputs or outputs, delete history, restart a user's session,
-  call a paid model or send email without the relevant explicit approval.
-- Never infer approval from a saved file, a passing test or a model response.
-- Local skill instructions alone are not an enforcement mechanism.
-- **Model boundaries and constraints**:
-  The pipeline strictly requires:
-  1. Multimodal raw image input support (`types.Part.from_bytes`) for handwritten script crops.
-  2. Native structured JSON schema outputs (`response_schema` with Pydantic models).
-  3. Dynamic thinking budget support (`thinking_budget=-1`) for complex reasoning stages.
-  
-  **Allowed models (Gemini-only, version 3.8+)**:
-  - **Flash Tier** (high-throughput, cost-efficient OCR, item grading, rubric extraction): `gemini-3.8-flash` (or newer Flash >= 3.8).
-  - **Reasoning Tier** (high-precision spatial template annotation, cohort-wide batch question grading, moderation, misconception analytics): `gemini-4-argon`, `gemini-4-hydrogen` (or newer Pro/Reasoning >= 3.8).
-  - **Embedding Tier** (semantic clustering of student answers): `gemini-embedding-2`.
+Use relative URL-encoded links and escaped HTML; group outputs by purpose and
+run/version, with current deliverables first. Link collections, not student
+identities. Clearly mark partial, failed, stale, unverified and superseded outputs;
+never link absent files or imply file presence means approval. Preserve user
+content outside the single managed section. Do not replace an unmanaged index.
+If maintenance fails, report it and provide actual output links directly.
+Follow [output-index instructions](references/output-index.md). Updating the guide
+must never trigger a model call, retry, approval, email or deletion.
 
-  **Strictly prohibited and rejected models**:
-  - Any non-Gemini models (e.g. Claude, GPT, Llama, Gemma, PaLM, `text-embedding-*`) — only Google Gemini models are permitted.
-  - Any Gemini model older than version 3.8 (`gemini-1.x`, `gemini-2.0-*`, `gemini-2.5-*`, `gemini-3.0-*`, `gemini-3.5-*`) — only Gemini 3.8+ is supported.
-  - Dedicated media/image generation models (e.g. Imagen, Veo, Chirp) — cannot process grading rubrics or output evaluation JSON.
-  - Text-only models — cannot read handwritten student script images.
-  - Experimental or non-grading variants (Audio/TTS, Live, Robotics, Computer-Use).
+## Start or resume without repeating setup
 
-  Never use expensive frontier models (Gemini 4) for all steps, as high-volume tasks (OCR, grading, annotation) become prohibitively slow and expensive. Always run dynamic tiered model discovery:
-  `handwriting-grader discover-models --project <PROJECT> [--location <LOCATION>] [--write-config <PATH>]`
-  to inspect live model properties and pricing online, allocating cost-efficient,
-  high-throughput Flash models (e.g. `gemini-3.8-flash`) to high-volume steps (OCR,
-  grading, rubric extraction) and reserving frontier reasoning models
-  (e.g. `gemini-4-argon`) for low-volume, high-precision spatial annotation (`annotation`),
-  batch moderation, and deep cohort analytics.
-- **Mandatory Cost Estimation & Actual Cost Reporting (For All AI-Billed Steps)**:
-  Whenever a step invokes Vertex AI (`extract-rubric`, `suggest-regions`, `grade`, `retry-grading`, `resume-grading`, `cluster-answers`, `ai-analysis`, or `advanced-report` with infographics):
-  1. **Check Live Pricing First (Never Trust Static Hardcoded Rates Alone)**: Google updates Vertex AI pricing over time and the GenAI `models.list()` API does not return prices. Before estimating, check `~/.cache/gemini-handwriting-grader/pricing.json` or search/verify live Vertex AI Gemini pricing online (and optionally update `pricing.json` or `pricing:` in `config.yaml`).
-  2. **Before execution**: Present the preview's estimated request count, target model(s), and estimated USD cost using current rates, and obtain explicit user consent (`--confirm-cost`).
-  3. **Immediately after completion**: Run `handwriting-grader cost-report --exam /path/to/exam.yaml` (or inspect `telemetry/gemini_usage.jsonl` / `cost_summary.json`) and report the **actual API calls, tokens/images, and actual USD cost** (including retries and cumulative assignment cost) to the user.
+Inspect existing exam/model settings, stage choices, manifests, approval bindings
+and available session context first. Reuse VERIFIED values; ask only for unresolved
+settings needed by the requested stage, grouping related questions. Offline
+preparation/review does not need credentials or a complete model profile.
+Defer embeddings, image generation and email settings until requested. Do not
+rewrite an approved configuration to add an optional stage.
 
-## Prepare an exam
+This table is orientation, **not evidence of approval**. Resolve attendance's
+current version, inspect `grading/results.json.completed`, and validate bound
+inputs before choosing a branch. Missing referenced region/grading images can
+invalidate approvals: stop and explain, then obtain permission to restore the
+exact files from a verified backup. Do not silently regenerate or reapprove.
 
-1. Establish whether the user is starting or resuming, what stage they need,
-   and which local paths they intend to use. Do not copy or overwrite data.
-   When resuming an existing workspace or `output_dir`, inspect existing files
-   and artifacts to orient immediately (do not rely on prior conversation history):
+| Artifact / status | Possible stage | Next action |
+|---|---|---|
+| No exam configuration | Not configured | Resolve stage-needed settings; use the existing [exam template](../../exam.yaml.template). |
+| Exam configuration exists | Configured, not necessarily verified | Reuse verified choices; offline `preflight` -> `check-scans`; prepare attendance or rubric as needed. |
+| `attendance/current.json` selects a version without current approval | Attendance prepared | Review `attendance/versions/<review_id>/attendance_review.xlsx` -> `approve-attendance`. |
+| `rubric/rubric.xlsx` without current approval | Rubric prepared | Review source and workbook -> `approve-rubric`. |
+| Current rubric approval, no region setup | Ready for regions | `prepare-regions` -> recommended paid `suggest-regions`, or explicit offline manual choice -> `review-regions`. |
+| `regions/images/` and draft/proposals without current approval | Regions prepared | Review every page -> explicit `approve-regions` or editor approval. |
+| Current region approval, no grading run | Ready to grade | Preview `grade`; obtain new cost consent. |
+| `grading/manifest.json` + `grading/results.json` with `completed: false` | Incomplete grading | Supported `resume-grading`; optionally hash-bound `retry-failed-batches` or separate offline `export-failed-review`. No ordinary completed-run review/approval yet. |
+| Same files with `completed: true`, no current score approval | Completed grading, possibly failed marks | Manual review or appropriate failure recovery; optional grouping -> `review-grading` -> explicit approval. Do not resume a completed run. |
+| Current `grading/approval.json` | Scores approved | Proactively present the post-approval menu below. |
+| Report/analytics manifests | Outputs may be current, partial or stale | Validate status; offer remaining menu choices; refresh index. |
+| `ai-analysis/review.xlsx` without current analysis approval | Analysis generated | Review/correct every row -> separate `approve-analysis`. |
+| Current `ai-analysis/approval.json` | Analysis approved | Offer advanced reports with or without paid infographics; honor a clear existing selection. |
+| `email/preview.json` without current approval | Email preview only | Inspect exact recipients/body/attachments -> `approve-email`; sending remains separately gated. |
+| `runs/<child>/` | Isolated regrade | Inspect child artifacts; pass `--run CHILD` to supported child stages. |
 
-   | Latest Artifact Present | Completed Stage | Next Command / Action |
-   |---|---|---|
-   | No `exam.yaml` / `config.yaml` | Not configured | `discover-models` (for `config.yaml`) -> configure `exam.yaml` -> `preflight` -> `check-scans` |
-   | `exam.yaml` exists (no `rubric/` or `attendance/`) | Configured | `preflight` -> `check-scans` -> `attendance` (if configured) or `extract-rubric`/`import-rubric` |
-   | `attendance/review.xlsx` (no `attendance/approval.json`) | Attendance extracted | Teacher reviews `attendance/review.xlsx` -> `approve-attendance` |
-   | `rubric/rubric.xlsx` (no `rubric/approval.json`) | Rubric extracted/imported | Teacher reviews `rubric/rubric.xlsx` -> `approve-rubric` |
-   | `rubric/approval.json` (no `regions/images/`) | Rubric approved | `prepare-regions` -> `suggest-regions` -> `review-regions` |
-   | `regions/images/` (no `regions/ai_suggestions.json`, no `regions/approval.json`) | Region pages rendered | `suggest-regions` (preview first, then `--confirm-cost`) -> `review-regions` |
-   | `regions/ai_suggestions.json` or `regions/draft.json` (no `regions/approval.json`) | Regions suggested/drafted | `review-regions` (adjust boxes & approve) or `approve-regions` |
-   | `regions/approval.json` (no `grading/`) | Regions approved | `grade` (preview first, then `--confirm-cost`) |
-   | `grading/checkpoint.json` (no `grading/manifest.json`) | Grading interrupted | `resume-grading` (preview first, then `--confirm-cost`) |
-   | `grading/manifest.json` (no `grading/approval.json`) | Grading done (or failed items) | `cluster-answers` (optional) -> `review-grading` (or `retry-grading` if failures) -> approve |
-   | `grading/approval.json` | Scores approved | Present Post-Approval Menu: `report`, `analytics`, `ai-analysis` (optional) |
-   | `reports/manifest.json` or `analytics/manifest.json` | Reports / offline stats generated | Offer remaining options: `analytics`/`report` (if missing), `ai-analysis` -> `advanced-report`, `moodle-export` (LMS PDFs/ZIP/CSV), `preview-email` -> `send-email`, or `clean` |
-   | `ai-analysis/review.xlsx` (no `ai-analysis/approval.json`) | AI analysis generated | Teacher reviews `ai-analysis/review.xlsx` -> `approve-analysis` |
-   | `ai-analysis/approval.json` | AI analysis approved | `advanced-report` (Teacher DOCX & Class PPTX), `preview-email` -> `send-email`, or `clean` |
-   | `email/` preview artifact (no `email/approval.json`) | Email preview generated | Teacher inspects preview -> `approve-email` -> `send-email` |
-   | `runs/<child>/` directory | Targeted single-question regrade | Inspect artifacts inside `runs/<child>/` and pass `--run <child>` to commands |
+Unrecognized, corrupt or older checkpoints are not automatically resumable.
+Preserve partial outputs and explain supported recovery rather than inventing a
+checkpoint filename or overwriting a run.
 
-2. Read `references/configuration.md` and examine existing settings. Present
-   detected values and ask for missing or ambiguous decisions. Keep actual
-   configuration outside version control:
-   a. Exam settings (`exam.yaml`): define roster, scans, layout, attendance, and reporting.
-   b. AI model configuration (`config.yaml`): If a valid `config.yaml` already exists
-      (with `vertex_ai.use_vertexai: true` and eligible Gemini 3.8+ models), inspect and
-      reuse it rather than overwriting it blindly. Otherwise run online model discovery:
-      `handwriting-grader discover-models --project <PROJECT> [--location <LOCATION>] [--write-config <PATH>]`
-      to inspect live Vertex AI models and pricing, present the cost allocation table to the user,
-      and generate `config.yaml`.
-3. If the user needs printable answer sheets before scans exist, read
-   `references/answer-sheets.md` and run that independent stage first.
-4. Run preflight checks:
-   `handwriting-grader preflight --exam /path/to/exam.yaml`.
-   It makes no Vertex calls and does not create outputs.
-5. Fix reported errors with the user's input and rerun. A successful preflight
-   does not verify scan order, leading zeroes, rubric contents, credentials,
-   model access or approval.
-   **Run `check-scans` BEFORE region setup**:
-   `handwriting-grader check-scans --exam /path/to/exam.yaml`
-   (offline, zero AI cost). It compares scripts by majority consensus so even if
-   Script 1 itself is upside-down or out of order, it catches Script 1 rather than
-   creating bad region bounding boxes for the whole exam. If any page is flagged
-   (upside-down `180°`, sideways `90°/270°`, blank, or out of sequence), **do not
-   silently flip or reorder pages in code** — report the exact PDF page numbers and
-   script numbers to the user so they fix the physical scan or source PDF manually
-   and re-run `check-scans`.
-   If attendance is configured, read `references/attendance.md` and obtain
-   explicit review and approval before grading.
-6. For rubric setup (MUST run BEFORE region suggestion so exact question IDs are known), read `references/grading.md`:
-   a. If the marking scheme is a DOCX, run `extract-rubric` (preview first,
-      obtain cost consent, then `--confirm-cost`) to extract questions and
-      marks into `output_dir/rubric/rubric.xlsx` using Gemini.
-   b. If the marking scheme is an existing XLSX, run `import-rubric`.
-   c. Have the teacher inspect `rubric.xlsx` and explicitly approve with
-      `approve-rubric --exam /path/to/exam.yaml --confirm-reviewed`.
-7. For region setup and review, read `references/regions.md`:
-   a. Run `handwriting-grader prepare-regions --exam /path/to/exam.yaml`
-      to render the first script's page images into `output_dir/regions/images/`.
-   b. Region setup must run Gemini (`models.annotation`, Gemini 4 reasoning tier)
-      with the extracted rubric's question IDs: preview `suggest-regions`
-      (with `--model-config`, `--project`, `--location`), explain the target and
-      page count, obtain explicit cost consent, and run with `--confirm-cost`
-      to generate `ai_suggestions.json`. Never skip Gemini AI suggestions or ask
-      the user to manually draw bounding boxes from scratch without running Gemini
-      AI suggestions first.
-   c. Start the local server with `review-regions --exam /path/to/exam.yaml`.
-      Provide the URL so the user can inspect the automatically loaded AI proposals
-      across all pages, adjust boxes (`ID`, `NAME`, `CLASS`, questions), save each
-      page, and approve. Alternatively, after manual or programmatic edits to
-      `annotations.json`, approve with:
-      `handwriting-grader approve-regions --exam /path/to/exam.yaml --confirm-reviewed`.
-   d. **Automatic Page Alignment & Scanner Shift Recovery**:
-      During `grade`, every scanned page is automatically aligned against `regions/images/`
-      before cropping. For an existing unaligned run or tight boxes, follow the recovery
-      commands (`retry-grading --align-images ...`) in `references/regions.md`.
-8. For grading, reporting and AI analysis read `references/grading.md`.
-   Obtain the specified human confirmations; never infer approval.
-   - **Choosing Grading Mode (`--mode batch` vs `--mode item`)**:
-     - `--mode batch` (**Default — Recommended**): Best for almost all exams (short-to-medium answers, math/STEM steps, diagrams, ~10–150+ scripts) and when RPM quota is tight. Sends all non-blank crops per question together (`models.batch_grading`, `gemini-4-argon`), cutting API calls by ~90% with intrinsic cohort consistency.
-     - `--mode item` (**Sequential Fallback**): Choose only when answers per question are very long/multi-page (risking single-request image payload/token limits), when grading very large cohorts with verbose answers to save cost using Flash (`models.grading`, `gemini-3.8-flash`) + text moderation (`models.moderation`, `gemini-4-argon`), or when isolating individual script timeouts.
-     - Both modes output identical `results.json` and `review.xlsx` schemas. Confirm the chosen mode with the user during cost preview.
-   - Blank answer cells are automatically detected and scored 0 locally by Pillow before calling the AI, minimizing quota and cost.
-   - Student metadata (`ID`, `CLASS`, `NAME`) OCR automatically injects candidate rosters from `attendance` or `roster` to eliminate character confusion and ensure exact roster matching.
-   
-   **Failure Diagnostics, Quota Protection, and User-Decision Gating**:
-   - The engine uses built-in Google GenAI SDK retry options (`types.HttpRetryOptions`). **Never write ad-hoc Python retry loops.**
-   - If grading finishes with failed marks (`grading_failed=True`) or moderation errors, **notify the user immediately** with the failed count, affected question numbers, and error types (`429`, `504`, `5xx`), and ask them to choose:
-     - **Option A (Targeted Retry)**: Preview `handwriting-grader retry-grading --exam /path/to/exam.yaml`, obtain cost consent, and rerun with `--confirm-cost`.
-     - **Option B (Manual Review)**: Grade failed items manually in `review-grading` / `review.xlsx` with no further API calls.
-     - **Option C (Wait / Investigate)**: Wait for GCP quota reset before proceeding.
+## Teacher stage flow
 
-   **Semantic Answer Clustering (Optional, Before Review)**:
-   - Optionally run `handwriting-grader cluster-answers --exam /path/to/exam.yaml [--threshold 0.82]` (`gemini-embedding-2`, with cross-assignment disk caching) to enable semantic answer grouping (`📌`) in `review-grading`. If skipped, `review-grading` falls back locally to `Word Overlap (Local)` with zero AI cost (details in `references/grading.md`).
-   - In `review-grading`: use `Alt+S` for the All Questions Status dashboard, `📌 Grouped` to toggle answer grouping, `Ctrl+Enter` to confirm questions in batch, and `Alt+A` to approve only after 100% human review is complete (or use "Reset Review" to rollback if needed).
+1. Read [configuration](references/configuration.md). Reuse existing choices;
+   optional [answer sheets](references/answer-sheets.md) can run before scans.
+2. Run `preflight --exam EXAM` and **offline** `check-scans --exam EXAM` before
+   region preparation. They do not verify credentials, model access or approval.
+   Report exact flagged pages/scripts; never silently flip/reorder scans.
+   No mandatory paid printed-marker stage is required. If attendance is configured,
+   follow [attendance](references/attendance.md) and obtain its separate approval.
+3. Import an XLSX rubric or preview/consent to DOCX extraction. The teacher compares
+   every question, marking criterion and maximum to the source, then explicitly
+   approves. Rubric approval precedes region suggestions.
+4. Follow [regions](references/regions.md): render pages offline, recommend Gemini
+   AI proposals with a separate cost preview, and offer an explicit offline manual
+   drawing fallback/choice. Review all metadata/question boxes and every page,
+   then approve separately. AI proposals never imply approval.
+5. Follow [grading](references/grading.md): retain the chosen mode, or explain
+   `batch` (default, question chunks) versus `item` (per-answer grading plus
+   moderation) if unresolved. Preview actual planned bounds before consent.
+   The Gemini application image cap is **105 images per request**, not a Google
+   provider limit; this retains the old 35-script metadata chunk across three
+   fields. Payload/context/quota constraints may require smaller chunks.
+6. After errors, report failed counts/questions and error classes immediately.
+   Offer manual review, quota investigation/waiting, or separately consented
+   supported recovery. Use SDK retries, never blind retry loops.
+   Incomplete and completed recovery branches are distinct; see
+   [grading recovery](references/grading.md#failure-recovery).
+7. `cluster-answers` and `review-grading` default offline, using cached/local
+   lexical grouping. Paid embeddings require `--preview-embedding`, optional
+   `--model-config`, then new consent with `--confirm-cost --revision REVISION`;
+   the printed **Review and configuration revision** binds both review/grading
+   state and the selected model-config SHA-256. Changes to either require a new
+   preview and consent. Native embeddings require explicit `vertex_ai.project_id`
+   and `vertex_ai.location` in the resolved configuration; offline grouping does
+   not. Never overwrite clusters. Review every identity and score; manual marks are
+   required for failed, flagged or corrected answers. Saved edits are not approval.
+   Retain the status dashboard (`Alt+S`), grouped view (`📌 Grouped`), batch review
+   (`Ctrl+Enter`) and final explicit approval (`Alt+A`).
+8. Immediately after current score approval, **proactively offer all choices**:
+   - **Standard reports (`report`)**: offline marked PDFs, combined PDF, audit
+     samples and score workbooks.
+   - **Statistics (`analytics`)**: offline cohort/class/question workbooks/charts.
+   - **AI analysis (`ai-analysis`)**: separately paid, reviewed feedback and
+     misconceptions -> separate `approve-analysis`; then advanced teacher DOCX
+     and 16:9 PPTX. Ask whether optional paid infographics are wanted if unclear;
+     honor an already clear choice. `advanced-report` is offline by default,
+     compatible with `--no-infographics`; paid images need explicit
+     `--infographics --confirm-cost`, separate image settings as needed, and
+     a fresh `--report-name` if preserving another version. Keep approved analysis
+     configuration, editable content and full speaker notes unchanged.
+   - **Moodle/LMS (`moodle-export`)**: offline PDFs and optional CSV/ZIP upload.
+   - **Email**: exact preview -> separate preview approval -> separately
+     authorized send, following [email](references/email.md).
+9. After every output-changing action or failure, refresh the private index.
+   Offer separately confirmed `clean --exam EXAM` only after describing its plan
+   and verifying backup. Preserve sources, `regions/images/`, `grading/images/`,
+   reviews/history, approvals, journals and final deliverables; do not present
+   cleanup as permission to remove approval-bound evidence.
+10. For a selected-question regrade, follow [regrading](references/regrading.md):
+    approved parent, new child, separate cost consent and fresh complete review.
 
-   **Post-Approval Reporting & Analytics Menu (Proactively Present to User)**:
-   - Immediately after `grading/approval.json` is recorded (or whenever the user finishes reviewing), **always proactively present all post-approval options** so a general user knows what is available:
-     1. **Standard Reports (`report`)** *(Offline, zero AI cost)*: Individual marked student PDFs, combined PDF, stratified audit samples, and score spreadsheets (`score_report.xlsx`, `details_score_report.xlsx`).
-     2. **Offline Statistical Analytics (`analytics`)** *(Offline, zero AI cost)*: Cohort & class statistics (`statistics.xlsx`) and per-question box-plot PNGs.
-     3. **Gemini AI Qualitative Analysis (`ai-analysis`) & Advanced Reports (`advanced-report`)** *(Uses Gemini AI — preview cost & obtain explicit consent first)*: Analyzes class misconceptions and generates personalized student feedback (`ai-analysis/review.xlsx` -> `approve-analysis`), unlocking a **Teacher Executive Report (`.docx`)** and **16:9 Class Review Slides (`.pptx`)** with **Gemini infographics for the class and each question (enabled by default; inform the user they can optionally turn them off with `--no-infographics`)**. If any infographics fail (`failed_infographics` in `ai-analysis/reports/manifest.json`), **never auto-retry** — report the failed slides and ask the user whether to retry failed images, keep the text-card fallback, or wait.
-     4. **Moodle / LMS Export (`moodle-export`)** *(Offline, zero AI cost)*: Exports combined per-student PDFs (`student_pdfs/<ID>_<Name>.pdf` with AI feedback cover page + marked script), builds `recipients.csv` from a Moodle participants CSV, and (with `--worksheet`) fills a Moodle Assignment grading worksheet CSV + `feedback_files.zip` for bulk Moodle upload.
-     5. **Email Distribution (`preview-email` -> `approve-email` -> `send-email`)**: Previews and emails marked PDFs and feedback to students (accepts `ID,EMAIL` or Moodle participants CSV directly).
-
-   After grading and reporting are complete, always inform the user that results
-   and review history have been preserved, and ask if they would like to clean
-   or archive intermediate output using:
-   `handwriting-grader clean --exam /path/to/exam.yaml`
-   (creates a slim `.zip` backup by default, preserves HIL reviews, AI outputs, and final
-   deliverables `reports/`, `analytics/`, `ai-analysis/`, `moodle/` while removing only
-   bulky raw JPEGs and temp folders; pass `--full-archive` to include raw JPEGs in the `.zip`,
-   and requires explicit `--confirm-delete`).
-9. For distribution read `references/email.md`; never send without reviewing
-   the exact preview and separate dispatch approval.
-   For targeted regrading read `references/regrading.md`; require a current
-   approved parent, separate cost consent and fresh review of the child.
-10. If the requested next stage is unimplemented, stop and say so.
-
-For the detailed stage flow and known notebook gaps read
-`references/flow-and-parity.md`; for the short gate overview read
-`references/workflow.md`. Ask for email details only when distribution is
-requested; never send without explicit approval immediately before dispatch.
+See [workflow gates](references/workflow.md) and
+[flow and notebook parity](references/flow-and-parity.md) for supporting details.

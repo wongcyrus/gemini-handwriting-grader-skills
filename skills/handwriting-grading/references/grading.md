@@ -2,8 +2,10 @@
 
 ## Prerequisites
 
-- Read configuration.md and regions.md; settle the exam configuration before
-  creating approvals. Obtain user confirmation of scan order and layout.
+- Read [configuration](configuration.md) and [regions](regions.md); inspect
+  existing settings and approvals first. Reuse VERIFIED configuration/mode
+  choices and ask only unresolved stage-needed questions. Settle relevant
+  configuration before approvals; confirm scan order/layout only if unresolved.
 - Use a private, separate output directory. Never commit student data.
 - For Vertex operations, obtain explicit user approval of the project,
   location, data transfer and costs. Authenticate separately; live model
@@ -31,28 +33,39 @@
    **Choosing `--mode batch` vs `--mode item`**:
    | Mode | Models Used | Best For | When to Switch |
    |---|---|---|---|
-   | `--mode batch` **(Default)** | `models.batch_grading` (`gemini-4-argon`) | Almost all exams: short/medium answers, math steps, diagrams; fast turnaround; tight RPM quota (~90% fewer requests); strong cross-cohort consistency. | Default choice unless answers are too large to batch per question. |
-   | `--mode item` **(Fallback)** | `models.grading` (`gemini-3.8-flash`) + `models.moderation` (`gemini-4-argon`) | Long/multi-page essays per question that exceed single-request image/token limits; very large cohorts (300+ verbose scripts) to keep image input tokens on Flash; isolating per-script timeouts. | Use when `--mode batch` hits payload/context limits or when optimizing image input cost on long-form answers. |
+   | `--mode batch` **(Default)** | Configured `models.batch_grading` reasoning model | Question-grouped short/medium answers, math steps or diagrams; potentially fewer application requests. | Consider smaller chunks/item mode for payload/context constraints. |
+   | `--mode item` **(Fallback)** | Configured `models.grading` + `models.moderation` | Per-answer fault isolation or long answers; separate question moderation. | Consider when batch constraints make it unsuitable. |
 
-   - `--mode batch`: Batches all non-blank student answer crops for a question into a single multimodal structured pass. Blank cells are filtered locally with Pillow and pre-scored as 0 (0 AI cost). Multiple questions run concurrently (`--concurrency 3` by default).
-     - **Pros**: ~90% fewer API requests (low RPM pressure), much faster wall-clock turnaround, intrinsic cross-script consistency (the model sees all answers side-by-side), and single-pass self-moderation.
-     - **Cons**: Higher per-token cost (`gemini-4-argon` processes all answer images), single-request payload/context ceiling for dense multi-page essays, and a failed request affects that entire question batch rather than one script.
-   - `--mode item`: Grades each non-blank student answer individually with Flash, followed by whole-question text moderation with Reasoning tier.
-     - **Pros**: Much lower image input token cost (`gemini-3.8-flash`), dedicated visual focus on one crop at a time, no batch payload ceiling on long essays/large cohorts, and per-script fault isolation.
-     - **Cons**: Very high request count ($N \times Q$ grading calls + $Q$ moderation calls, higher RPM throttling risk), slower runtime, and two-stage consistency (moderation sees transcribed answer text rather than the original image).
-   Both modes produce identical downstream schemas (`results.json`, `review.xlsx`, telemetry) and support resuming and retrying. Confirm the mode with the user during cost preview before adding `--confirm-cost`.
+   - Batch mode sends nonblank crops grouped by question in bounded chunks,
+     with local Pillow blank filtering. The **Gemini application image cap is
+     105 images per request**, not a Google provider limit or an Azure cap.
+     Metadata still fits the legacy **35 scripts × three fields** (ID/CLASS/NAME).
+     Answer batches and metadata must honor the cap; payload, context,
+     output-token budgets and quota can require smaller chunks. Successful
+     metadata chunks are checkpointed; an interrupted in-flight call can repeat.
+   - Item mode evaluates each nonblank answer, followed by whole-question text
+     moderation. This isolates some per-answer failures but can require more
+     application requests. Neither mode promises a fixed saving, accuracy or
+     consistency; both can hit context, payload, quota or model errors.
+   - Preserve the selected mode; if unresolved explain tradeoffs during preview.
+     Preview request bounds exclude SDK retry attempts, which can increase bills.
+     Both modes use downstream `results.json` and `review.xlsx` schemas.
 
-   During grading, real-time step progress and token usage are monitored
-   following ADK observability conventions.
+   The engine uses Google Gen AI SDK progress/usage recording, not required ADK.
    To inspect model usage, token count, and cost breakdown at any time, run:
    `handwriting-grader cost-report --exam /path/to/exam.yaml`
    (generates `cost_report.xlsx` and `cost_summary.json` in the run directory).
+   These are recorded usage and priced estimates, **not invoices** or a verified
+   total of all failed calls/SDK retries. Report unknown usage/rates honestly
+   after both success and failure; Google billing is authoritative.
 
    **Candidate-Assisted Metadata OCR (Roster Matching)**:
    When extracting student metadata (`ID`, `CLASS`, `NAME`), the grading engine automatically checks for an approved attendance roster or configured exam roster (`attendance` or `roster` in `exam.yaml`). If available, known valid candidate values are injected directly into Gemini's extraction prompt:
-   - Constrained candidate matching eliminates handwriting ambiguity (e.g. `0` vs `O`, `1` vs `I` vs `7`, `8` vs `B`) and guarantees exact roster conformity.
+   - Candidate matching can reduce handwriting ambiguity (e.g. `0` vs `O`,
+     `1` vs `I`, `8` vs `B`); it does not guarantee correct identity matching.
    - Preserves safety guards: if an image is blank or contains text not matching any enrolled candidate, Gemini returns empty or the raw text as read without guessing or forcing false matches.
-   - If no roster or attendance is configured, the engine gracefully falls back to open unconstrained OCR.
+   - Always have the teacher verify exact identities against the roster and crop;
+     a candidate-constrained model response is not human verification.
 
    **Handling Errors & User Decision Gating**:
    Transient network or server errors are handled at the connection layer using built-in
@@ -63,27 +76,50 @@
      only burn quota or fail repeatedly.
    - **Notice user for decision**: Immediately report the failure diagnostics (number of failed marks,
      question numbers, error codes) to the teacher/user and ask whether they want to:
-     a) Wait for quota reset or investigate GCP quota, then run targeted `retry-grading`, or
-     b) Manually grade the failed items in `review.xlsx` without additional API calls.
-   - **User-Approved Retry**: Only upon explicit user decision and cost consent, run:
+     a) Wait/investigate GCP quota, then choose the supported recovery branch, or
+     b) Review completed failed items offline, or export an incomplete run's
+        separate manual worksheet without additional API calls.
+     First check `results.json.completed`; see [failure recovery](#failure-recovery).
+   - **User-Approved Completed-Run Retry**: Only upon explicit user decision and cost consent, run:
      `handwriting-grader retry-grading --exam /path/to/exam.yaml`
      Preview the failed marks and unmoderated questions, obtain cost confirmation,
      and rerun with `--confirm-cost`. `retry-grading` isolates and regrades only the
      failed crops using exponential backoff, runs moderation for affected questions once
      all student marks are present, and refreshes `grading/review.xlsx` while preserving
      any existing manual reviews.
-3b. **Semantic Answer Clustering (Optional, After OCR/Grading, Before Review)**:
-    Optionally pre-compute semantic embedding clusters across all questions:
-    `handwriting-grader cluster-answers --exam /path/to/exam.yaml [--threshold 0.82]`
-    - Generates 3072-dimensional vector embeddings for unique student answers using `gemini-embedding-2`.
-    - **How Cluster Count is Decided**: Uses greedy threshold clustering over pairwise cosine similarity rather than fixed $K$-means. The number of clusters is data-driven by how many conceptually distinct answers students wrote (e.g. 2–4 clusters for True/False; 15–20+ for complex reasoning). Tune with `--threshold`: higher (e.g. `0.90`) yields more/tighter clusters; lower (e.g. `0.75`) yields fewer/broader clusters.
-    - **Identity Exclusion**: Student metadata (`ID`, `Class`, `Name`) is strictly excluded from clustering, and the Grouping selector is hidden in Identity review to preserve student privacy and blind grading.
-    - **Cross-Question & Cross-Assignment Caching**: Embeddings are cached per embedding model in `~/.cache/gemini-handwriting-grader/embeddings/<model>.json` (or `caching.directory`). Any answer text embedded once is reused indefinitely across all questions and across all assignments on the machine with zero GCP calls and zero cost.
-    - Saves clusters to `clusters.json` and syncs embeddings to assignment-local `.embedding_cache.json`.
-    - Subsequent runs and review editor sessions load directly from cache with zero GCP calls and zero cost.
-    - **Fallback**: If skipped or if the user selects "Word Overlap (Local)" in the review UI, the score editor automatically groups similar answers using client-side word-overlap similarity (Jaccard) without making any AI or network calls. The dropdown automatically disables "AI Embedding" if clusters were not pre-computed.
+3b. **Optional grouping before review**:
+    `cluster-answers --exam /path/to/exam.yaml [--threshold 0.82]` and
+    `review-grading` default offline with cached/local lexical grouping, not eager
+    embedding calls. Local "Word Overlap (Local)" remains available with zero
+    model cost. Opening the editor does not authorize paid embeddings.
+
+    For paid semantic clustering, preview
+    `cluster-answers --exam /path/to/exam.yaml --preview-embedding
+    [--model-config /private/config.yaml]`. Reuse verified embedding settings;
+    inspect the resolved model/Vertex target, data, request bounds and current
+    prices. After separate consent, rerun the selected action with
+    `--confirm-cost --revision REVISION` using the exact printed **Review and
+    configuration revision**. It binds both the review/grading revision and the
+    selected model-config SHA-256; changing either, including target/model settings,
+    requires a new preview and consent, not a bypass.
+    Native embeddings require explicit `vertex_ai.project_id` and
+    `vertex_ai.location` in the resolved configuration. Offline grouping does not
+    require them. Existing `clusters.json` must not be overwritten.
+
+    Semantic groups use cosine thresholds, not fixed K-means cluster counts.
+    Higher thresholds yield tighter groups; embedding dimensions depend on the
+    selected compatible Google model. Identities are excluded from grouping.
+    Caches are sensitive, opt-in and can become stale when aliases change.
+    Shared caching requires explicitly configured private scope/directory;
+    do not promise indefinite freshness or zero calls for uncached answers.
+    Unknown embedding usage remains `cost_usd: null`, with **UNPRICED** audit
+    rows/subtotals; missing usage is not evidence of free inference.
+    Grouping does not review, score or approve answers.
 4. Ask the teacher to run `review-grading --exam /path/to/exam.yaml` and open
-   the full printed local URL. The score editor presents a one-page blind
+   the full printed local URL. This is offline by default; optional
+   `--model-config` and `--confirm-cost` are only for a separately requested,
+   previewed and consented embedding stage. Review must not automatically send
+   answers to a model or require a complete model profile. The score editor presents a one-page blind
    marksheet per question (hiding student IDs during question review), groups
    similar answers together under similarity banners with a dedicated `📌 Grouped`
    toggle button, lets the teacher sort by clicking table headers (`Answer`, `Script`,
@@ -169,8 +205,35 @@
    consent add `--confirm-cost`. Review and correct every row in
    `ai-analysis/review.xlsx`, mark reviewed=yes, then explicitly run
    `approve-analysis --exam /path/to/exam.yaml --confirm-reviewed`.
-   `advanced-report --exam /path/to/exam.yaml [--no-infographics]` writes a **teacher executive DOCX** and
-   **16:9 class presentation PPTX** with a question-score chart and **Gemini infographics for the class overview and each question (enabled by default; tell the user they can optionally disable infographics with `--no-infographics`)**. Image generation uses single-attempt calls (no auto-retry) and caches PNGs in `ai-analysis/infographics/`. If `ai-analysis/reports/manifest.json` reports `failed_infographics`, **do not auto-retry** — notify the user with the failed count/slides and error type, and ask whether to retry failed images (re-running `advanced-report` reuses cached PNGs), keep the text-card fallback, or wait for quota reset. Review both before sharing.
+   Offer **advanced reports with or without optional paid infographics**.
+   Ask if the teacher's choice is unclear; honor an already clear selection for
+   this report instead of asking again or silently choosing a different mode.
+   `advanced-report --exam /path/to/exam.yaml` generates a teacher executive DOCX
+   and 16:9 PPTX **offline by default**. Existing `--no-infographics` remains
+   compatible. The teacher DOCX remains text-only.
+
+   Paid images require previewing `advanced-report --exam /path/to/exam.yaml
+   --infographics [--image-model MODEL] [--image-model-config /private/image.yaml]
+   [--report-name reports-infographics]`, then new explicit consent before adding
+   `--confirm-cost`. Inspect the Google image configuration recorded with the
+   approved analysis; do not auto-discover unrelated adjacent image files.
+   Reuse a verified compatible image model or request only unresolved choices.
+   A separate image configuration can select its own Vertex project/location;
+   it must **not modify the approved analysis configuration or approval**.
+   The integrated report image adapter is not a standalone image-generation
+   skill; never substitute another provider/skill behind this consent.
+
+   Preserve an existing report using a **fresh `--report-name` folder**.
+   Keep full speaker notes, editable analysis and reviewed-score summaries.
+   Each available infographic goes on its own slide after its editable content,
+   with a visible warning that image text/numbers can be inaccurate or sample-based.
+   Keep editable fallback slides for failed images. Image generation is
+   single-attempt; reuse compatible cached PNGs without promising free cache misses.
+   Inspect the selected report folder's `manifest.json` for `failed_infographics`;
+   report failed count/slides/error classes, refresh the private index and ask
+   whether to retain fallback, wait, or separately consent to supported recovery.
+   Never overwrite a report or auto-retry failures. Review both documents,
+   speaker notes and images before sharing.
 
 For an approved parent needing one-question regrading, read
 `regrading.md`. Child-specific review, reports and later stages use `--run`
@@ -184,6 +247,57 @@ approval hashes. Reports already generated do not automatically disappear
 when input changes; never share partial or stale reports. Pass-only samples
 require both explicit pass settings before the run; no threshold is assumed.
 Failed or flagged model outputs are not silently accepted as zero.
+Refresh the private [output index](output-index.md) after every output change,
+failure, recovery, review save, approval, report, cost summary or cleanup.
+
+### Failure recovery
+
+Inspect `grading/manifest.json` and `grading/results.json.completed`, current
+input hashes, locks and review state. No separate checkpoint filename is assumed.
+Only supported **incomplete** runs (`completed: false`, no review workbook or
+approval) use `resume-grading`; preview and obtain new consent. It processes
+remaining work, not an automatic repair of already failed answers. In-flight
+requests can repeat and be billed. Preserve partial results and history.
+
+For an incomplete original batch run:
+
+- Preview `retry-failed-batches --exam /private/exam.yaml`. After the teacher
+  selects this recovery and consents to target/data/cost, execute with
+  `--confirm-cost --checkpoint-sha256 PREVIEW_HASH`. A changed checkpoint requires
+  a new preview. Preserve successful rows and original checkpoint history;
+  retry only failed crops in rubric order, stop on another failure, and retain
+  the incomplete status. If supported, use the same `--exclude-question ID`
+  selection in preview/execution to leave a blocked question for human attention.
+  Remaining unprocessed questions require separately previewed/consented resume.
+- `export-failed-review --exam /private/exam.yaml --output /private/fresh-directory`
+  is **offline** and creates a separate failed-answer worksheet/crop collection,
+  grouped by question, without overwriting a directory. It imports no manual marks,
+  makes no paid call, does not resume/complete grading and records no approval.
+  Exported identities/crops remain private; the HTML index must not enumerate them.
+
+For a **completed** original batch run (`completed: true`) with unreviewed,
+unedited failed answers, do not resume it. Offer manual review or targeted retry.
+Only when failure details establish an **actual Gemini safety block** may the
+teacher choose bounded splitting:
+
+```sh
+handwriting-grader bisect-failed-batch --exam /private/exam.yaml \
+  --question Q1 --max-requests 39
+```
+
+Preview the question/model/Vertex target, transferred data, application request
+limit (excluding SDK retries), current rates and review revision. Execute only
+after separate explicit consent, with the exact `--revision REVISION --confirm-cost`.
+Classification must come from actual Gemini response safety/block details, not
+Azure policy messages, a guessed substring, timeout, HTTP 429/5xx, schema failure
+or missing output. Other errors stop splitting. It must not bypass safety filters,
+alter prompts/images to evade policy, or imply a singleton caused the block.
+Successful recovered grades are retained; blocked singletons stay **unscored for
+manual review**. Revision checks/writer locking protect existing reviews, edited
+rows and approvals. Inspect staged retry history after interruption or review
+conflict; never auto-import, discard, or approve staged grades. Start a fresh
+score editor and compare recovered results with the workbook; recovery itself
+is not synchronization or approval of manual marks.
 
 ### Transient errors, GCP quota exhaustion, and retry governance
 
@@ -193,13 +307,18 @@ When API operations exhaust their built-in retry attempts:
 - **No blind Python loops**: Never write ad-hoc retry scripts (`scratch/*.py`), while-loops, or automatic restart scripts. If GCP quota is exhausted or rate limits are reached, auto-retrying in Python will only prolong failures and burn quota.
 - **Human-in-the-loop notification**: The agent must inspect `results.json` and report error diagnostics to the user (failure count, question numbers, error types: 429 Quota / 504 Timeout / 5xx Server Error).
 - **User decision required**: The agent must prompt the user to choose:
-  1. Inspect/wait for GCP quota reset, then execute targeted `retry-grading --exam /path/to/exam.yaml [--confirm-cost]`.
-  2. Grade the failed items manually in `review.xlsx` without additional API calls.
+  1. Inspect/wait for GCP quota reset, then preview the supported recovery branch
+     and obtain separate cost consent.
+  2. Review completed failed items manually in `review.xlsx`, or use separate
+     offline `export-failed-review` for an incomplete run. No additional API calls.
 - **Targeted retry and re-run commands**: When the user approves retrying or after scanner-shift alignment / bounding box adjustments (see `regions.md`):
   - `handwriting-grader retry-grading --exam /path/to/exam.yaml`: Retries failed marks and completes unmoderated questions.
   - `handwriting-grader retry-grading --exam /path/to/exam.yaml --align-images`: Aligns all scanned page images to the approved reference layout (offline, 0 AI cost). Can be combined with `--re-ocr-id`, `--re-ocr-metadata`, or `--question`.
   - `handwriting-grader retry-grading --exam /path/to/exam.yaml --re-ocr-id`: Re-runs student ID OCR for all scripts using the approved bounding box.
-  - `handwriting-grader retry-grading --exam /path/to/exam.yaml --re-ocr-metadata`: Re-runs student ID, class, and name OCR across scripts in fast multimodal batch chunks (chunk size 35) cross-referenced against the enrolled roster, reducing hundreds of sequential calls to 1–3 batch requests and achieving 100% roster triangulation accuracy in ~40s.
+  - `handwriting-grader retry-grading --exam /path/to/exam.yaml --re-ocr-metadata`:
+    Re-runs ID, class and name OCR in bounded metadata chunks (up to 35 scripts ×
+    three fields = the 105-image application cap), assisted by the roster.
+    Human identity verification remains required; no fixed accuracy/time saving.
   - `handwriting-grader retry-grading --exam /path/to/exam.yaml --question <Q_NUM>`: Re-grades and re-moderates a specific question using its approved box.
   Always preview the action plan without `--confirm-cost`, obtain explicit user cost confirmation, and rerun with `--confirm-cost`. The command updates `results.json`, syncs manifest hashes to current region approvals, and updates `review.xlsx` while preserving existing manual reviews.
 
@@ -217,3 +336,7 @@ Grounded verification does not use these caches. Preserve
 partial runs and never delete them automatically.
 Calls already made may be billed even if grading fails. These approvals are
 local records, not tamper-proof audit logs. Email requires separate review.
+Cleanup needs separate confirmation and verified backup; preserve source scans,
+`regions/images/`, `grading/images/`, review/history, approvals, delivery journals
+and final deliverables. Missing bound evidence is not fixed by silently
+regenerating images or writing a new approval.

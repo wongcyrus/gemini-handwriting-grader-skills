@@ -3,7 +3,8 @@
 ## Inputs and prerequisites
 
 Obtain a roster XLSX and its sheet name, a DOCX template, and a separate
-output directory from the user. Configure `exam.roster`, `exam.roster_sheet`,
+output directory only if unresolved. Inspect and reuse VERIFIED selections;
+do not repeat setup. Configure `exam.roster`, `exam.roster_sheet`,
 `exam.answer_sheet_template` and `exam.output_dir` in the exam YAML.
 No scanned PDF or rubric is needed. The roster must contain unique, nonempty
 ID, NAME and CLASS fields. Check leading zeros with the user: Excel may
@@ -26,6 +27,9 @@ LibreOffice must be installed.
    can differ between Word and LibreOffice; inspect each generated page.
 3. Confirm page count and ordering when later scanning. If
    `layout.pages_per_student` is configured, generation rejects mismatches.
+
+Refresh the private [output index](output-index.md) after generation or failure;
+link collections, not individual student identities.
 
 ## Failure handling
 

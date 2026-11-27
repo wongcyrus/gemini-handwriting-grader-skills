@@ -95,6 +95,34 @@ def _write_attendance_xlsx(path: Path, students: list[dict]) -> None:
     wb.close()
 
 
+def _validate_attendance_workbook(path: Path, students: list[dict]) -> None:
+    from zipfile import BadZipFile
+
+    from openpyxl import load_workbook
+
+    try:
+        workbook = load_workbook(path, read_only=True, data_only=False, keep_links=False)
+    except BadZipFile as exc:
+        raise ValueError("Attendance review workbook is invalid; prepare a new review") from exc
+    try:
+        if workbook.sheetnames != ["Attendance"]:
+            raise ValueError("Attendance review workbook changed; prepare a new review")
+        rows = []
+        for row in workbook["Attendance"].iter_rows(values_only=True):
+            if not any(value is not None for value in row):
+                continue
+            if any(value is not None for value in row[4:]):
+                raise ValueError("Attendance review workbook changed; prepare a new review")
+            rows.append(tuple(row[:4]))
+        expected = [("ID", "Name", "Class", "Status")]
+        expected.extend((student["id"], student["name"], student["class"], student["status"])
+                        for student in students)
+        if rows != expected:
+            raise ValueError("Attendance review workbook changed; correct the source CSV and prepare a new review")
+    finally:
+        workbook.close()
+
+
 def prepare_attendance(config, config_dir, config_path):
     review = review_data(config, config_dir, config_path)
     root = resolve_path(config_dir, config["exam"]["output_dir"]) / "attendance"
@@ -128,8 +156,12 @@ def current_review(config, config_dir, config_path):
     digest = file_hash(review_path)
     with review_path.open(encoding="utf-8") as file:
         review = json.load(file)
+    workbook_path = target / "attendance_review.xlsx"
+    workbook_hash = file_hash(workbook_path)
+    _validate_attendance_workbook(workbook_path, review["students"])
     if (review != review_data(config, config_dir, config_path)
-            or file_hash(review_path) != digest or file_hash(pointer_path) != pointer_hash):
+            or file_hash(review_path) != digest or file_hash(pointer_path) != pointer_hash
+            or file_hash(workbook_path) != workbook_hash):
         raise ValueError("Attendance review or its inputs changed; prepare a new review")
     return target, review, digest, pointer_hash
 
