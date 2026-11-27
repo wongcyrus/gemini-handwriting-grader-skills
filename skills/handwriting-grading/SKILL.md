@@ -25,7 +25,7 @@ If installation is needed, install the checkout into the selected environment:
 Quote filesystem paths. Relative paths in `exam.yaml` resolve from its parent,
 not the working directory.
 
-Answer sheets, offline input/scan checks, rubric import/extraction, reviewed
+Answer sheets, offline input validation, rubric import/extraction, reviewed
 attendance, regions, grading, human score review, reports, statistics, optional
 grounded verification, reviewed AI analysis, supported grading recovery, caches,
 child regrading and gated email are available. Check installed CLI help before
@@ -100,12 +100,13 @@ exact files from a verified backup. Do not silently regenerate or reapprove.
 | Artifact / status | Possible stage | Next action |
 |---|---|---|
 | No exam configuration | Not configured | Resolve stage-needed settings; use the existing [exam template](../../exam.yaml.template). |
-| Exam configuration exists | Configured, not necessarily verified | Reuse verified choices; offline `preflight` -> `check-scans`; prepare attendance or rubric as needed. |
+| Exam configuration exists | Configured, not necessarily verified | Reuse verified choices; offline `preflight`; prepare attendance or rubric as needed. |
 | `attendance/current.json` selects a version without current approval | Attendance prepared | Review `attendance/versions/<review_id>/attendance_review.xlsx` -> `approve-attendance`. |
 | `rubric/rubric.xlsx` without current approval | Rubric prepared | Review source and workbook -> `approve-rubric`. |
 | Current rubric approval, no region setup | Ready for regions | `prepare-regions` -> recommended paid `suggest-regions`, or explicit offline manual choice -> `review-regions`. |
 | `regions/images/` and draft/proposals without current approval | Regions prepared | Review every page -> explicit `approve-regions` or editor approval. |
 | Current region approval, no grading run | Ready to grade | Preview `grade`; obtain new cost consent. |
+| Incomplete grading + `grading/id-check.json` with `passed: false` | ID check blocked answers | Report every flagged PDF page/script and ask the teacher to inspect the source. No answer OCR/grading. A separately consented resume re-reads invalid saved metadata crops; changed sources require fresh preparation/approvals. |
 | `grading/manifest.json` + `grading/results.json` with `completed: false` | Incomplete grading | Supported `resume-grading`; optionally hash-bound `retry-failed-batches` or separate offline `export-failed-review`. No ordinary completed-run review/approval yet. |
 | Same files with `completed: true`, no current score approval | Completed grading, possibly failed marks | Manual review or appropriate failure recovery; optional grouping -> `review-grading` -> explicit approval. Do not resume a completed run. |
 | Current `grading/approval.json` | Scores approved | Proactively present the post-approval menu below. |
@@ -123,9 +124,12 @@ checkpoint filename or overwriting a run.
 
 1. Read [configuration](references/configuration.md). Reuse existing choices;
    optional [answer sheets](references/answer-sheets.md) can run before scans.
-2. Run `preflight --exam EXAM` and **offline** `check-scans --exam EXAM` before
-   region preparation. They do not verify credentials, model access or approval.
-   Report exact flagged pages/scripts; never silently flip/reorder scans.
+2. Run offline `preflight --exam EXAM` before region preparation. It validates
+   inputs, not scan orientation, page sequence, credentials, model access or approval.
+   Do not add a separate heuristic scan check or automatically align, flip or
+   reorder pages. Review Gemini-extracted identities for all students against
+   the roster and crops; resolve unreadable, missing, duplicate or unmatched IDs
+   with the teacher. Readable IDs do not verify other pages.
    No mandatory paid printed-marker stage is required. If attendance is configured,
    follow [attendance](references/attendance.md) and obtain its separate approval.
 3. Import an XLSX rubric or preview/consent to DOCX extraction. The teacher compares
@@ -138,6 +142,12 @@ checkpoint filename or overwriting a run.
 5. Follow [grading](references/grading.md): retain the chosen mode, or explain
    `batch` (default, question chunks) versus `item` (per-answer grading plus
    moderation) if unresolved. Preview actual planned bounds before consent.
+   After region approval, read metadata for **all students first**, with no
+   answer crops sent. Continue automatically only if every ID is readable,
+   unique and the set exactly matches the expected present-student roster.
+   Otherwise stop, report the exact PDF page/script numbers from
+   `grading/id-check.json`, and have the teacher check the source; never
+   bypass the ID gate or start answer processing while IDs are unresolved.
    The Gemini application image cap is **105 images per request**, not a Google
    provider limit; this retains the old 35-script metadata chunk across three
    fields. Payload/context/quota constraints may require smaller chunks.

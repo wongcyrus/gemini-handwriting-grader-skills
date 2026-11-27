@@ -59,6 +59,25 @@
    total of all failed calls/SDK retries. Report unknown usage/rates honestly
    after both success and failure; Google billing is authoritative.
 
+   Rendered pages are copied unchanged before cropping, without a heuristic scan
+   check or automatic page alignment. **All-student ID gate:** metadata crops
+   (`ID`, `CLASS`, `NAME`) are extracted for all students before any answer crop
+   is read or submitted. Every ID must be nonempty, unique and match the expected
+   present-student roster exactly; scan order need not match roster order and
+   leading zeroes are preserved. If all pass, answer grading continues automatically.
+   Otherwise the engine stops with exact 1-based PDF page/script numbers,
+   `grading/id-check.json`, and an incomplete metadata checkpoint without a review
+   workbook. Have the teacher inspect the flagged source pages. Do not start
+   answer OCR/grading or infer that the source file is definitely wrong: model
+   transcription or a tight crop can also be the cause.
+
+   After inspection, a separately previewed/consented `resume-grading` re-reads
+   only invalid or missing scripts' metadata from the saved page images, validates
+   every ID again, then proceeds only if all pass. It never silently reloads an
+   edited PDF. Source changes require fresh preparation and approvals; preserve
+   the blocked run. Passing IDs do not validate other pages or replace the later
+   human identity review. Existing completed runs are not automatically regenerated.
+
    **Candidate-Assisted Metadata OCR (Roster Matching)**:
    When extracting student metadata (`ID`, `CLASS`, `NAME`), the grading engine automatically checks for an approved attendance roster or configured exam roster (`attendance` or `roster` in `exam.yaml`). If available, known valid candidate values are injected directly into Gemini's extraction prompt:
    - Candidate matching can reduce handwriting ambiguity (e.g. `0` vs `O`,
@@ -311,9 +330,8 @@ When API operations exhaust their built-in retry attempts:
      and obtain separate cost consent.
   2. Review completed failed items manually in `review.xlsx`, or use separate
      offline `export-failed-review` for an incomplete run. No additional API calls.
-- **Targeted retry and re-run commands**: When the user approves retrying or after scanner-shift alignment / bounding box adjustments (see `regions.md`):
+- **Targeted retry and re-run commands**: When the user approves retrying or after reviewed bounding-box adjustments (see `regions.md`):
   - `handwriting-grader retry-grading --exam /path/to/exam.yaml`: Retries failed marks and completes unmoderated questions.
-  - `handwriting-grader retry-grading --exam /path/to/exam.yaml --align-images`: Aligns all scanned page images to the approved reference layout (offline, 0 AI cost). Can be combined with `--re-ocr-id`, `--re-ocr-metadata`, or `--question`.
   - `handwriting-grader retry-grading --exam /path/to/exam.yaml --re-ocr-id`: Re-runs student ID OCR for all scripts using the approved bounding box.
   - `handwriting-grader retry-grading --exam /path/to/exam.yaml --re-ocr-metadata`:
     Re-runs ID, class and name OCR in bounded metadata chunks (up to 35 scripts ×

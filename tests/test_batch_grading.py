@@ -13,6 +13,7 @@ from handwriting_grader.grading import (
     MAX_IMAGES_PER_REQUEST,
     MetadataBatchResponse,
     QuestionBatchGradeResponse,
+    StudentIDCheckFailed,
     StudentBatchGradeItem,
     continue_grading,
 )
@@ -23,6 +24,7 @@ class FakeBatchProvider:
     def __init__(self, models, project, location):
         self.batch_calls = []
         self.item_calls = []
+        self.next_id = 0
 
     def __enter__(self):
         return self
@@ -31,6 +33,9 @@ class FakeBatchProvider:
         pass
 
     def ocr(self, image, field):
+        if field == "ID":
+            self.next_id += 1
+            return f"{self.next_id:03d}"
         return f"VAL_{field}"
 
     def grade_question_batch(self, question, script_items):
@@ -127,6 +132,133 @@ class TestBatchGrading(unittest.TestCase):
         self.stride = 1
         self.models = {"ocr": "flash", "grading": "flash", "moderation": "argon", "batch_grading": "argon"}
         self.metadata_fields = ["ID", "CLASS", "NAME"]
+
+    def test_invalid_ids_stop_before_answer_crops_in_both_modes(self):
+        cases = [
+            (["", "002"], [1], "missing or unreadable"),
+            (["001", "999"], [2], "expected present-student roster"),
+            (["001", "001"], [1, 2], "duplicated"),
+            (["1", "002"], [1], "expected present-student roster"),
+            ([RuntimeError("OCR unavailable"), "002"], [1], "ID extraction failed"),
+        ]
+        from handwriting_grader.grading import crop_image
+        metadata_boxes = [self.boxes[field][1] for field in self.metadata_fields]
+        for mode in ("batch", "item"):
+            for ids, pages, reason in cases:
+                with self.subTest(mode=mode, ids=ids):
+                    provider = FakeBatchProvider({}, "", "")
+                    answers = iter(ids)
+                    results = {
+                        "version": 1, "checkpoint_version": 1, "completed": False,
+                        "scripts": [], "marks": [], "moderated_questions": [],
+                    }
+
+                    def ocr(image, field, candidates=None):
+                        value = next(answers) if field == "ID" else "metadata"
+                        if isinstance(value, Exception):
+                            raise value
+                        return value
+
+                    with patch.object(provider, "ocr", side_effect=ocr), \
+                            patch("handwriting_grader.grading.crop_image", wraps=crop_image) as crop:
+                        with self.assertRaisesRegex(StudentIDCheckFailed, reason) as error:
+                            continue_grading(
+                                self.root, results, self.questions, self.boxes, self.summary, self.stride,
+                                self.models, "project", "location", lambda *args: provider,
+                                [], self.root / "cache", self.metadata_fields, lambda: None,
+                                mode=mode, expected_ids=["001", "002"],
+                            )
+                    self.assertIn("Check the source PDF", str(error.exception))
+                    for page in pages:
+                        self.assertIn(f"PDF page {page}", str(error.exception))
+                    self.assertTrue(all(call.args[1] in metadata_boxes for call in crop.call_args_list))
+                    self.assertEqual(provider.batch_calls, [])
+                    self.assertEqual(provider.item_calls, [])
+                    self.assertEqual(results["marks"], [])
+                    self.assertFalse(results["completed"])
+                    report = json.loads((self.root / "id-check.json").read_text())
+                    self.assertFalse(report["passed"])
+                    self.assertEqual([issue["pdf_page"] for issue in report["issues"]], pages)
+                    self.assertFalse((self.root / "review.xlsx").exists())
+
+    def test_all_ids_checked_before_grading_without_assuming_roster_order(self):
+        provider = FakeBatchProvider({}, "", "")
+        ids = iter(["002", "001"])
+        events = []
+        results = {
+            "version": 1, "checkpoint_version": 1, "completed": False,
+            "scripts": [], "marks": [], "moderated_questions": [],
+        }
+        original_grade = provider.grade_question_batch
+
+        def ocr(image, field, candidates=None):
+            events.append(field)
+            return next(ids) if field == "ID" else "metadata"
+
+        def grade(question, items):
+            self.assertEqual(events.count("ID"), 2)
+            self.assertTrue(json.loads((self.root / "id-check.json").read_text())["passed"])
+            events.append("answer")
+            return original_grade(question, items)
+
+        with patch.object(provider, "ocr", side_effect=ocr), \
+                patch.object(provider, "grade_question_batch", side_effect=grade):
+            continue_grading(
+                self.root, results, self.questions, self.boxes, self.summary, self.stride,
+                self.models, "project", "location", lambda *args: provider,
+                [], self.root / "cache", self.metadata_fields, lambda: None,
+                expected_ids=["001", "002"],
+            )
+        self.assertEqual(events[:6], ["ID", "CLASS", "NAME"] * 2)
+        self.assertEqual(len(results["marks"]), 4)
+
+    def test_native_metadata_checks_every_chunk_before_any_answers(self):
+        for index in range(2, 36):
+            (self.images_dir / f"{index}.jpg").write_bytes((self.images_dir / "0.jpg").read_bytes())
+        provider = FakeBatchProvider({}, "", "")
+        chunk_sizes = []
+        last_id_readable = False
+        results = {
+            "version": 1, "checkpoint_version": 1, "completed": False,
+            "scripts": [], "marks": [], "moderated_questions": [],
+        }
+
+        def metadata(items, fields, roster_list=None):
+            chunk_sizes.append(len(items))
+            self.assertTrue(all(set(item["crops"]) == set(self.metadata_fields) for item in items))
+            return {"students": [
+                {"script_index": item["script_index"],
+                 "id_ocr": f"{item['script_index'] + 1:03d}"
+                 if item["script_index"] < 35 or last_id_readable else "",
+                 "class_ocr": "A", "name_ocr": "Name"}
+                for item in items
+            ]}
+
+        with patch.object(provider, "ocr_metadata_batch", side_effect=metadata, create=True):
+            with self.assertRaisesRegex(StudentIDCheckFailed, "PDF page 36"):
+                continue_grading(
+                    self.root, results, self.questions, self.boxes, {"students": 36}, self.stride,
+                    self.models, "project", "location", lambda *args: provider,
+                    ["ocr"], self.root / "cache", self.metadata_fields, lambda: None,
+                    expected_ids=[f"{index + 1:03d}" for index in range(36)],
+                )
+        self.assertEqual(chunk_sizes, [35, 1])
+        self.assertEqual(len(results["scripts"]), 36)
+        self.assertEqual(provider.batch_calls, [])
+        self.assertEqual(provider.item_calls, [])
+        self.assertEqual(results["marks"], [])
+
+        last_id_readable = True
+        with patch.object(provider, "ocr_metadata_batch", side_effect=metadata, create=True):
+            continue_grading(
+                self.root, results, self.questions, self.boxes, {"students": 36}, self.stride,
+                self.models, "project", "location", lambda *args: provider,
+                ["ocr"], self.root / "cache", self.metadata_fields, lambda: None,
+                expected_ids=[f"{index + 1:03d}" for index in range(36)],
+            )
+        self.assertEqual(chunk_sizes, [35, 1, 1])
+        self.assertTrue(json.loads((self.root / "id-check.json").read_text())["passed"])
+        self.assertEqual(len(results["marks"]), 72)
 
     def test_batch_mode_grades_all_questions_and_sets_fields(self):
         results = {"version": 1, "checkpoint_version": 1, "completed": False, "scripts": [], "marks": [], "moderated_questions": []}

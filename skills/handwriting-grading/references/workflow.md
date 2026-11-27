@@ -6,8 +6,10 @@ The engine uses `google-genai`; Google ADK is optional external integration only
 
 1. **Answer sheets:** optional offline generation before scans. Confirm identities
    and pagination before printing; reuse the chosen roster/template/output.
-2. **Preflight/scans/attendance:** offline checks before regions; never silently
-   reorder or rotate scans. No mandatory paid scan-marker stage. Review and
+2. **Preflight/attendance:** offline input validation before regions, without a
+   heuristic orientation/sequence check or automatic image alignment. Review all
+   extracted identities against the roster and crops during score review; never
+   silently reorder or rotate scans. No mandatory paid scan-marker stage. Review and
    approve attendance's current version separately; see [attendance](attendance.md).
 3. **Rubric:** import offline or preview/consent to extraction. Teacher approval
    of every question, marking criterion and maximum is separate from generation.
@@ -16,7 +18,12 @@ The engine uses `google-genai`; Google ADK is optional external integration only
    approval. See [regions](regions.md).
 5. **Grading:** retain the selected mode, or explain batch/item choices. Preview
    target, data, current price estimates and request bounds excluding SDK retries.
-   Obtain a new `--confirm-cost` for this paid stage. Google SDK bounded retries
+   Obtain a new `--confirm-cost` for this paid stage. Extract all students'
+   metadata before any answer crops: IDs must be readable, unique and exactly
+   cover the expected present-student roster before answers proceed. On failure,
+   stop and report source PDF page/script numbers from `grading/id-check.json`;
+   have the teacher inspect the source before separately consented recovery.
+   Google SDK bounded retries
    handle transient failures; never add automatic retry loops. Report failures
    and offer manual review, quota investigation or separately consented recovery.
    Incomplete checkpoints and completed failed runs use different branches;

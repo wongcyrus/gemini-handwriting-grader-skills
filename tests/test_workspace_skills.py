@@ -88,6 +88,17 @@ class TeacherCLIContractTests(unittest.TestCase):
     def parse(self, command, *flags):
         return self.parser.parse_args([command, *flags])
 
+    def test_scan_check_and_alignment_options_are_removed(self):
+        commands = [
+            ("check-scans", "--exam", "synthetic-exam.yaml"),
+            ("retry-grading", "--exam", "synthetic-exam.yaml", "--align-images"),
+        ]
+        for args in commands:
+            with self.subTest(args=args), patch("sys.stderr"):
+                with self.assertRaises(SystemExit) as error:
+                    self.parser.parse_args(args)
+                self.assertEqual(error.exception.code, 2)
+
     def test_discovery_is_metadata_only_unless_probe_and_cost_are_selected(self):
         args = self.parse("discover-models", "--project", "synthetic-project")
         self.assertFalse(args.probe)

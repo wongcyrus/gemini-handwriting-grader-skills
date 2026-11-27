@@ -53,6 +53,7 @@ class RegradingTests(unittest.TestCase):
             draw = ImageDraw.Draw(img)
             for y_off in range(2, 100, 6):
                 draw.line([(0, y_off), (200, y_off)], fill="black", width=2)
+            draw.text((15, 5), str(idx + 1), fill="black")
             draw.text((10, 120), f"Page {idx}", fill="black")
             pages.append(img)
         pages[0].save(self.root / "scan.pdf", save_all=True, append_images=pages[1:], resolution=72.0)

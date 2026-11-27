@@ -2,9 +2,8 @@
 
 ## Prerequisites
 
-- Successful offline preflight AND `check-scans --exam /path/to/exam.yaml` passing
-  (run `check-scans` **before** `prepare-regions` so an upside-down or misordered
-  first script cannot corrupt the template layout and bounding boxes for all scripts).
+- Successful offline preflight for input validation. There is no separate
+  heuristic scan-orientation/sequence check or automatic page alignment.
 - **Approved rubric (`output_dir/rubric/rubric.xlsx` + `approval.json`)**: Always extract/import
   and approve the rubric (`approve-rubric --confirm-reviewed`) before running `suggest-regions`
   so Gemini receives the finalized list of question IDs and does not waste calls or miss sub-questions.
@@ -49,20 +48,28 @@
    changes block the run. Refresh the private index after edits and approval;
    never describe saved boxes or AI suggestions as approval.
 
-## Scanner Shift, Orientation, and Page Alignment
+## Scan and crop review
 
-Scanners commonly introduce vertical/horizontal shifts, slight skew, upside-down feeds, or out-of-order pages:
-- **Orientation & sequence validation (`check-scans`, no paid printed markers required)**:
-  Run `handwriting-grader check-scans --exam /path/to/exam.yaml` (offline, 0 AI cost) **before** `prepare-regions` (and `grade` also runs it automatically before any Vertex AI calls). Using majority consensus across scripts, it flags any upside-down (`180°`), sideways (`90°/270°`), blank, or out-of-sequence page (including Script 1 itself) by exact PDF page number and script number. **Never auto-flip or auto-reorder pages** — instruct the user to fix the physical paper or source PDF manually and re-run `check-scans`.
-- **Automatic alignment during `grade`**: Every rendered page is automatically aligned (rigid translation + small rotation via 4-quadrant phase correlation with outlier-quadrant rejection) to `output_dir/regions/images/` before cropping.
-- **Recovering an existing unaligned run**:
-  1. Run offline alignment (0 AI cost) and targeted re-OCR / regrade:
-     - Align + re-OCR IDs: `handwriting-grader retry-grading --exam /path/to/exam.yaml --align-images --re-ocr-id`
-     - Align + re-OCR all metadata (`ID`, `CLASS`, `NAME`): `--align-images --re-ocr-metadata`
-     - Align + re-grade a specific question: `--align-images --question <Q_NUM>`
-  2. If a template bounding box itself is too tight, adjust it in `review-regions` (click **Save page** and **Approve all regions**) or edit `output_dir/regions/annotations.json` directly and run:
-     `handwriting-grader approve-regions --exam /path/to/exam.yaml --confirm-reviewed`
-  Always preview without `--confirm-cost`, check the action plan, obtain cost confirmation, and rerun with `--confirm-cost`. This updates `results.json`, syncs the run manifest, and updates `review.xlsx` without discarding existing manual edits.
+Grading copies rendered pages unchanged before cropping; it does not heuristically
+reject, align, rotate or reorder them. Basic page-count and approved-layout
+dimension validation remains in place. Review the first script's orientation and
+page order when approving regions.
+
+Review Gemini-extracted IDs, names and classes for every student against the
+roster and crops. Before any answers are processed, the engine requires all IDs
+to be nonempty, unique and cover the expected present-student roster exactly.
+Failures stop the run and record affected PDF pages/scripts in `grading/id-check.json`;
+have the teacher inspect those source pages before authorizing recovery.
+A readable ID is not proof that later pages are complete or ordered.
+Inspect expanded/full-page views when an identity or answer looks clipped or
+inconsistent; never silently fix the source PDF.
+
+For incorrect boxes, review and approve corrected regions, then preview targeted
+`retry-grading --re-ocr-id`, `--re-ocr-metadata` or `--question Q` for an unapproved
+completed run. For separately reviewed shared or per-script answer-crop changes,
+follow [child regrading](regrading.md). Obtain new cost consent before model calls.
+Existing grading images and approval-bound evidence are not automatically
+regenerated or changed, including images from older runs.
 
 ## Limits
 

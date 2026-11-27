@@ -181,8 +181,6 @@ def main(argv=None):
     regions_approve = commands.add_parser("approve-regions", help="Validate and explicitly approve page-layout regions")
     regions_approve.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     regions_approve.add_argument("--confirm-reviewed", action="store_true", help="Confirm human region review")
-    check_scans_cmd = commands.add_parser("check-scans", help="Verify all scanned pages match expected orientation and page sequence (offline)")
-    check_scans_cmd.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     suggest = commands.add_parser("suggest-regions", help="Request optional Vertex AI region proposals")
     suggest.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     suggest.add_argument("--model-config", required=True, type=Path, help="Path to existing AI config.yaml")
@@ -228,7 +226,6 @@ def main(argv=None):
     retry_cmd = commands.add_parser("retry-grading", help="Retry failed marks and unmoderated questions in a grading run")
     retry_cmd.add_argument("--exam", required=True, type=Path, help="Path to exam YAML")
     retry_cmd.add_argument("--run", help="Target child run ID (default: original run)")
-    retry_cmd.add_argument("--align-images", action="store_true", help="Align scanned page images to reference regions before cropping (offline, zero AI cost)")
     retry_cmd.add_argument("--re-ocr-id", action="store_true", help="Re-run ID OCR for all scripts using current approved box")
     retry_cmd.add_argument("--re-ocr-metadata", action="store_true", help="Re-run ID, CLASS and NAME OCR for all scripts using current approved boxes")
     retry_cmd.add_argument("--question", help="Re-grade and re-moderate a specific question using current approved box")
@@ -667,6 +664,9 @@ def main(argv=None):
         print(f"Vertex target: project={args.project}, location={args.location}, models={models}. "
               f"Up to {request_count} requests will send student work or answers and incur charges. "
               f"Cache: {cache_agents or 'disabled'}; location={cache_path if cache_agents else 'none'}.")
+        print("Metadata crops only first: every student ID must be readable, unique and match the "
+              "expected present-student roster before any answer crop is sent. "
+              "On failure, grading stops with source PDF page numbers and grading/id-check.json.")
         if not args.confirm_cost:
             print("No request sent. Obtain user approval and rerun with --confirm-cost.", file=sys.stderr)
             return 1
@@ -682,7 +682,9 @@ def main(argv=None):
             tracker.write_cost_report(output)
         except Exception as exc:
             tracker.write_cost_report(output_dir)
-            print(f"Grading failed ({type(exc).__name__}): {str(exc)[:2000]}; requests may have incurred charges. "
+            from .grading import StudentIDCheckFailed
+            detail = str(exc) if isinstance(exc, StudentIDCheckFailed) else str(exc)[:2000]
+            print(f"Grading failed ({type(exc).__name__}): {detail}; requests may have incurred charges. "
                   "Inspect any partial run before choosing a new output directory.", file=sys.stderr)
             return 1
         finally:
@@ -832,6 +834,18 @@ def main(argv=None):
             fields = manifest.get("metadata_fields", ["ID", "CLASS"])
             if fields not in (["ID", "CLASS"], ["ID", "CLASS", "NAME"]):
                 raise ValueError(f"Unsupported metadata fields in checkpoint: {fields!r}")
+            missing_indices = set(range(summary["students"])) - {
+                row["script_index"] for row in results["scripts"]
+            }
+            if args.run is None and not results.get("completed"):
+                from .attendance import present_roster
+                from .grading import approved_inputs, student_id_issues
+                _, _, _, boxes = approved_inputs(config, path.parent, path)
+                issues, _ = student_id_issues(
+                    results["scripts"], present_roster(config, path.parent, path),
+                    summary["students"], boxes["ID"][0], config["layout"]["pages_per_student"],
+                )
+                missing_indices.update(issue["script_index"] for issue in issues)
         except (OSError, ValueError, KeyError) as exc:
             print(f"Cannot resume grading: {exc}", file=sys.stderr)
             return 1
@@ -839,6 +853,10 @@ def main(argv=None):
               f"models={manifest['models']}; run={args.run or 'original'}"
               f"{'; question=' + manifest['question_key'] if args.run else ''}. "
               "In-flight requests can be repeated and billed.")
+        if args.run is None:
+            print("All IDs must pass the roster check before further answer processing. "
+                  "Previously invalid IDs are re-read from saved metadata crops only; "
+                  "this does not reload a changed source PDF.")
         if not results.get("completed"):
             from math import ceil
             from .rubric import question_key
@@ -846,7 +864,7 @@ def main(argv=None):
             keys = {question_key(q["question_number"]) for q in questions}
             finished = set(results.get("moderated_questions", []))
             pairs = {(row["script_index"], question_key(row["question"])) for row in results["marks"]}
-            missing = summary["students"] - len(results["scripts"])
+            missing = len(missing_indices)
             metadata_requests = ceil(max(0, missing) / min(35, MAX_IMAGES_PER_REQUEST // len(fields)))
             mode = "batch" if args.run is not None else (args.mode or manifest.get("grading_mode", "batch"))
             pending = [sum((si, key) not in pairs for si in range(summary["students"]))
@@ -884,7 +902,9 @@ def main(argv=None):
             tracker.write_cost_report(output)
         except Exception as exc:
             tracker.write_cost_report(root)
-            detail = " ".join(str(exc).split())[:2000] or "No provider error detail was available"
+            from .grading import StudentIDCheckFailed
+            detail = (str(exc) if isinstance(exc, StudentIDCheckFailed)
+                      else " ".join(str(exc).split())[:2000]) or "No provider error detail was available"
             print(f"Resume failed ({type(exc).__name__}): {detail}; requests may have incurred charges.",
                   file=sys.stderr)
             return 1
@@ -1021,7 +1041,6 @@ def main(argv=None):
             info = inspect_retry_grading(
                 config, path.parent, path, run_id=args.run,
                 re_ocr_fields=fields, question=args.question,
-                align_images=args.align_images,
             )
             failed_marks = info["failed_marks"]
             unmoderated_questions = info["unmoderated_questions"]
@@ -1034,13 +1053,11 @@ def main(argv=None):
             return 1
 
         if (not failed_marks and not unmoderated_questions and not fields
-                and not target_question and not regions_updated and not args.align_images):
+                and not target_question and not regions_updated):
             print("All marks, moderations, and metadata are complete; no items to retry.")
             return 0
 
         details = []
-        if args.align_images:
-            details.append(f"align {len(manifest.get('image_sha256', []))} page image(s) to reference layout (offline)")
         if regions_updated:
             details.append("approved regions updated")
         if fields:
@@ -1070,13 +1087,14 @@ def main(argv=None):
             output = retry_grading(
                 config, path.parent, path, summary, run_id=args.run,
                 re_ocr_fields=fields, question=args.question,
-                align_images=args.align_images,
             )
             if est_requests > 0:
                 tracker.write_cost_report(output)
         except Exception as exc:
             tracker.write_cost_report(target_dir)
-            print(f"Retry failed ({type(exc).__name__}); requests may have incurred charges.", file=sys.stderr)
+            from .grading import StudentIDCheckFailed
+            detail = f": {exc}" if isinstance(exc, StudentIDCheckFailed) else ""
+            print(f"Retry failed ({type(exc).__name__}){detail}; requests may have incurred charges.", file=sys.stderr)
             return 1
         finally:
             set_active_tracker(None)
@@ -1385,34 +1403,6 @@ def main(argv=None):
             print(f"Region approval failed: {exc}", file=sys.stderr)
             return 1
         print("Regions approved; later changes invalidate the approval.")
-        return 0
-    if args.command == "check-scans":
-        import tempfile
-        from .alignment import check_scan_orientation_and_sequence
-        from .pdf_renderer import render_pdf_to_images
-        from .regions import resolve_path
-
-        try:
-            pdf = resolve_path(path.parent, config["exam"]["scanned_pdf"])
-            per_student = summary["pages_per_student"]
-            with tempfile.TemporaryDirectory(prefix=".check-scans-") as temp:
-                pages = render_pdf_to_images(
-                    pdf_path=pdf, output_dir=Path(temp), prefix="page",
-                    dpi=200, first_page=1, last_page=summary["pdf_pages"],
-                )
-                issues = check_scan_orientation_and_sequence(pages, None, per_student)
-        except (OSError, ValueError, yaml.YAMLError) as exc:
-            print(f"Scan check failed: {exc}", file=sys.stderr)
-            return 1
-        if issues:
-            print(f"Scan orientation/sequence issues found ({len(issues)}):", file=sys.stderr)
-            for issue in issues:
-                print(f"- {issue}", file=sys.stderr)
-            print("Fix the flagged pages manually in the source PDF or physical scan and re-run check-scans.",
-                  file=sys.stderr)
-            return 1
-        print(f"Scan check passed: all {summary['pdf_pages']} pages ({summary['students']} scripts) "
-              "match expected orientation and sequence.")
         return 0
     if args.command == "suggest-regions":
         from .regions import resolve_path, verify_run

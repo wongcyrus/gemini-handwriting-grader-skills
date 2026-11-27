@@ -30,7 +30,10 @@ from handwriting_grader.advanced import create_analysis
 from handwriting_grader.analytics import question_boxplots, question_passing_policy
 from handwriting_grader.cli import check_exam, main
 from handwriting_grader.grade_review import approve_grading, read_approved_grading, validate_review
-from handwriting_grader.grading import VertexGrader, approved_inputs, grade_exam, resume_grading, safe_append
+from handwriting_grader.grading import (
+    StudentIDCheckFailed, VertexGrader, approved_inputs, grade_exam, render_scripts, resume_grading,
+    retry_grading, safe_append,
+)
 from handwriting_grader.regions import atomic_json, file_hash, prepare_regions, verify_run
 from handwriting_grader.reporting import passing_policy, passing_rows, report_rows, sample_rows, write_workbooks
 from handwriting_grader.rubric import approve_rubric, import_rubric, write_rubric
@@ -134,6 +137,114 @@ class GradingTests(unittest.TestCase):
     def run_grading(self, provider=FakeGrader):
         return grade_exam(self.config, self.root, self.exam, self.models, "test-project", "global",
                           self.summary, provider_factory=provider)
+
+    def test_grading_preserves_rendered_pages_without_scan_heuristics(self):
+        rendered = {}
+        metadata_fields = []
+
+        class RecordingGrader(FakeGrader):
+            def ocr(self, image, field):
+                metadata_fields.append(field)
+                return super().ocr(image, field)
+
+        def render_varied_pages(*args):
+            pages = render_scripts(*args)
+            with Image.open(pages[1]) as image:
+                Image.new("RGB", image.size, "white").save(pages[1], format="JPEG")
+            with Image.open(pages[2]) as image:
+                shifted = image.transform(
+                    image.size, Image.Transform.AFFINE, (1, 0, -12, 0, 1, -18),
+                    fillcolor="white",
+                )
+            shifted.save(pages[2], format="JPEG")
+            with Image.open(pages[3]) as image:
+                rotated = image.rotate(180)
+            rotated.save(pages[3], format="JPEG")
+            rendered.update({f"{index}.jpg": page.read_bytes() for index, page in enumerate(pages)})
+            return pages
+
+        with patch("handwriting_grader.grading.render_scripts", side_effect=render_varied_pages):
+            target = self.run_grading(RecordingGrader)
+        results = json.loads((target / "results.json").read_text())
+        self.assertTrue(results["completed"])
+        self.assertEqual([row["id_ocr"] for row in results["scripts"]], ["001", "002"])
+        self.assertEqual(metadata_fields.count("ID"), 2)
+        for name, original in rendered.items():
+            self.assertEqual((target / "images" / name).read_bytes(), original)
+        manifest = json.loads((target / "manifest.json").read_text())
+        self.assertEqual(
+            manifest["image_sha256"],
+            [file_hash(target / "images" / name) for name in rendered],
+        )
+
+        retry_grading(
+            self.config, self.root, self.exam, self.summary,
+            provider_factory=RecordingGrader, re_ocr_fields=["ID"],
+        )
+        self.assertEqual(metadata_fields.count("ID"), 4)
+        for name, original in rendered.items():
+            self.assertEqual((target / "images" / name).read_bytes(), original)
+
+    def test_grading_still_validates_rendered_page_count_and_dimensions(self):
+        images = self.root / "output" / "regions" / "images"
+        bad_page = self.root / "wrong-size.jpg"
+        Image.new("RGB", (10, 10), "white").save(bad_page)
+        cases = [
+            ([images / "0.jpg"], "Rendered PDF page count changed"),
+            ([images / "0.jpg", images / "1.jpg", bad_page, images / "1.jpg"],
+             "different dimensions"),
+        ]
+        for pages, error in cases:
+            with self.subTest(error=error):
+                provider = Mock()
+                with patch("handwriting_grader.grading.render_pdf_to_images", return_value=pages):
+                    with self.assertRaisesRegex(ValueError, error):
+                        self.run_grading(provider)
+                provider.assert_not_called()
+
+    def test_failed_id_gate_preserves_checkpoint_and_resumes_only_bad_script(self):
+        class BadIDGrader(FakeGrader):
+            def __init__(self, *args):
+                super().__init__(*args)
+                self.ids = iter(["001", "999"])
+
+            def grade(self, *args, **kwargs):
+                raise AssertionError("Answers must not be processed before every ID passes")
+
+        with self.assertRaisesRegex(StudentIDCheckFailed, r"PDF page 3 \(Script #2\)"):
+            self.run_grading(BadIDGrader)
+        target = self.root / "output" / "grading"
+        results = json.loads((target / "results.json").read_text())
+        self.assertEqual(len(results["scripts"]), 2)
+        self.assertEqual(results["marks"], [])
+        self.assertFalse(results["completed"])
+        self.assertFalse((target / "review.xlsx").exists())
+        self.assertFalse((target / "processing.lock").exists())
+        report = json.loads((target / "id-check.json").read_text())
+        self.assertFalse(report["passed"])
+        self.assertEqual(report["issues"][0]["pdf_page"], 3)
+        self.assertEqual(report["missing_roster_ids"], ["002"])
+
+        fields = []
+
+        class CorrectedIDGrader(FakeGrader):
+            def __init__(self, *args):
+                super().__init__(*args)
+                self.ids = iter(["002"])
+
+            def ocr(self, image, field):
+                fields.append(field)
+                return super().ocr(image, field)
+
+        resume_grading(
+            self.config, self.root, self.exam, self.summary, provider_factory=CorrectedIDGrader,
+        )
+        self.assertEqual(fields, ["ID", "CLASS", "NAME"])
+        results = json.loads((target / "results.json").read_text())
+        self.assertEqual([row["id_ocr"] for row in results["scripts"]], ["001", "002"])
+        self.assertEqual(len(results["marks"]), 2)
+        self.assertTrue(results["completed"])
+        self.assertTrue(json.loads((target / "id-check.json").read_text())["passed"])
 
     def fill_review(self, path, *, flagged_override=1):
         book = load_workbook(path)

@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import ExitStack, contextmanager
 from copy import deepcopy
@@ -41,6 +42,10 @@ class GeminiSafetyBlocked(RuntimeError):
     def __init__(self, reason):
         self.reason = reason
         super().__init__(f"Gemini safety blocked: {reason}")
+
+
+class StudentIDCheckFailed(ValueError):
+    """Student metadata must be resolved before processing answer regions."""
 
 
 def _check_gemini_safety(response):
@@ -791,10 +796,65 @@ def batch_extract_metadata(provider, script_indices, fields, boxes, stride, imag
     return results_by_si
 
 
+def student_id_issues(scripts, expected_ids, student_count, id_page, stride):
+    expected = set(expected_ids)
+    by_index = {row["script_index"]: row for row in scripts}
+    ids = {
+        index: row.get("id_ocr", "").strip()
+        if isinstance(row.get("id_ocr"), str) else ""
+        for index, row in by_index.items()
+    }
+    counts = Counter(student_id for student_id in ids.values() if student_id)
+    issues = []
+    for index in range(student_count):
+        student_id = ids.get(index, "")
+        row = by_index.get(index, {})
+        reasons = []
+        if any(error.get("field") == "ID" for error in row.get("errors", [])):
+            reasons.append("ID extraction failed")
+        if not student_id:
+            reasons.append("ID is missing or unreadable")
+        elif student_id not in expected:
+            reasons.append("ID is not in the expected present-student roster")
+        if student_id and counts[student_id] > 1:
+            reasons.append("ID is duplicated across scripts")
+        if reasons:
+            issues.append({
+                "script_index": index,
+                "pdf_page": index * stride + id_page + 1,
+                "id_ocr": student_id,
+                "reasons": reasons,
+            })
+    return issues, sorted(expected - set(ids.values()))
+
+
+def check_student_ids(target, scripts, expected_ids, student_count, boxes, stride):
+    issues, missing = student_id_issues(scripts, expected_ids, student_count, boxes["ID"][0], stride)
+    report = target / "id-check.json"
+    passed = not issues and not missing and len(set(expected_ids)) == student_count
+    atomic_json(report, {
+        "version": 1, "passed": passed, "expected_students": student_count,
+        "issues": issues, "missing_roster_ids": missing,
+    })
+    if not passed:
+        details = "\n".join(
+            f"- PDF page {issue['pdf_page']} (Script #{issue['script_index'] + 1}): "
+            + "; ".join(issue["reasons"])
+            for issue in issues
+        )
+        raise StudentIDCheckFailed(
+            "Student ID check failed. Check the source PDF at the pages below; "
+            "answer OCR and grading have not continued.\n"
+            f"{details}\n{len(missing)} expected roster ID(s) missing. Details: {report}\n"
+            "Checkpoint preserved. Do not silently edit or replace source files; "
+            "source changes require fresh preparation and approvals."
+        )
+
+
 def continue_grading(target, results, questions, boxes, summary, stride, models, project, location, provider_factory,
                      cache_agents, cache_root, metadata_fields, attendance_guard, effective_crops=None,
                      mode="batch", batch_concurrency=3, metadata_candidates=None, metadata_roster=None,
-                     continue_on_image_policy_block=False):
+                     continue_on_image_policy_block=False, expected_ids=None):
     from .cache import CachedGrader
     if mode not in {"batch", "item"}:
         raise ValueError("Grading mode must be batch or item")
@@ -821,6 +881,11 @@ def continue_grading(target, results, questions, boxes, summary, stride, models,
     with provider_factory(models, project, location) as underlying:
         provider = CachedGrader(underlying, cache_root, cache_agents, models, project, location)
         missing_scripts = [si for si in range(summary["students"]) if si not in scripts]
+        if expected_ids is not None:
+            issues, _ = student_id_issues(
+                results["scripts"], expected_ids, summary["students"], boxes["ID"][0], stride,
+            )
+            missing_scripts = sorted(set(missing_scripts) | {issue["script_index"] for issue in issues})
         if missing_scripts:
             def checkpoint_metadata(extracted_map):
                 attendance_guard()
@@ -833,12 +898,17 @@ def continue_grading(target, results, questions, boxes, summary, stride, models,
                     }
                     if "NAME" in metadata_fields:
                         metadata["name_ocr"] = extracted.get("name_ocr", "")
+                    if script_index in scripts:
+                        results["scripts"].remove(scripts[script_index])
                     scripts[script_index] = metadata
                     results["scripts"].append(metadata)
+                results["scripts"].sort(key=lambda row: row["script_index"])
                 atomic_json(target / "results.json", results)
 
+            # Explicit recovery must not reuse metadata already rejected by the ID gate.
+            metadata_provider = underlying if any(si in scripts for si in missing_scripts) else provider
             batch_extract_metadata(
-                provider=provider,
+                provider=metadata_provider,
                 script_indices=missing_scripts,
                 fields=metadata_fields,
                 boxes=boxes,
@@ -851,6 +921,9 @@ def continue_grading(target, results, questions, boxes, summary, stride, models,
                 chunk_size=35,
                 on_chunk=checkpoint_metadata,
             )
+        if expected_ids is not None:
+            attendance_guard()
+            check_student_ids(target, results["scripts"], expected_ids, summary["students"], boxes, stride)
         total_q = len(questions)
         if mode == "batch" and hasattr(underlying, "grade_question_batch"):
             import threading
@@ -1166,7 +1239,8 @@ def resume_grading(config, config_dir, config_path, summary, provider_factory=Ve
                              attendance_guard(config, config_dir, config_path, manifest),
                              mode=grading_mode, batch_concurrency=batch_concurrency,
                              metadata_candidates=metadata_candidates, metadata_roster=metadata_roster,
-                             continue_on_image_policy_block=continue_on_image_policy_block)
+                             continue_on_image_policy_block=continue_on_image_policy_block,
+                             expected_ids=present_roster(config, config_dir, config_path))
         finish_grading(config, config_dir, config_path, target, manifest, results)
     return target
 
@@ -1283,6 +1357,7 @@ def export_failed_review(config, config_dir, config_path, summary, output):
 
 def retry_failed_question_batches(config, config_dir, config_path, summary, checkpoint_hash,
                                   provider_factory=VertexGrader, *, exclude_questions=()):
+    from .attendance import present_roster
     from .cache import CachedGrader
     from .grade_review import verify_grading_run
 
@@ -1299,6 +1374,13 @@ def retry_failed_question_batches(config, config_dir, config_path, summary, chec
         manifest_hash = file_hash(target / "manifest.json")
         _, _, _, boxes = approved_inputs(config, config_dir, config_path)
         guard = attendance_guard(config, config_dir, config_path, manifest)
+        if manifest.get("id_gate_version"):
+            guard()
+            check_student_ids(
+                target, results["scripts"], present_roster(config, config_dir, config_path),
+                summary["students"], boxes, config["layout"]["pages_per_student"],
+            )
+            guard()
         history = target / "retry-history"
         history.mkdir(mode=0o700, exist_ok=True)
         backup = Path(tempfile.mkdtemp(prefix="question-batch-", dir=history))
@@ -1359,7 +1441,7 @@ def retry_failed_question_batches(config, config_dir, config_path, summary, chec
 
 
 def inspect_retry_grading(config, config_dir, config_path, run_id=None,
-                           re_ocr_fields=None, question=None, align_images=False):
+                           re_ocr_fields=None, question=None):
     from .grade_review import verify_grading_run
 
     target, manifest, results, questions = verify_grading_run(
@@ -1442,20 +1524,17 @@ def inspect_retry_grading(config, config_dir, config_path, run_id=None,
         "target_q_key": target_q_key,
         "estimated_requests": estimated_requests,
         "num_scripts": num_scripts,
-        "align_images": bool(align_images),
     }
 
 
 def retry_grading(config, config_dir, config_path, summary, run_id=None,
-                  provider_factory=VertexGrader, re_ocr_fields=None, question=None,
-                  align_images=False):
+                  provider_factory=VertexGrader, re_ocr_fields=None, question=None):
     from .cache import CachedGrader
     from .local_filter import is_blank_cell
     from .score_editor import writer_lock
 
     info = inspect_retry_grading(config, config_dir, config_path, run_id=run_id,
-                                 re_ocr_fields=re_ocr_fields, question=question,
-                                 align_images=align_images)
+                                 re_ocr_fields=re_ocr_fields, question=question)
     target = info["target"]
     manifest = info.get("manifest", {})
     results = info.get("results", {})
@@ -1468,11 +1547,11 @@ def retry_grading(config, config_dir, config_path, summary, run_id=None,
     target_q_key = info.get("target_q_key")
 
     if (not failed_marks and not unmoderated_questions and not valid_re_ocr_fields
-            and not target_question and not regions_updated and not align_images):
+            and not target_question and not regions_updated):
         return target
 
     guard = attendance_guard(config, config_dir, config_path, manifest)
-    questions, regions_root, region_manifest, boxes = approved_inputs(config, config_dir, config_path)
+    questions, regions_root, _, boxes = approved_inputs(config, config_dir, config_path)
     tracker = get_active_tracker()
     stride = config["layout"]["pages_per_student"]
     image_dir = target / "images"
@@ -1490,10 +1569,9 @@ def retry_grading(config, config_dir, config_path, summary, run_id=None,
         review_hash = file_hash(review_path) if review_path.exists() else None
         result_hash = file_hash(target / "results.json")
         manifest_hash = file_hash(target / "manifest.json")
-        all_affected = regions_updated or align_images
         script_indices = ({row["script_index"] for row in results["scripts"]}
-                          if all_affected or valid_re_ocr_fields else set())
-        question_keys = ({question_key(row["question"]) for row in results["marks"]} if all_affected
+                          if regions_updated or valid_re_ocr_fields else set())
+        question_keys = ({question_key(row["question"]) for row in results["marks"]} if regions_updated
                          else {question_key(row["question"]) for row in failed_marks}
                          | {question_key(q) for q in unmoderated_questions}
                          | ({target_q_key} if target_q_key else set()))
@@ -1528,40 +1606,6 @@ def retry_grading(config, config_dir, config_path, summary, run_id=None,
                 review_path, previous, results, script_indices, question_keys, review_hash, prepare=True,
             )
         check_retry_state()
-        if align_images:
-            from .alignment import align_page_file, prepare_reference_maps
-            ref_maps = prepare_reference_maps(regions_root, stride)
-            with tempfile.TemporaryDirectory(prefix=".alignment-", dir=target) as temp:
-                staging = Path(temp)
-                pages = render_scripts(config, config_dir, region_manifest, summary["pdf_pages"], staging)
-                from .alignment import check_scan_orientation_and_sequence
-                if check_scan_orientation_and_sequence(pages, regions_root, stride):
-                    raise ValueError("Scan orientation/sequence check failed before retry alignment")
-                if len(pages) != len(manifest["image_sha256"]):
-                    raise ValueError("Recovery page count differs from the grading manifest")
-                aligned_dir = staging / "images"
-                aligned_dir.mkdir()
-                new_hashes = []
-                for index, page in enumerate(pages):
-                    img_path = aligned_dir / f"{index}.jpg"
-                    ref_arr, ref_size = ref_maps[index % stride]
-                    align_page_file(page, ref_arr, ref_size, output_path=img_path)
-                    new_hashes.append(file_hash(img_path))
-                check_retry_state()
-                image_dir.rename(backup / "images")
-                try:
-                    aligned_dir.rename(image_dir)
-                    manifest["image_sha256"] = new_hashes
-                    manifest["aligned_to_regions"] = True
-                    atomic_json(target / "manifest.json", manifest)
-                    manifest_hash = file_hash(target / "manifest.json")
-                except BaseException:
-                    if image_dir.exists():
-                        image_dir.rename(staging / "failed-images")
-                    (backup / "images").rename(image_dir)
-                    shutil.copy2(backup / "manifest.json", target / "manifest.json")
-                    raise
-
         provider = None
         if needs_ai:
             provider = provider_context.enter_context(
@@ -1577,6 +1621,17 @@ def retry_grading(config, config_dir, config_path, summary, run_id=None,
         if valid_re_ocr_fields:
             metadata_candidates = load_metadata_candidates(config, config_dir, config_path)
             metadata_roster = load_metadata_roster(config, config_dir, config_path)
+            metadata_provider = provider
+            if manifest.get("id_gate_version") == 1 and "ID" in valid_re_ocr_fields:
+                from .attendance import present_roster
+                issues, _ = student_id_issues(
+                    results["scripts"], present_roster(config, config_dir, config_path),
+                    len(results["scripts"]), boxes["ID"][0], stride,
+                )
+                # A separately requested retry must not replay metadata rejected by the ID gate.
+                if issues and isinstance(provider, CachedGrader):
+                    metadata_provider = provider.provider
+
             def checkpoint_retry_metadata(results_by_si):
                 for script in results["scripts"]:
                     extracted = results_by_si.get(script["script_index"])
@@ -1586,11 +1641,14 @@ def retry_grading(config, config_dir, config_path, summary, run_id=None,
                         key = field.lower() + "_ocr"
                         if key in extracted:
                             script[key] = extracted[key]
-                    script.setdefault("errors", []).extend(extracted.get("errors", []))
+                    script["errors"] = [
+                        error for error in script.get("errors", [])
+                        if error.get("field") not in valid_re_ocr_fields
+                    ] + extracted.get("errors", [])
                 save_retry_results()
 
             batch_extract_metadata(
-                provider=provider,
+                provider=metadata_provider,
                 script_indices=[s["script_index"] for s in results["scripts"]],
                 fields=valid_re_ocr_fields,
                 boxes=boxes,
@@ -1602,6 +1660,14 @@ def retry_grading(config, config_dir, config_path, summary, run_id=None,
                 tracker=tracker,
                 chunk_size=35,
                 on_chunk=checkpoint_retry_metadata,
+            )
+
+        if manifest.get("id_gate_version") == 1:
+            from .attendance import present_roster
+            guard()
+            check_student_ids(
+                target, results["scripts"], present_roster(config, config_dir, config_path),
+                len(results["scripts"]), boxes, stride,
             )
 
         # 2. Re-grade and re-moderate specific question if requested
@@ -1822,17 +1888,6 @@ def grade_exam(config, config_dir, config_path, model_config_path, project, loca
     output.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".grading-", dir=output) as temp:
         pages = render_scripts(config, config_dir, region_manifest, summary["pdf_pages"], Path(temp))
-        from .alignment import check_scan_orientation_and_sequence
-        scan_issues = check_scan_orientation_and_sequence(
-            pages, regions_root, len(region_manifest["pages"])
-        )
-        if scan_issues:
-            preview = "\n".join(f"- {issue}" for issue in scan_issues[:10])
-            more = f"\n... and {len(scan_issues) - 10} more issue(s)." if len(scan_issues) > 10 else ""
-            raise ValueError(
-                f"Scan orientation/sequence check failed ({len(scan_issues)} issue(s)). "
-                f"Fix the physical scan or PDF order manually before grading:\n{preview}{more}"
-            )
         approved_inputs(config, config_dir, config_path)
         if file_hash(model_config_path) != model_hash:
             raise ValueError("Model configuration changed before grading")
@@ -1845,14 +1900,10 @@ def grade_exam(config, config_dir, config_path, model_config_path, project, loca
                 raise ValueError("A grading run already exists; choose a different output directory") from exc
         image_dir = target / "images"
         image_dir.mkdir(mode=0o700)
-        from .alignment import align_page_file, prepare_reference_maps
-        per_script = len(region_manifest["pages"])
-        ref_maps = prepare_reference_maps(regions_root, per_script)
         image_hashes = []
         for index, page in enumerate(pages):
             image = image_dir / f"{index}.jpg"
-            ref_arr, ref_size = ref_maps[index % per_script]
-            align_page_file(page, ref_arr, ref_size, output_path=image)
+            shutil.copy2(page, image)
             image_hashes.append(file_hash(image))
         manifest = {
             "version": 1, "exam_config_sha256": config_hash(config),
@@ -1867,6 +1918,7 @@ def grade_exam(config, config_dir, config_path, model_config_path, project, loca
             "cache_root": str(cache_root),
             "metadata_fields": ["ID", "CLASS", "NAME"],
             "grading_mode": mode,
+            "id_gate_version": 1,
         }
         if attendance:
             manifest["attendance_approval_sha256"] = attendance[1]
@@ -1882,7 +1934,8 @@ def grade_exam(config, config_dir, config_path, model_config_path, project, loca
                              manifest["metadata_fields"], attendance_guard(config, config_dir, config_path, manifest),
                              mode=mode, batch_concurrency=batch_concurrency,
                              metadata_candidates=metadata_candidates, metadata_roster=metadata_roster,
-                             continue_on_image_policy_block=continue_on_image_policy_block)
+                             continue_on_image_policy_block=continue_on_image_policy_block,
+                             expected_ids=present_roster(config, config_dir, config_path))
             finish_grading(config, config_dir, config_path, target, manifest, results)
     return target
 

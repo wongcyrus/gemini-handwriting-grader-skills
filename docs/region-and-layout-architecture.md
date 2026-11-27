@@ -28,13 +28,22 @@ Exam answer sheets use physical pixel bounding boxes anchored to rendered 200 DP
 
 ---
 
-## 2. Scan Validation (`check-scans`) & Layout Preparation (`prepare-regions`)
+## 2. Input Validation & Layout Preparation (`prepare-regions`)
 
-1. **Before `prepare-regions`**, run `handwriting-grader check-scans --exam exam.yaml` (offline, 0 AI cost). Using majority-consensus 4x downsampled FFT phase correlation across scripts, it detects upside-down (`180°`), sideways (`90°/270°`), blank, or out-of-sequence pages — even if Script 1 itself is wrong — and reports exact 1-based PDF page numbers for manual correction.
+1. Run offline `preflight` for input validation. No heuristic orientation/sequence
+   check or automatic page alignment is performed.
 2. `prepare-regions` reads `exam.scanned_pdf` and `layout.pages_per_student`.
 3. Uses `render_pdf_to_images` (`pypdfium2`) to render the first script's $N$ pages into `output/regions/images/0.jpg`, `1.jpg`, etc.
 4. Generates `output/regions/manifest.json` recording pixel dimensions `(width, height)` and SHA-256 hashes for each layout page.
-5. Regions can be approved interactively in `review-regions` or headlessly after editing `annotations.json` via `handwriting-grader approve-regions --exam exam.yaml --confirm-reviewed`.
+5. Review the first script's page order, orientation and all boxes. Regions can be approved interactively in `review-regions` or headlessly after editing `annotations.json` via `handwriting-grader approve-regions --exam exam.yaml --confirm-reviewed`.
+
+Grading retains rendered page bytes before cropping and validates page count and
+dimensions against the approved layout. Gemini extracts every student's metadata;
+answer crops are not processed until all IDs are nonempty, unique and exactly
+cover the expected present-student roster. Failures stop the run and report exact
+PDF page/script numbers in `grading/id-check.json` for source-file inspection.
+The teacher resolves unreadable, missing, duplicate or unmatched IDs against the
+roster and images. Readable IDs do not establish that other pages are correct.
 
 ---
 

@@ -117,8 +117,14 @@ class AttendanceTests(unittest.TestCase):
     def test_present_only_review_reports_and_email(self):
         self.prepare_approved_run()
         _, summary = check_exam(self.config, self.root)
+
+        class PresentGrader(FakeGrader):
+            def __init__(self, models, project, location):
+                super().__init__(models, project, location)
+                self.ids = iter(["001", "003"])
+
         root = grade_exam(self.config, self.root, self.exam, self.models, "project", "global", summary,
-                          provider_factory=FakeGrader)
+                          provider_factory=PresentGrader)
         server = ScoreServer(self.config, self.root, config_path=self.exam)
         self.addCleanup(server.server_close)
         self.assertEqual(set(load_state(server)[2]), {"001", "003"})

@@ -17,7 +17,8 @@ for stage-by-stage inputs, human decisions, outputs and known missing behavior.
 The assistant-led skill reuses verified settings, resumes from actual checkpoints,
 and maintains an optional [private offline output index](skills/handwriting-grading/references/output-index.md).
 Review/grouping and report formatting are offline by default; paid stages require
-separate data and cost consent. Native Gemini vision and offline scan checking are retained.
+separate data and cost consent. Gemini reads image crops directly; no heuristic
+scan-orientation check or automatic page alignment is applied.
 
 ### Technical & Architecture Documentation
 - [Design Logic, State Machine & Pipeline Flow](docs/design-logic-and-flow.md): Complete architectural philosophy, Mermaid state machine, data flow, cryptographic binding, and failure recovery logic.
@@ -101,17 +102,10 @@ LibreOffice, select an output directory it can access (often not `/tmp`).
 
 ## Review regions
 
-Before preparing regions, validate the scanned PDF offline so an upside-down or
-out-of-sequence first script cannot corrupt all region bounding boxes:
-
-```sh
-.venv/bin/handwriting-grader check-scans --exam exam.yaml
-```
-
-If any page is flagged (upside-down `180°`, sideways `90°/270°`, blank, or out of
-sequence), fix the physical scan or source PDF manually and re-run `check-scans`.
-
-PDF pages are rendered automatically at 200 DPI via `pypdfium2` (cross-platform). After `check-scans` passes and confirming page count and the shared-layout assumption:
+Run `preflight --exam exam.yaml` for input validation, then confirm page count
+and the shared-layout assumption. PDF pages are rendered automatically at
+200 DPI via `pypdfium2` (cross-platform), without automatic rotation, reordering
+or alignment:
 
 ```sh
 .venv/bin/handwriting-grader prepare-regions --exam exam.yaml
@@ -215,6 +209,14 @@ Both modes produce identical downstream schemas (`results.json`, `review.xlsx`, 
 
 **Metadata OCR & Candidate Roster Assistance**:
 Student metadata (`ID`, `CLASS`, `NAME`) extraction supports printed and handwritten text.
+After region approval, grading sends **metadata crops only** for all students
+before any answer crops. IDs must be nonempty, unique and cover the expected
+present-student roster exactly (preserving leading zeroes; scan order need not
+match roster order). Only then does answer grading continue automatically.
+If any ID fails, the run stops, reports the affected 1-based PDF page and script
+numbers, and saves `grading/id-check.json` plus the metadata checkpoint.
+Check those source PDF pages with the teacher; no answer OCR/grading is started.
+Passing this consistency check does not replace human identity verification.
 Approved attendance or roster candidates help disambiguate identifiers; they do not
 guarantee exact recognition. Teachers must check identities and unlisted or blank responses.
 
@@ -228,7 +230,7 @@ After explicit approval to send student work and incur charges, repeat with
 are recorded when the SDK supplies them. Missing usage is unpriced, not free;
 unlogged failures and SDK retries can still incur charges.
 
-If transient Vertex AI errors (e.g. 429 quota limits, 504 timeouts, 5xx server errors) cause any mark or moderation to fail, or if scanner drift requires aligning images and re-running ID OCR or one question:
+If transient Vertex AI errors (e.g. 429 quota limits, 504 timeouts, 5xx server errors) cause any mark or moderation to fail, or reviewed bounding-box changes require re-running ID OCR or one question:
 ```sh
 # 1. Preview failed items and unmoderated questions (read-only, no API calls)
 .venv/bin/handwriting-grader retry-grading --exam exam.yaml
@@ -236,15 +238,22 @@ If transient Vertex AI errors (e.g. 429 quota limits, 504 timeouts, 5xx server e
 # 2. Confirm cost consent and rerun only the failed items with exponential backoff:
 .venv/bin/handwriting-grader retry-grading --exam exam.yaml --confirm-cost
 
-# 3. Align existing unaligned images offline (0 AI cost) and re-run ID OCR or one question:
-.venv/bin/handwriting-grader retry-grading --exam exam.yaml --align-images
+# 3. After separately previewing and consenting, re-run ID OCR or one question:
 .venv/bin/handwriting-grader retry-grading --exam exam.yaml --re-ocr-id --confirm-cost
 .venv/bin/handwriting-grader retry-grading --exam exam.yaml --question 1.1 --confirm-cost
 ```
-During `grade`, pages are registered to `regions/images/` before cropping.
+During `grade`, rendered pages are copied unchanged before cropping. Review
+every extracted identity against the roster and image; unreadable, missing,
+duplicate or unmatched IDs need human resolution. A readable ID does not verify
+the order or completeness of the remaining pages.
 `retry-grading` preserves teacher-corrected answers, reasoning, manual zero marks,
 custom columns, and unaffected review confirmations. Affected confirmations clear
 before requests, including when a retry is interrupted. Review workbooks publish atomically.
+
+After a failed ID check, explicitly preview and consent to `resume-grading` only
+after inspecting the reported pages. It re-reads invalid IDs from the saved
+metadata crops and checks all IDs again; valid IDs are retained. It does not
+reload an edited PDF. Source changes require fresh preparation and approvals.
 
 Supported interrupted runs can be resumed with `resume-grading --exam exam.yaml`,
 followed by `--confirm-cost` after review; in-flight requests may repeat and

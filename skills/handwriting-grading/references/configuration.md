@@ -132,7 +132,8 @@ changes, so do not reuse cached results when freshness is required. Grounded
 verification is not cached; logging settings are not applied.
 Cache hits never substitute for cost consent or review. Credentials must remain
 outside configuration and Git.
-Preflight and Gemini `check-scans` are offline and do not confirm model access.
+Preflight is offline input validation; it does not check scan orientation,
+page sequence or model access. Rendered pages are not automatically aligned.
 Changing exam configuration invalidates approvals: settle relevant settings first,
 then explicitly review again if an intentional later change requires it.
 

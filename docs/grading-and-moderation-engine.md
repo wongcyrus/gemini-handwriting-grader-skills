@@ -59,6 +59,15 @@ Grading runs in three decoupled phases:
 Metadata extraction operates in high-speed, structured batch mode (`ocr_metadata_batch` / `batch_extract_metadata`):
 
 - **Input**: High-resolution crops of `ID`, `CLASS`, and `NAME` bounding boxes across scripts (chunk size = 35 students per batch request).
+- **ID-first gate**: Extract metadata for every student before reading or sending
+  any answer crop. Nonempty, unique IDs must exactly cover the expected
+  present-student roster; roster order is not imposed and leading zeroes are
+  preserved. On failure, stop before answers and save `grading/id-check.json`
+  with exact 1-based PDF page/script numbers for source-file inspection.
+  The incomplete metadata checkpoint is retained. A separately consented resume
+  re-reads only missing/invalid saved metadata, then checks all IDs again.
+  Source changes require fresh preparation/approvals. A pass is a consistency
+  check, not proof of correct handwriting interpretation or page order.
 - **Structured Pydantic Schema**:
   ```python
   class StudentMetadataItem(BaseModel):
@@ -181,11 +190,11 @@ When SDK-level retries are exhausted and items fail (`grading_failed=True` or mo
   2. Manually grade failed items directly in `review.xlsx` without additional API calls.
 
 ### Targeted `retry-grading` Command
-When the user approves retry or needs to recover from scanner shift:
+When the user approves retry or needs to rerun metadata/a question after reviewed box changes:
 ```sh
-handwriting-grader retry-grading --exam exam.yaml [--align-images] [--re-ocr-id | --re-ocr-metadata] [--question Q] [--confirm-cost]
+handwriting-grader retry-grading --exam exam.yaml [--re-ocr-id | --re-ocr-metadata] [--question Q] [--confirm-cost]
 ```
-1. **Offline Page Alignment (`--align-images`)**: Aligns existing `grading/images/*.jpg` to `regions/images/` via 4-quadrant FFT phase correlation with outlier-quadrant rejection (0 AI cost; automatically applied on all new `grade` runs via `alignment.py`).
+1. **Unchanged Page Images**: New runs copy rendered pages unchanged before cropping, without heuristic orientation/sequence checks or automatic alignment. Retries preserve existing images, including older run images. Basic input, page-count, dimension and approval validation remains.
 2. **Isolated Retry & Targeted Re-runs**: Retries `grading_failed=True` / `raw_mark is None` items, or re-runs only metadata OCR (`--re-ocr-id`, `--re-ocr-metadata`) or a single question (`--question Q`).
 3. **Local Pre-Filter**: Runs `is_blank_cell` before any grading API call.
 4. **Question Re-moderation**: Re-moderates affected questions once all student marks are restored.

@@ -230,6 +230,67 @@ class RecoveryTests(unittest.TestCase):
         self.assertFalse((target / "review.xlsx").exists())
         self.assertFalse((target / "approval.json").exists())
 
+    def test_failed_batch_retry_rechecks_all_ids_before_provider_or_answer_crops(self):
+        target = self.failed_run()
+        original = self.read_results(target)
+        original["marks"][0].update(raw_mark=0, moderated_mark=0, grading_failed=False)
+        cases = [
+            ("unknown", "999", [], True),
+            ("missing", "", [], False),
+            ("duplicate", "002", [], True),
+            ("extraction_error", "001", [{"field": "ID", "type": "ValueError"}], False),
+        ]
+        for label, student_id, errors, cached_passed in cases:
+            with self.subTest(case=label):
+                results = deepcopy(original)
+                results["scripts"][0].update(id_ocr=student_id, errors=errors)
+                atomic_json(target / "results.json", results)
+                atomic_json(target / "id-check.json", {"passed": cached_passed})
+                info = grading.inspect_failed_question_batches(self.config, self.root, self.exam, self.summary)
+                self.assertEqual([row["script_index"] for row in info["failed"]], [1])
+                provider = Mock(side_effect=AssertionError("ID failure must precede provider creation"))
+                with patch.object(grading, "crop_image") as crop:
+                    with self.assertRaises(grading.StudentIDCheckFailed):
+                        grading.retry_failed_question_batches(
+                            self.config, self.root, self.exam, self.summary, info["checkpoint_hash"],
+                            provider_factory=provider,
+                        )
+                provider.assert_not_called()
+                crop.assert_not_called()
+                report = json.loads((target / "id-check.json").read_text())
+                self.assertFalse(report["passed"])
+                self.assertIn(0, [issue["script_index"] for issue in report["issues"]])
+                self.assertEqual(self.read_results(target), results)
+                self.assertFalse((target / "processing.lock").exists())
+
+    def test_failed_batch_retry_recomputes_stale_failed_id_report(self):
+        target = self.failed_run()
+        atomic_json(target / "id-check.json", {"passed": False})
+        info = grading.inspect_failed_question_batches(self.config, self.root, self.exam, self.summary)
+        provider = FakeBatchProvider({}, "", "")
+        grading.retry_failed_question_batches(
+            self.config, self.root, self.exam, self.summary, info["checkpoint_hash"],
+            provider_factory=lambda *a: provider,
+        )
+        self.assertEqual(provider.batch_calls, [("Q1", 2)])
+        self.assertTrue(json.loads((target / "id-check.json").read_text())["passed"])
+
+    def test_failed_batch_retry_preserves_legacy_manifest_behavior(self):
+        target = self.failed_run()
+        manifest = json.loads((target / "manifest.json").read_text())
+        manifest.pop("id_gate_version")
+        atomic_json(target / "manifest.json", manifest)
+        results = self.read_results(target)
+        results["scripts"][0]["id_ocr"] = "legacy OCR awaiting human review"
+        atomic_json(target / "results.json", results)
+        info = grading.inspect_failed_question_batches(self.config, self.root, self.exam, self.summary)
+        provider = FakeBatchProvider({}, "", "")
+        grading.retry_failed_question_batches(
+            self.config, self.root, self.exam, self.summary, info["checkpoint_hash"],
+            provider_factory=lambda *a: provider,
+        )
+        self.assertEqual(provider.batch_calls, [("Q1", 2)])
+
     def test_offline_export_leaves_checkpoint_and_run_unchanged(self):
         target = self.failed_run()
         before = file_hash(target / "results.json")
