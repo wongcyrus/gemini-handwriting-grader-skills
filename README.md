@@ -1,6 +1,6 @@
 # Handwriting Grader Skills
 
-![Gemini Handwriting Grader logo](assets/branding/wordmark.png)
+![Handwriting Grader logo incorporating the Google Gemini mark](assets/branding/wordmark.png)
 
 A skill and Python tools for planning a human-reviewed handwriting grading run.
 This project is being migrated from
