@@ -1,0 +1,7 @@
+Create one original, polished, minimalist software-project logo ICON for Gemini Handwriting Grader, a tool for teachers that reads handwritten exam sheets and assists with grading under human review.
+
+The icon must combine a rounded rectangular paper-sheet outline with a distinctive flowing handwritten ink stroke that ends in a confident checkmark. The ink stroke should evoke natural handwriting, not a letter or a literal signature. Make the resulting symbol simple, memorable, friendly, balanced and recognizable at favicon size. Use consistent generous stroke weight, rounded ends, clean negative space and flat vector-like forms.
+
+Use violet #7C3AED for the document outline and teal #14B8A6 for the handwriting-to-check stroke. Do not use any Google, Gemini, Microsoft or Azure official logo, sparkle, corporate symbol or imitation thereof. This is independent original project branding. No robot, brain, hand, pen illustration, badge, mockup, watermark or decorative background.
+
+Render ONLY one icon, front-facing and centered on a perfectly uniform pure white #FFFFFF background, with no text, letters, labels or wordmark. No gradient, shadow, texture, perspective or 3D effect. Fit all colored artwork within a centered 700 by 700 pixel square on the requested 1536 by 1024 canvas, leaving ample white margin. The icon should have a near-square silhouette suitable for later deterministic cropping and wordmark composition.

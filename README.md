@@ -1,5 +1,7 @@
 # Handwriting Grader Skills
 
+![Gemini Handwriting Grader logo](assets/branding/wordmark.png)
+
 A skill and Python tools for planning a human-reviewed handwriting grading run.
 This project is being migrated from
 [gemini-handwriting-grader](https://github.com/wongcyrus/gemini-handwriting-grader).
